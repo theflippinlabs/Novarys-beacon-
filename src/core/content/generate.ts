@@ -63,7 +63,8 @@ class Writer {
 }
 
 const src = (g: ProductGraph, id: string | null) => (id ? g.sources.find((s) => s.id === id)?.url : undefined);
-const lowerFirst = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
+/** Lower-case the first letter unless the word looks like a proper noun / acronym (e.g. "TikTok", "API"). */
+const lowerFirst = (s: string) => (/^[A-Z][a-z]*[A-Z]|^[A-Z]{2}/.test(s) ? s : s.charAt(0).toLowerCase() + s.slice(1));
 const sentence = (s: string) => (/[.!?]$/.test(s.trim()) ? s.trim() : `${s.trim()}.`);
 const truncate = (s: string, n: number) => (s.length <= n ? s : s.slice(0, n - 1).replace(/\s+\S*$/, "") + "…");
 
@@ -79,7 +80,7 @@ function ctas(g: ProductGraph, w: Writer) {
 }
 
 function sourcesSection(w: Writer) {
-  const urls = [...new Set([...w.refs.values()].filter((u): u is string => Boolean(u)))];
+  const urls = [...new Set([...w.refs.values()].filter((u): u is string => Boolean(u)).map((u) => u.replace(/\/+$/, "")))];
   if (!urls.length) return;
   w.line("## Sources").line();
   for (const u of urls) w.line(`- <${u}>`);
@@ -205,7 +206,7 @@ export function generateDraft(g: ProductGraph, req: DraftRequest): Draft {
       const title = `${p.name} vs ${comp.competitor.name}`;
       w.line(`# ${title}`).line();
       intro();
-      w.line(`This comparison is based only on publicly available, sourced information. Each row links to its source; verify details before making a decision.`).line();
+      w.line(`_This comparison is based only on publicly available, sourced information. Each row links to its source; verify details before making a decision._`).line();
       if (sourced.length) {
         w.line(`| Dimension | ${p.name} | ${comp.competitor.name} | Source |`).line("|---|---|---|---|");
         sourced.forEach((f, i) => {
@@ -320,7 +321,7 @@ export function generateDraft(g: ProductGraph, req: DraftRequest): Draft {
     case "TIKTOK_SCRIPT":
     case "SHORT_VIDEO_SCRIPT": {
       const title = `${req.type === "TIKTOK_SCRIPT" ? "TikTok" : "Short video"} script — ${p.name}`;
-      w.line(`# ${title}`).line().line("**Format:** 30–45 seconds, vertical, on-screen text + voice-over.").line();
+      w.line(`# ${title}`).line().line("_Format: 30–45 seconds, vertical, on-screen text + voice-over._").line();
       w.line("## Hook (0–3s)").line();
       if (problems[0]) {
         w.line(`"${sentence(problems[0].name)} Here's how ${audiences[0] ? lowerFirst(audiences[0].name) : "teams"} handle it."`).line();

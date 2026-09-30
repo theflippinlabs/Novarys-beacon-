@@ -30,7 +30,7 @@ export function encryptSecret(plaintext: string, aad = ""): string {
 
 export function decryptSecret(envelope: string, aad = ""): string {
   const [v, iv, tag, ct] = envelope.split(":");
-  if (v !== "v1" || !iv || !tag || !ct) throw new Error("Unsupported ciphertext envelope");
+  if (v !== "v1" || !iv || !tag || ct === undefined) throw new Error("Unsupported ciphertext envelope");
   const decipher = createDecipheriv("aes-256-gcm", encKey(), Buffer.from(iv, "base64"));
   if (aad) decipher.setAAD(Buffer.from(aad));
   decipher.setAuthTag(Buffer.from(tag, "base64"));
@@ -62,12 +62,16 @@ export async function hashPassword(password: string): Promise<string> {
 export async function verifyPassword(password: string, stored: string): Promise<boolean> {
   const [alg, n, r, p, salt, hash] = stored.split("$");
   if (alg !== "scrypt" || !salt || !hash) return false;
-  const expected = Buffer.from(hash, "base64");
-  const dk = await scrypt(password.normalize("NFKC"), Buffer.from(salt, "base64"), expected.length, {
-    N: Number(n),
-    r: Number(r),
-    p: Number(p),
-    maxmem: SCRYPT.maxmem,
-  });
-  return timingSafeEqual(dk, expected);
+  try {
+    const expected = Buffer.from(hash, "base64");
+    const dk = await scrypt(password.normalize("NFKC"), Buffer.from(salt, "base64"), expected.length, {
+      N: Number(n),
+      r: Number(r),
+      p: Number(p),
+      maxmem: SCRYPT.maxmem,
+    });
+    return timingSafeEqual(dk, expected);
+  } catch {
+    return false;
+  }
 }

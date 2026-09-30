@@ -64,8 +64,8 @@ export function computeBeaconScore(i: ScoreInput): BeaconScore {
     ),
   ];
 
-  // Entity Completeness — 20
-  const entity = [line("Knowledge graph completeness", 20 * i.completeness, 20, `${Math.round(i.completeness * 100)}% of weighted entity facts present.`, "Fill the missing knowledge-graph fields listed on the product page.", 1)];
+  // Entity Completeness — 15 (components: 20+20+15+15+15+10+5 = 100)
+  const entity = [line("Knowledge graph completeness", 15 * i.completeness, 15, `${Math.round(i.completeness * 100)}% of weighted entity facts present.`, "Fill the missing knowledge-graph fields listed on the product page.", 1)];
 
   // Authority Signals — 15
   const authority = [

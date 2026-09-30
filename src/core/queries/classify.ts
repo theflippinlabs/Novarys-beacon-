@@ -59,7 +59,7 @@ export function classifyQuery(query: string, brandTerms: string[] = []): Classif
   const brands = brandTerms.map(normalizeQuery).filter(Boolean);
   const brandHit = brands.find((b) => new RegExp(`(^|\\s)${b.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\s|$)`).test(q));
   if (brandHit) {
-    const rest = tokens(q.replace(brandHit, " "));
+    const rest = tokens(q.replace(brandHit, " "), { keepStop: true });
     // A brand query with nothing (or only login/app-type words) around it is navigational.
     if (rest.length === 0 || rest.every((t) => /^(login|app|website|official|site|account|sign|in|download)$/.test(t))) {
       return { intent: "NAVIGATIONAL", confidence: 0.9, funnelStage: "DECISION", signals: [`brand:${brandHit}`] };

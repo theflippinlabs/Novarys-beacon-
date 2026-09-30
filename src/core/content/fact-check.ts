@@ -37,18 +37,32 @@ const RISKY = [
   { re: /\b(best|#1|number one|leading|world'?s first|only solution|unmatched|guaranteed?|revolutionary)\b/i, why: "Superlative or guarantee — needs evidence or rewording" },
   { re: /\b(trusted by|used by|customers? (include|like)|clients include)\b/i, why: "Customer claim — requires a verified, publishable proof" },
   { re: /\b(award|awarded|winner|certified|compliant|iso ?\d+|soc ?2|gdpr[- ]compliant|hipaa)\b/i, why: "Award / certification claim — requires a verified source" },
-  { re: /\b(rating|rated|stars?|reviews?)\b/i, why: "Rating / review claim — requires a verified source" },
+  { re: /\b(rated|ratings?|\d(\.\d)?\s*(stars?|\/\s*5)|reviews? (on|from)|star reviews?)\b/i, why: "Rating / review claim — requires a verified source" },
 ];
 
-const NUMERIC = /(\d[\d,.]*\s?(%|percent|x\b|k\b|m\b|€|\$|£|eur|usd|users|customers|creators|hours|minutes))|([€$£]\s?\d)/i;
 
-function splitClaims(body: string): string[] {
+/**
+ * Words the generator uses to connect facts ("Key capabilities include …",
+ * "It helps with …"). They carry no factual content of their own.
+ */
+const CONNECTIVES = new Set(
+  "key capabilities capability include includes including helps help designed lists listed target audience audiences integrates integration yes available pricing plan plans costs cost month monthly year yearly annual per price request released alternative also provides offers lets allows supports support using used via problem solves solve recurring teams here handle show screen vo on-screen film real footage beats more information hi best regards trial day days".split(" "),
+);
+
+/** Extracts checkable claims; structural lines (headings, CTAs, sources, editorial notes, field labels) are not claims. */
+function splitClaims(body: string, knownUrls: string[]): string[] {
+  const stripUrls = (s: string) => {
+    let out = s;
+    for (const u of knownUrls) out = out.split(u).join(" ").split(u.replace(/\/+$/, "")).join(" ");
+    return out;
+  };
   return body
     .split("\n")
     .map((l) => l.trim())
-    .filter((l) => l && !l.startsWith("#") && !l.startsWith("|---") && !l.startsWith("- <") && !l.startsWith(EDITOR_TODO) && !/^_.*_$/.test(l) && !/^\*\*[^*]+:\*\*$/.test(l))
+    .filter((l) => l && !l.startsWith("#") && !l.startsWith("|---") && !/^- <[^>]+>$/.test(l) && !l.startsWith(EDITOR_TODO) && !/^_.*_$/.test(l) && !l.includes("{cta:"))
+    .map((l) => l.replace(/^\*\*[^*]{1,40}:\*\*\s*/, "").replace(/\*\*/g, ""))
     .flatMap((l) => l.replace(/^[-*→>\d.)\s]+/, "").split(/(?<=[.!?])\s+(?=[A-Z"])/))
-    .map((s) => s.replace(/\{cta:[A-Z_]+\}/g, "").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").trim())
+    .map((s) => stripUrls(s.replace(/\{\{[^}]*\}\}/g, " ").replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1 $2").replace(/<(https?:[^>]+)>/g, "$1")).trim())
     .filter((s) => tokens(s).length >= 3);
 }
 
@@ -60,12 +74,22 @@ function splitClaims(body: string): string[] {
  */
 export function factCheck(body: string, g: ProductGraph, competitorNames: string[] = []): { passed: boolean; claims: ClaimCheck[]; checkedAt: string } {
   const facts = graphFacts(g).map((f) => ({ ...f, toks: new Set(tokens(f.text)), lower: f.text.toLowerCase() }));
-  const productTokens = new Set(tokens(g.product.name));
+  const p = g.product;
+  const knownUrls = [
+    ...(p.domain ? [`https://${p.domain}`] : []),
+    ...[p.documentationUrl, p.pricingUrl, p.logoUrl].filter((u): u is string => Boolean(u)),
+    ...p.conversionUrls.map((c) => c.url),
+    ...g.sources.map((s) => s.url),
+    ...g.competitors.flatMap((c) => c.comparisonFacts.map((f) => f.sourceUrl)),
+  ].sort((a, b) => b.length - a.length);
+  const productTokens = new Set(tokens(p.name));
+  const ctaTokens = new Set(p.conversionUrls.flatMap((c) => tokens(c.label)));
   const claims: ClaimCheck[] = [];
 
-  for (const claim of splitClaims(body)) {
-    const ct = tokens(claim).filter((t) => !productTokens.has(t) && !/^\{\{.*\}\}$/.test(t));
+  for (const claim of splitClaims(body, knownUrls)) {
+    const ct = tokens(claim).filter((t) => !productTokens.has(t) && !CONNECTIVES.has(t) && !ctaTokens.has(t) && !/^\d/.test(t));
     const risky = RISKY.find((r) => r.re.test(claim));
+    // Best single supporting fact …
     let best: (typeof facts)[number] | null = null;
     let bestScore = 0;
     for (const f of facts) {
@@ -76,20 +100,40 @@ export function factCheck(body: string, g: ProductGraph, competitorNames: string
         best = f;
       }
     }
-    const numbers = claim.match(/\d[\d,.]*/g) ?? [];
-    const numbersOk = numbers.every((n) => facts.some((f) => f.lower.includes(n.replace(/,/g, "")) || f.lower.includes(n)));
+    // … and greedy multi-fact coverage for sentences that combine several facts ("X, Y and Z").
+    const uncovered = new Set(ct);
+    const used: (typeof facts)[number][] = [];
+    while (uncovered.size && used.length < 6) {
+      let pick: (typeof facts)[number] | null = null;
+      let gain = 0;
+      for (const f of facts) {
+        if (used.includes(f)) continue;
+        const gnew = [...uncovered].filter((t) => f.toks.has(t)).length;
+        if (gnew > gain) {
+          gain = gnew;
+          pick = f;
+        }
+      }
+      if (!pick || gain < 2) break;
+      used.push(pick);
+      for (const t of [...uncovered]) if (pick.toks.has(t)) uncovered.delete(t);
+    }
+    const unionScore = ct.length ? 1 - uncovered.size / ct.length : 1;
+    const numbers = (claim.match(/\d[\d,.]*\d|\d/g) ?? []).map((n) => n.replace(/,/g, ""));
+    const numbersOk = numbers.every((n) => facts.some((f) => f.lower.includes(n)));
     const mentionsCompetitor = competitorNames.some((c) => claim.toLowerCase().includes(c.toLowerCase()));
+    const competitorSupported = best?.ref.startsWith("comparison:") && bestScore >= 0.5;
 
     let status: ClaimCheck["status"];
-    if (ct.length === 0) status = "SUPPORTED";
-    else if (bestScore >= 0.6 && numbersOk && !risky) status = "SUPPORTED";
-    else if (NUMERIC.test(claim) && !numbersOk) status = "UNSUPPORTED";
+    if (!numbersOk) status = "UNSUPPORTED";
     else if (risky && !(best && bestScore >= 0.8 && best.verified)) status = "NEEDS_REVIEW";
-    else if (mentionsCompetitor && !(best && best.ref.startsWith("comparison:") && bestScore >= 0.5)) status = "UNSUPPORTED";
-    else if (bestScore >= 0.4) status = "NEEDS_REVIEW";
+    else if (mentionsCompetitor && !competitorSupported) status = "UNSUPPORTED";
+    else if (ct.length === 0 || bestScore >= 0.6 || unionScore >= 0.8) status = "SUPPORTED";
+    else if (bestScore >= 0.4 || unionScore >= 0.6) status = "NEEDS_REVIEW";
     else status = "UNSUPPORTED";
 
-    claims.push({ claim: claim.slice(0, 400), status, factRef: bestScore >= 0.4 ? best?.ref : undefined, sourceUrl: bestScore >= 0.4 ? best?.sourceUrl : risky?.why });
+    const ref = bestScore >= 0.4 ? best : used[0];
+    claims.push({ claim: claim.slice(0, 400), status, factRef: ref?.ref, sourceUrl: ref?.sourceUrl ?? (risky ? risky.why : !numbersOk ? "Number not found in any recorded fact" : undefined) });
   }
   const passed = claims.every((c) => c.status === "SUPPORTED");
   return { passed, claims, checkedAt: new Date().toISOString() };

@@ -55,7 +55,7 @@ const INTENT_PAGE: Record<Intent, PageType> = {
   ALTERNATIVE: "ALTERNATIVE",
 };
 
-const potentialFrom = (impact: number, confidence: number): Potential => (impact * confidence >= 16 ? "HIGH" : impact * confidence >= 8 ? "MEDIUM" : "LOW");
+const potentialFrom = (impact: number, confidence: number): Potential => (impact * confidence >= 16 ? "HIGH" : impact * confidence >= 9 ? "MEDIUM" : "LOW");
 
 function make(d: Omit<OpportunityDraft, "priorityScore" | "potential"> & { potential?: Potential }): OpportunityDraft {
   return { ...d, potential: d.potential ?? potentialFrom(d.impact, d.confidence), priorityScore: priority(d.impact, d.confidence, d.effort, d.urgency) };
@@ -92,7 +92,7 @@ export function generateOpportunities(s: OpportunitySignals): OpportunityDraft[]
           ],
           competitors: comps,
           actions: actions(
-            ["CREATE_PAGE", `Create a ${pageType.toLowerCase().replace("_", "-")} page targeting "${q.query}".`],
+            ["CREATE_PAGE", `Create ${/^[aeiou]/i.test(pageType) ? "an" : "a"} ${pageType.toLowerCase().replace("_", "-")} page targeting "${q.query}".`],
             ["ADD_FAQ", "Add factual FAQ entries answering the query directly."],
             ...(q.intent === "PROBLEM" || q.intent === "INFORMATIONAL" ? ([["CREATE_GUIDE", `Publish a workflow guide for "${q.query}".`]] as [string, string][]) : []),
             ["INTERNAL_LINKS", "Add internal links from related published pages."],

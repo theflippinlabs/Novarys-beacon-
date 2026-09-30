@@ -144,6 +144,7 @@ export function analyzeHtml(input: {
   }
 
   $("script,style,noscript,template").remove();
+  $("body *").append(" ");
   const text = $("body").text().replace(/\s+/g, " ").trim();
   const wordCount = text ? text.split(" ").length : 0;
   if (status < 300 && wordCount < 200) add("content.thin", "LOW", `Only ${wordCount} words of visible text.`, { wordCount });

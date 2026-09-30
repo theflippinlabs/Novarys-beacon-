@@ -16,7 +16,9 @@ export const AI_REFERRER_HOSTS = [
   "chat.deepseek.com",
   "chat.mistral.ai",
 ];
-const SEARCH_HOSTS = [/(^|\.)google\.[a-z.]+$/, /(^|\.)bing\.com$/, /(^|\.)duckduckgo\.com$/, /(^|\.)search\.yahoo\.com$/, /(^|\.)ecosia\.org$/, /(^|\.)yandex\.[a-z]+$/, /(^|\.)baidu\.com$/, /(^|\.)search\.brave\.com$/, /(^|\.)qwant\.com$/];
+/** Exact utm_source values that identify an AI assistant (never prefix matching). */
+const AI_SOURCES = new Set(["chatgpt", "chatgpt.com", "openai", "perplexity", "perplexity.ai", "claude", "claude.ai", "gemini", "copilot", "you.com", "phind", "poe", "meta.ai", "grok", "deepseek", "mistral"]);
+const SEARCH_HOSTS = [/^(www\.)?google\.[a-z.]+$/, /(^|\.)bing\.com$/, /(^|\.)duckduckgo\.com$/, /(^|\.)search\.yahoo\.com$/, /(^|\.)ecosia\.org$/, /(^|\.)yandex\.[a-z]+$/, /(^|\.)baidu\.com$/, /(^|\.)search\.brave\.com$/, /(^|\.)qwant\.com$/];
 const SOCIAL_HOSTS = [/(^|\.)(x|twitter|t)\.(com|co)$/, /(^|\.)linkedin\.com$/, /(^|\.)lnkd\.in$/, /(^|\.)facebook\.com$/, /(^|\.)instagram\.com$/, /(^|\.)tiktok\.com$/, /(^|\.)youtube\.com$/, /(^|\.)reddit\.com$/, /(^|\.)threads\.net$/, /(^|\.)bsky\.app$/, /(^|\.)news\.ycombinator\.com$/];
 
 const matchesHost = (host: string, list: string[]) => list.some((h) => host === h || host.endsWith(`.${h}`));
@@ -45,7 +47,7 @@ export function classifyChannel(input: { referrerHost?: string | null; utm?: Rec
   if (source === "beacon-cross-sell") return "CROSS_SELL";
   if (["cpc", "ppc", "paid", "paid_social", "paidsocial", "display", "cpm"].includes(medium)) return "PAID";
   if (medium === "email" || source === "newsletter") return "EMAIL";
-  if (isAiReferrer(host) || AI_REFERRER_HOSTS.some((h) => source && h.startsWith(source))) return "AI_REFERRAL";
+  if (isAiReferrer(host) || AI_SOURCES.has(source)) return "AI_REFERRAL";
   if (host && SEARCH_HOSTS.some((r) => r.test(host))) return "ORGANIC_SEARCH";
   if (medium === "social" || (host && SOCIAL_HOSTS.some((r) => r.test(host)))) return "SOCIAL";
   if (host && input.ownHosts?.some((h) => host === h || host.endsWith(`.${h}`))) return "DIRECT";

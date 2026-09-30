@@ -28,7 +28,7 @@ export function expandQueryUniverse(g: ProductGraph, opts: { max?: number; seedT
   const seen = new Set<string>();
   const push = (query: string, clusterName: string, rationale: string) => {
     const norm = normalizeQuery(query);
-    const key = [...new Set(tokens(norm))].sort().join(" ");
+    const key = [...new Set(tokens(norm, { keepStop: true }))].sort().join(" ");
     if (!key || seen.has(key) || out.length >= max) return;
     seen.add(key);
     out.push({ query: norm, intent: classifyQuery(norm, [p.name]).intent, clusterName, rationale });

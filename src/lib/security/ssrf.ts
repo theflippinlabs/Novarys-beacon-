@@ -79,7 +79,7 @@ export function assertSafeUrl(raw: string, opts: { allowPorts?: number[] } = {})
   if (!allowed.includes(port) && !allowPrivate()) throw new SsrfError(`Port ${port} is not allowed`);
   const host = url.hostname.replace(/^\[|\]$/g, "");
   if (isIP(host) && isBlockedAddress(host) && !allowPrivate()) throw new SsrfError("Address is not allowed");
-  if (/^(localhost|metadata\.google\.internal)$/i.test(host) && !allowPrivate()) throw new SsrfError("Host is not allowed");
+  if (/^(localhost|.*\.localhost|metadata\.google\.internal)\.?$/i.test(host) && !allowPrivate()) throw new SsrfError("Host is not allowed");
   return url;
 }
 

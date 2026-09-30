@@ -1,0 +1,161 @@
+@import "tailwindcss";
+
+/*
+ * NOVARYS BEACON — minimal brutalist futurism.
+ * Obsidian surfaces, platinum ink, chrome secondaries, controlled gold.
+ * No blue anywhere (including focus rings and links).
+ */
+@theme {
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
+
+  --color-obsidian: #09090a;
+  --color-panel: #111113;
+  --color-panel-2: #17171a;
+  --color-line: #242428;
+  --color-line-strong: #36363c;
+  --color-platinum: #e8e6e1;
+  --color-chrome: #a3a3a8;
+  --color-muted: #6f6f76;
+  --color-gold: #c9a43a;
+  --color-gold-bright: #e0bd55;
+  --color-gold-dim: #6e5a22;
+
+  /* Status (reserved; always paired with a label/icon) */
+  --color-crit: #e0503f;
+  --color-warn: #d9a13b;
+  --color-ok: #86b58f;
+
+  /* Validated categorical order (dark surface #111113): gold, magenta, green, violet, red */
+  --color-s1: #a8841a;
+  --color-s2: #c05aa8;
+  --color-s3: #3e9a63;
+  --color-s4: #8f7fd0;
+  --color-s5: #d2583f;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+    background: var(--color-obsidian);
+  }
+  body {
+    background: var(--color-obsidian);
+    color: var(--color-platinum);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: "ss01", "tnum";
+  }
+  a {
+    color: inherit;
+  }
+  ::selection {
+    background: var(--color-gold-dim);
+    color: var(--color-platinum);
+  }
+  :focus-visible {
+    outline: 1px solid var(--color-gold);
+    outline-offset: 2px;
+  }
+  input,
+  select,
+  textarea {
+    background: var(--color-obsidian);
+    border: 1px solid var(--color-line-strong);
+    color: var(--color-platinum);
+    border-radius: 2px;
+    padding: 0.45rem 0.6rem;
+    font-size: 0.875rem;
+    width: 100%;
+  }
+  input:focus,
+  select:focus,
+  textarea:focus {
+    border-color: var(--color-gold);
+    outline: none;
+  }
+  input[type="checkbox"] {
+    width: auto;
+    accent-color: var(--color-gold);
+  }
+  table {
+    border-collapse: collapse;
+  }
+}
+
+@layer components {
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--color-muted);
+  }
+  .num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+  .grid-bg {
+    background-image: linear-gradient(var(--color-line) 1px, transparent 1px), linear-gradient(90deg, var(--color-line) 1px, transparent 1px);
+    background-size: 48px 48px;
+  }
+  .prose-beacon h1 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin: 0 0 1rem;
+  }
+  .prose-beacon h2 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 1.5rem 0 0.5rem;
+    color: var(--color-platinum);
+  }
+  .prose-beacon h3 {
+    font-size: 0.95rem;
+    font-weight: 600;
+    margin: 1rem 0 0.25rem;
+  }
+  .prose-beacon p,
+  .prose-beacon li {
+    color: var(--color-chrome);
+    line-height: 1.65;
+    font-size: 0.925rem;
+  }
+  .prose-beacon ul,
+  .prose-beacon ol {
+    padding-left: 1.25rem;
+    margin: 0.5rem 0;
+  }
+  .prose-beacon ul {
+    list-style: square;
+  }
+  .prose-beacon ol {
+    list-style: decimal;
+  }
+  .prose-beacon a {
+    color: var(--color-gold-bright);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .prose-beacon blockquote {
+    border-left: 2px solid var(--color-gold-dim);
+    padding-left: 0.9rem;
+    color: var(--color-chrome);
+    margin: 0.75rem 0;
+  }
+  .prose-beacon table {
+    width: 100%;
+    font-size: 0.85rem;
+    margin: 0.75rem 0;
+  }
+  .prose-beacon th,
+  .prose-beacon td {
+    border: 1px solid var(--color-line);
+    padding: 0.4rem 0.6rem;
+    text-align: left;
+  }
+  .prose-beacon code {
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+  }
+}

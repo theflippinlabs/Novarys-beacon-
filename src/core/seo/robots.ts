@@ -37,7 +37,16 @@ function toRegex(pattern: string): RegExp {
 /** Longest-match semantics per RFC 9309. */
 export function isAllowed(rules: RobotsRules, path: string, agent = "*"): boolean {
   const a = agent.toLowerCase();
-  const group = rules.groups.find((g) => g.agents.some((x) => x !== "*" && a.includes(x))) ?? rules.groups.find((g) => g.agents.includes("*"));
+  // Most specific (longest) matching user-agent token wins; "*" is the fallback.
+  let group: RobotsRules["groups"][number] | undefined;
+  let bestLen = 0;
+  for (const g of rules.groups)
+    for (const x of g.agents)
+      if (x !== "*" && a.includes(x) && x.length > bestLen) {
+        group = g;
+        bestLen = x.length;
+      }
+  group ??= rules.groups.find((g) => g.agents.includes("*"));
   if (!group) return true;
   let best: { len: number; allow: boolean } = { len: -1, allow: true };
   for (const p of group.allow) if (p && toRegex(p).test(path) && p.length > best.len) best = { len: p.length, allow: true };
