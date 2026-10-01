@@ -1,37 +1,46 @@
 @import "tailwindcss";
 
 /*
- * NOVARYS BEACON — minimal brutalist futurism.
- * Obsidian surfaces, platinum ink, chrome secondaries, controlled gold.
- * No blue anywhere (including focus rings and links).
+ * NOVARYS BEACON — the colours of the Beacon logo.
+ * Deep navy-black surfaces, chrome ink, electric blue + cyan glow for focus and
+ * navigation, logo gold for primary actions. Values sampled from the logo files.
  */
 @theme {
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
 
-  --color-obsidian: #09090a;
-  --color-panel: #111113;
-  --color-panel-2: #17171a;
-  --color-line: #242428;
-  --color-line-strong: #36363c;
-  --color-platinum: #e8e6e1;
-  --color-chrome: #a3a3a8;
-  --color-muted: #6f6f76;
-  --color-gold: #c9a43a;
-  --color-gold-bright: #e0bd55;
-  --color-gold-dim: #6e5a22;
+  --color-obsidian: #04060c;
+  --color-panel: #0b0f1a;
+  --color-panel-2: #111829;
+  --color-line: #1a2338;
+  --color-line-strong: #2a3756;
+  --color-platinum: #e9ecf1;
+  --color-chrome: #a9b1c2;
+  --color-muted: #6c7690;
+
+  /* Logo blues: royal → electric → cyan glow */
+  --color-navy: #09297d;
+  --color-royal: #094ce6;
+  --color-blue: #0d7aec;
+  --color-blue-bright: #1abdf5;
+  --color-cyan: #3feef9;
+
+  /* Logo gold: amber star rays, pale highlight, bronze shadow */
+  --color-gold: #f0b25a;
+  --color-gold-bright: #f5db9b;
+  --color-gold-dim: #7e5a39;
 
   /* Status (reserved; always paired with a label/icon) */
   --color-crit: #e0503f;
   --color-warn: #d9a13b;
   --color-ok: #86b58f;
 
-  /* Validated categorical order (dark surface #111113): gold, magenta, green, violet, red */
-  --color-s1: #a8841a;
-  --color-s2: #c05aa8;
-  --color-s3: #3e9a63;
-  --color-s4: #8f7fd0;
-  --color-s5: #d2583f;
+  /* Validated categorical order (dark surface #0b0f1a): blue, gold, cyan, red, violet */
+  --color-s1: #2a7ef0;
+  --color-s2: #b8892a;
+  --color-s3: #16a4b8;
+  --color-s4: #d2583f;
+  --color-s5: #a86ad0;
 }
 
 @layer base {
@@ -40,7 +49,11 @@
     background: var(--color-obsidian);
   }
   body {
-    background: var(--color-obsidian);
+    background:
+      radial-gradient(60rem 30rem at 0% -10%, rgb(13 122 236 / 0.10), transparent 70%),
+      radial-gradient(40rem 24rem at 100% 0%, rgb(26 189 245 / 0.06), transparent 70%),
+      var(--color-obsidian);
+    background-attachment: fixed;
     color: var(--color-platinum);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
@@ -50,11 +63,11 @@
     color: inherit;
   }
   ::selection {
-    background: var(--color-gold-dim);
+    background: var(--color-royal);
     color: var(--color-platinum);
   }
   :focus-visible {
-    outline: 1px solid var(--color-gold);
+    outline: 1px solid var(--color-blue-bright);
     outline-offset: 2px;
   }
   input,
@@ -71,12 +84,13 @@
   input:focus,
   select:focus,
   textarea:focus {
-    border-color: var(--color-gold);
+    border-color: var(--color-blue);
+    box-shadow: 0 0 0 3px rgb(13 122 236 / 0.18);
     outline: none;
   }
   input[type="checkbox"] {
     width: auto;
-    accent-color: var(--color-gold);
+    accent-color: var(--color-blue);
   }
   table {
     border-collapse: collapse;
@@ -94,6 +108,21 @@
   .num {
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
+  }
+  .glow-blue {
+    box-shadow: 0 0 0 1px rgb(13 122 236 / 0.35), 0 0 24px -6px rgb(26 189 245 / 0.45);
+  }
+  .text-gradient-chrome {
+    background: linear-gradient(180deg, #ffffff 0%, #c9d1dc 55%, #8a94a6 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .pt-safe {
+    padding-top: env(safe-area-inset-top);
   }
   .grid-bg {
     background-image: linear-gradient(var(--color-line) 1px, transparent 1px), linear-gradient(90deg, var(--color-line) 1px, transparent 1px);
@@ -133,12 +162,12 @@
     list-style: decimal;
   }
   .prose-beacon a {
-    color: var(--color-gold-bright);
+    color: var(--color-blue-bright);
     text-decoration: underline;
     text-underline-offset: 3px;
   }
   .prose-beacon blockquote {
-    border-left: 2px solid var(--color-gold-dim);
+    border-left: 2px solid var(--color-blue);
     padding-left: 0.9rem;
     color: var(--color-chrome);
     margin: 0.75rem 0;

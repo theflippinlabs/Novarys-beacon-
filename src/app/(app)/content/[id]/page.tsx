@@ -56,7 +56,7 @@ export default async function ContentDetail({ params, searchParams }: { params: 
       <Flash searchParams={sp} />
       <ol className="mb-6 flex flex-wrap gap-1">
         {PIPELINE.map((s, i) => (
-          <li key={s} className={cx("border px-2 py-1 font-mono text-[10px] uppercase tracking-wider", asset.status === s ? "border-gold text-platinum" : i < stageIdx ? "border-line-strong text-chrome" : "border-line text-muted")}>
+          <li key={s} className={cx("border px-2 py-1 font-mono text-[10px] uppercase tracking-wider", asset.status === s ? "border-blue-bright text-platinum" : i < stageIdx ? "border-line-strong text-chrome" : "border-line text-muted")}>
             {s.replace(/_/g, " ")}
           </li>
         ))}

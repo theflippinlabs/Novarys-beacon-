@@ -56,7 +56,7 @@ export default async function GeoPage({ params }: { params: Promise<{ slug: stri
           />
           <div className="mt-5 border-t border-line pt-4 text-xs text-chrome">
             Public JSON endpoint:{" "}
-            <a href={entityUrl} className="num text-gold-bright underline underline-offset-4" target="_blank" rel="noreferrer">
+            <a href={entityUrl} className="num text-blue-bright underline underline-offset-4" target="_blank" rel="noreferrer">
               {entityUrl}
             </a>
             <div className="mt-1 text-muted">Only verified, publishable facts are exposed publicly; unverified claims are withheld.</div>

@@ -98,7 +98,7 @@ export default async function DiscoveryPage({ searchParams }: { searchParams: Pr
                           </Td>
                           <Td className="text-right">
                             {pg.contentAssetId ? (
-                              <Link className="eyebrow text-gold hover:text-gold-bright" href={`/content/${pg.contentAssetId}`}>
+                              <Link className="eyebrow text-blue-bright hover:text-cyan" href={`/content/${pg.contentAssetId}`}>
                                 Content →
                               </Link>
                             ) : (
@@ -169,12 +169,12 @@ export default async function DiscoveryPage({ searchParams }: { searchParams: Pr
                 <p className="text-xs text-chrome">{data.sitemapCount} published page(s) are included in the Beacon-hosted sitemap and llms.txt index.</p>
                 <ul className="mt-2 flex flex-col gap-1 text-xs">
                   <li>
-                    <a className="text-gold-bright underline underline-offset-4" href={`/p/${ctx.org.slug}/sitemap.xml`}>
+                    <a className="text-blue-bright underline underline-offset-4" href={`/p/${ctx.org.slug}/sitemap.xml`}>
                       sitemap.xml
                     </a>
                   </li>
                   <li>
-                    <a className="text-gold-bright underline underline-offset-4" href={`/p/${ctx.org.slug}/llms.txt`}>
+                    <a className="text-blue-bright underline underline-offset-4" href={`/p/${ctx.org.slug}/llms.txt`}>
                       llms.txt
                     </a>
                   </li>

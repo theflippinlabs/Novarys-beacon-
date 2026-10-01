@@ -51,7 +51,7 @@ export default async function AuditPage({ params, searchParams }: { params: Prom
         <Panel title="Filter" eyebrow="Severity">
           <div className="flex flex-wrap gap-2">
             {["", "CRITICAL", "HIGH", "MEDIUM", "LOW"].map((s) => (
-              <Link key={s} href={`/discovery/audits/${id}${s ? `?severity=${s}` : ""}`} className={`border px-2 py-1 font-mono text-[10px] uppercase ${(sev ?? "") === s ? "border-gold text-platinum" : "border-line text-muted"}`}>
+              <Link key={s} href={`/discovery/audits/${id}${s ? `?severity=${s}` : ""}`} className={`border px-2 py-1 font-mono text-[10px] uppercase ${(sev ?? "") === s ? "border-blue-bright text-platinum" : "border-line text-muted"}`}>
                 {s || "All"}
               </Link>
             ))}

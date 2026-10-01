@@ -15,5 +15,5 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - Data access in pages/actions goes through `withOrg` (`pageData` / `act`). Use `asSystem` only for trusted system paths (auth, worker, key-resolved public APIs).
 - Never issue concurrent queries on one transaction (`Promise.all` on `tx`); use sequential awaits or `inSequence`.
 - Never invent product claims or show fabricated numbers; unconnected data renders as "Not connected".
-- No blue in the UI; chart series use `--color-s1…s5` in order.
+- UI colours follow the Beacon logo (navy-black surfaces, electric blue/cyan for focus and navigation, logo gold for primary actions); chart series use `--color-s1…s5` in order (validated palette — re-validate if you change it).
 - Checks: `pnpm typecheck && pnpm lint && pnpm test && pnpm test:integration && pnpm build && pnpm test:e2e`.

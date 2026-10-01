@@ -62,7 +62,7 @@ export default async function DistributionPage({ searchParams }: { searchParams:
                       <div key={t.id} className="border border-line bg-panel p-2.5">
                         <div className="text-xs text-platinum">
                           {t.url ? (
-                            <a href={t.url} target="_blank" rel="noreferrer noopener" className="hover:text-gold-bright">
+                            <a href={t.url} target="_blank" rel="noreferrer noopener" className="hover:text-blue-bright">
                               {t.name}
                             </a>
                           ) : (
@@ -98,7 +98,7 @@ export default async function DistributionPage({ searchParams }: { searchParams:
                           <form action={approveSubmissionAction} className="mt-1">
                             <HiddenBack path={back} />
                             <input type="hidden" name="id" value={t.id} />
-                            <button className="font-mono text-[9px] uppercase text-gold hover:text-gold-bright">✓ approve submission</button>
+                            <button className="font-mono text-[9px] uppercase text-blue-bright hover:text-cyan">✓ approve submission</button>
                           </form>
                         )}
                       </div>

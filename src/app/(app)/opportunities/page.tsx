@@ -69,7 +69,7 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
                     <StatusBadge status={o.status} />
                     <span className="text-xs text-muted">{productName}</span>
                   </div>
-                  <Link href={`/opportunities/${o.id}`} className="mt-2 block text-base text-platinum hover:text-gold-bright">
+                  <Link href={`/opportunities/${o.id}`} className="mt-2 block text-base text-platinum hover:text-blue-bright">
                     {o.title}
                   </Link>
                   <p className="mt-1 text-sm text-chrome">{o.problem}</p>

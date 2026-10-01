@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 /** Horizontal bar list: one hue (magnitude), value at the bar tip, native tooltip per bar. */
-export function BarList({ rows, format = (v: number) => v.toLocaleString("en-GB"), color = "var(--color-gold)", empty = "No data yet." }: { rows: { label: ReactNode; value: number; key: string; hint?: string }[]; format?: (v: number) => string; color?: string; empty?: string }) {
+export function BarList({ rows, format = (v: number) => v.toLocaleString("en-GB"), color = "var(--color-blue)", empty = "No data yet." }: { rows: { label: ReactNode; value: number; key: string; hint?: string }[]; format?: (v: number) => string; color?: string; empty?: string }) {
   if (!rows.length) return <div className="text-sm text-muted">{empty}</div>;
   const max = Math.max(...rows.map((r) => Math.abs(r.value)), 1);
   return (
@@ -28,7 +28,7 @@ export function FunnelBars({ steps }: { steps: { step: string; visitors: number;
         <li key={s.step} className="grid grid-cols-[9rem_1fr_4.5rem] items-center gap-3">
           <span className="eyebrow text-chrome">{s.step.replace(/_/g, " ")}</span>
           <span className="flex items-center gap-2">
-            <span className="h-4 rounded-r-[4px] bg-gold" style={{ width: `${Math.max(0.5, (s.visitors / max) * 100)}%`, maxWidth: "calc(100% - 3.5rem)" }} title={`${s.visitors} unique`} />
+            <span className="h-4 rounded-r-[4px] bg-blue" style={{ width: `${Math.max(0.5, (s.visitors / max) * 100)}%`, maxWidth: "calc(100% - 3.5rem)" }} title={`${s.visitors} unique`} />
             <span className="num text-xs text-platinum">{s.visitors.toLocaleString("en-GB")}</span>
           </span>
           <span className="num text-right text-xs text-muted">{s.conversionFromPrev === null ? "—" : `${(s.conversionFromPrev * 100).toFixed(1)}%`}</span>
@@ -38,7 +38,7 @@ export function FunnelBars({ steps }: { steps: { step: string; visitors: number;
   );
 }
 
-export function Sparkline({ values, color = "var(--color-gold)" }: { values: number[]; color?: string }) {
+export function Sparkline({ values, color = "var(--color-blue-bright)" }: { values: number[]; color?: string }) {
   if (values.length < 2) return null;
   const max = Math.max(...values, 1);
   const W = 100;

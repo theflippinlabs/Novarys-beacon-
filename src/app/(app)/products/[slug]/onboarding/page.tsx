@@ -41,7 +41,7 @@ export default async function OnboardingPage({ params, searchParams }: { params:
             <li key={s}>
               <Link
                 href={`/products/${p.slug}/onboarding?step=${i + 1}`}
-                className={cx("flex items-center gap-3 whitespace-nowrap border-l-2 px-3 py-1.5 text-xs", i + 1 === step ? "border-gold text-platinum" : i + 1 < Math.max(p.onboardingStep, 1) ? "border-line-strong text-chrome" : "border-transparent text-muted")}
+                className={cx("flex items-center gap-3 whitespace-nowrap border-l-2 px-3 py-1.5 text-xs", i + 1 === step ? "border-blue-bright text-platinum" : i + 1 < Math.max(p.onboardingStep, 1) ? "border-line-strong text-chrome" : "border-transparent text-muted")}
               >
                 <span className="num text-[10px] text-muted">{String(i + 1).padStart(2, "0")}</span>
                 {s}
@@ -246,7 +246,7 @@ export default async function OnboardingPage({ params, searchParams }: { params:
                 </Field>
                 <p className="text-sm text-chrome">
                   Finishing runs <span className="text-platinum">product analysis</span>: entity model → query map → content-gap analysis → suggested pages → GEO/AEO questions → distribution suggestions → opportunities → Beacon score. Create tracking keys on the product’s{" "}
-                  <Link className="text-gold-bright underline underline-offset-4" href={`/products/${p.slug}/tracking`}>
+                  <Link className="text-blue-bright underline underline-offset-4" href={`/products/${p.slug}/tracking`}>
                     tracking page
                   </Link>
                   .

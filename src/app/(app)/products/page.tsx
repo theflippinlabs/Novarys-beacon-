@@ -48,7 +48,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
                 {data.map(({ p, completeness, score }) => (
                   <tr key={p.id}>
                     <Td>
-                      <Link href={`/products/${p.slug}`} className="font-medium text-platinum hover:text-gold-bright">
+                      <Link href={`/products/${p.slug}`} className="font-medium text-platinum hover:text-blue-bright">
                         {p.name}
                       </Link>
                       <div className="text-xs text-muted">{p.category ?? "Category unknown"}</div>
@@ -61,7 +61,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
                     <Td className="num">{score === null ? <span className="text-muted">not computed</span> : <span className="text-platinum">{Math.round(score)}</span>}</Td>
                     <Td className="text-right">
                       {!p.onboardingCompletedAt ? (
-                        <Link className="eyebrow text-gold hover:text-gold-bright" href={`/products/${p.slug}/onboarding?step=${Math.max(1, p.onboardingStep)}`}>
+                        <Link className="eyebrow text-blue-bright hover:text-cyan" href={`/products/${p.slug}/onboarding?step=${Math.max(1, p.onboardingStep)}`}>
                           Continue onboarding →
                         </Link>
                       ) : (

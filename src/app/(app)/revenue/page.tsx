@@ -166,7 +166,7 @@ export default async function RevenuePage({ searchParams }: { searchParams: Prom
               <Th>Attributable to Beacon</Th>
               <Td>
                 MRR of active and past-due subscriptions whose acquisition channel is one Beacon operates: {BEACON_CHANNELS.map((c) => label(c).toLowerCase()).join(", ")}. The channel is fixed at acquisition using the organisation’s attribution rules (see{" "}
-                <Link href="/conversions" className="text-gold hover:text-gold-bright">
+                <Link href="/conversions" className="text-blue-bright hover:text-cyan">
                   Conversions
                 </Link>
                 ). Paid, social, email, direct and other channels are not counted.

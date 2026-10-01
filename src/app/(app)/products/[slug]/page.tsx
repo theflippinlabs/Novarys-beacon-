@@ -190,7 +190,7 @@ export default async function ProductDashboard({ params, searchParams }: { param
               {data.opps.map((o) => (
                 <li key={o.id} className="flex items-start justify-between gap-3 border-b border-line/60 px-4 py-3 last:border-0">
                   <div className="min-w-0">
-                    <Link href={`/opportunities/${o.id}`} className="text-sm text-platinum hover:text-gold-bright">
+                    <Link href={`/opportunities/${o.id}`} className="text-sm text-platinum hover:text-blue-bright">
                       {o.title}
                     </Link>
                     <div className="text-xs text-muted">{o.problem}</div>

@@ -7,7 +7,7 @@ export function AuthFrame({ children, subtitle }: { children: React.ReactNode; s
         <div className="eyebrow text-gold">Novarys / Beacon</div>
         <Image src="/brand/beacon-logo.webp" alt="Novarys Beacon" width={1200} height={675} priority className="h-auto w-full max-w-lg" />
         <div>
-          <div className="mb-6 h-px w-24 bg-gold" />
+          <div className="mb-6 h-px w-24 bg-gradient-to-r from-blue-bright via-gold to-transparent" />
           <h1 className="max-w-md text-5xl font-semibold leading-[1.05] tracking-tight">
             Build once.
             <br />

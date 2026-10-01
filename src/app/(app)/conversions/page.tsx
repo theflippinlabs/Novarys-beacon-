@@ -189,7 +189,7 @@ export default async function ConversionsPage({ searchParams }: { searchParams: 
                 </Table>
               ) : (
                 <p className="p-4 text-sm text-muted">
-                  No CTA clicks recorded. Mark conversion links with <code className="text-chrome">data-beacon-cta</code> — see the <Link href={trackingHref} className="text-gold hover:text-gold-bright">Tracking tab</Link>.
+                  No CTA clicks recorded. Mark conversion links with <code className="text-chrome">data-beacon-cta</code> — see the <Link href={trackingHref} className="text-blue-bright hover:text-cyan">Tracking tab</Link>.
                 </p>
               )}
             </Panel>
@@ -215,7 +215,7 @@ export default async function ConversionsPage({ searchParams }: { searchParams: 
               {data.content.map((c) => (
                 <tr key={c.id}>
                   <Td>
-                    <Link href={`/content/${c.id}`} className="text-platinum hover:text-gold-bright">
+                    <Link href={`/content/${c.id}`} className="text-platinum hover:text-blue-bright">
                       {c.title}
                     </Link>
                     <div className="text-[11px] text-muted">
@@ -281,7 +281,7 @@ export default async function ConversionsPage({ searchParams }: { searchParams: 
           </Table>
           <p className="border-t border-line px-4 py-3 text-xs text-muted">
             Install snippets and API keys live on each product’s{" "}
-            <Link href={trackingHref} className="text-gold hover:text-gold-bright">
+            <Link href={trackingHref} className="text-blue-bright hover:text-cyan">
               Tracking tab
             </Link>
             .

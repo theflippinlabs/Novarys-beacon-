@@ -20,7 +20,7 @@ export function PageHeader({ eyebrow, title, description, actions }: { eyebrow?:
 
 export function Panel({ title, eyebrow, actions, children, className, pad = true }: { title?: ReactNode; eyebrow?: string; actions?: ReactNode; children: ReactNode; className?: string; pad?: boolean }) {
   return (
-    <section className={cx("min-w-0 border border-line bg-panel", className)}>
+    <section className={cx("min-w-0 border border-line bg-panel/90", className)}>
       {(title || eyebrow || actions) && (
         <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
           <div className="min-w-0">
@@ -177,8 +177,8 @@ export function EmptyState({ title, children, action }: { title: string; childre
 
 const BTN = {
   primary: "bg-platinum text-obsidian hover:bg-white border-platinum",
-  gold: "bg-gold text-obsidian hover:bg-gold-bright border-gold",
-  ghost: "bg-transparent text-platinum border-line-strong hover:border-chrome",
+  gold: "bg-gradient-to-b from-gold-bright to-gold text-obsidian hover:brightness-110 border-gold",
+  ghost: "bg-transparent text-platinum border-line-strong hover:border-blue-bright",
   danger: "bg-transparent text-crit border-crit/50 hover:border-crit",
 } as const;
 
@@ -252,7 +252,7 @@ export function Tabs({ items, active }: { items: { href: string; label: string; 
         <Link
           key={t.key}
           href={t.href}
-          className={cx("whitespace-nowrap border-b-2 px-3 py-2 font-mono text-[11px] uppercase tracking-[0.14em]", t.key === active ? "border-gold text-platinum" : "border-transparent text-muted hover:text-chrome")}
+          className={cx("whitespace-nowrap border-b-2 px-3 py-2 font-mono text-[11px] uppercase tracking-[0.14em]", t.key === active ? "border-blue-bright text-platinum" : "border-transparent text-muted hover:text-chrome")}
         >
           {t.label}
         </Link>
@@ -266,7 +266,7 @@ export function Meter({ value, max, label }: { value: number; max: number; label
   return (
     <div className="flex items-center gap-3" aria-label={label}>
       <div className="h-1.5 flex-1 bg-line">
-        <div className="h-full bg-gold" style={{ width: `${pct}%` }} />
+        <div className="h-full bg-gradient-to-r from-royal to-blue-bright" style={{ width: `${pct}%` }} />
       </div>
       <span className="num w-16 text-right text-xs text-chrome">
         {Math.round(value * 10) / 10}/{max}
