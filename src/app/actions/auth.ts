@@ -6,7 +6,7 @@ import { z } from "zod";
 import { authenticate, createOrganizationWithOwner, createSession, destroySession, hasAnyUser, SESSION_TTL_MS } from "@/lib/auth/service";
 import { SESSION_COOKIE, clientIpHash } from "@/lib/auth/session";
 import { rateLimit } from "@/lib/security/rate-limit";
-import { hmac } from "@/lib/security/crypto";
+import { hmac, safeEqual } from "@/lib/security/crypto";
 import { slugify } from "@/core/util/text";
 
 async function setSessionCookie(token: string) {
@@ -54,7 +54,15 @@ const SetupSchema = z.object({
 /** First-run bootstrap: only available while no user exists. */
 export async function setupAction(fd: FormData) {
   if (await hasAnyUser()) redirect("/login");
-  const parsed = SetupSchema.safeParse(Object.fromEntries(fd.entries()));
+  // When BEACON_SETUP_TOKEN is set (required in production), first-run setup needs it,
+  // so nobody else can claim a freshly deployed instance.
+  const expected = process.env.BEACON_SETUP_TOKEN;
+  if (expected) {
+    const given = String(fd.get("setupToken") ?? "");
+    if (!safeEqual(given, expected)) redirect("/setup?error=Invalid setup token.");
+  } else if (process.env.NODE_ENV === "production") redirect("/setup?error=Set BEACON_SETUP_TOKEN to enable first-run setup.");
+  const { setupToken: _t, ...fields } = Object.fromEntries(fd.entries());
+  const parsed = SetupSchema.safeParse(fields);
   if (!parsed.success) redirect(`/setup?error=${encodeURIComponent(parsed.error.issues[0].path.join(".") + ": " + parsed.error.issues[0].message)}`);
   const ipHash = await clientIpHash();
   if (!(await rateLimit(`setup:${ipHash}`, 5, 3600)).allowed) redirect("/setup?error=Too many attempts.");

@@ -14,6 +14,11 @@ export default async function SetupPage({ searchParams }: { searchParams: Promis
     <AuthFrame subtitle="First run: create your organisation and owner account. This page disappears once an account exists.">
       <Flash searchParams={sp} />
       <form action={setupAction} className="flex flex-col gap-4">
+        {process.env.BEACON_SETUP_TOKEN && (
+          <Field label="Setup token" hint="One-time token from the deployment environment (BEACON_SETUP_TOKEN).">
+            <input name="setupToken" type="password" required autoComplete="off" defaultValue={typeof sp.token === "string" ? sp.token : ""} />
+          </Field>
+        )}
         <Field label="Organisation">
           <input name="orgName" required defaultValue="Novarys" maxLength={80} />
         </Field>
