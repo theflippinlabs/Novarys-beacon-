@@ -27,6 +27,7 @@ export const JOB_TYPES = [
   "reports.generate",
   "notifications.evaluate",
   "notifications.deliver",
+  "competitor_watch.check",
 ] as const;
 export type JobType = (typeof JOB_TYPES)[number];
 
@@ -73,6 +74,7 @@ export const JOB_CONCURRENCY: Partial<Record<JobType, number>> = {
   "product.analyze": 1,
   "search.backfill": 1,
   "sources.check": 1,
+  "competitor_watch.check": 1,
 };
 
 /** A RUNNING job whose heartbeat (or lock) is older than this is stale: `recoverStaleJobs` reclaims it and it no longer counts against a cap. */

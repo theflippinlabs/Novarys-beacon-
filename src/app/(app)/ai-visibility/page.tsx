@@ -13,6 +13,8 @@ import { enumLabel } from "@/i18n/core";
 import { getI18n, getT } from "@/i18n/server";
 import type { Metadata } from "next";
 import { CitationSources, CompetitorSection } from "./sections";
+import { WatchedPages } from "./watch";
+import { listWatches, watchableCompetitors } from "@/services/competitor-watch";
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getT();
@@ -38,7 +40,9 @@ export default async function AiVisibilityPage({ searchParams }: { searchParams:
     const domains = await citationDomains(tx, ctx.org.id, { productId: product?.id });
     const competitors = await competitorIntel(tx, ctx.org.id, { productId: product?.id });
     const providers = (await availableProviders(tx, ctx.org.id)).map((p) => `${p.label} (${p.model})`);
-    return { prods, product, summaries, trend, recent: recent.map((r) => r.t), domains, competitors, providers };
+    const watches = await listWatches(tx, ctx.org.id);
+    const watchable = await watchableCompetitors(tx, ctx.org.id);
+    return { prods, product, summaries, trend, recent: recent.map((r) => r.t), domains, competitors, providers, watches, watchable };
   });
   const back = `/ai-visibility${f.product ? `?product=${encodeURIComponent(f.product)}` : ""}`;
   const subject = data.product?.name ?? t("the organisation");
@@ -181,6 +185,7 @@ export default async function AiVisibilityPage({ searchParams }: { searchParams:
 
       <CitationSources domains={data.domains} productName={data.product?.name ?? null} />
       <CompetitorSection items={data.competitors} subject={subject} back={back} canEdit={can("query:write")} />
+      <WatchedPages watches={data.watches} competitors={data.watchable} back={back} canEdit={can("query:write")} canRun={can("job:run")} />
 
       <Panel title={t("Latest observations")} eyebrow={t("Raw samples")} className="mt-6">
         {data.recent.length ? (

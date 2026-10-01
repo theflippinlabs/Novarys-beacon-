@@ -15,6 +15,7 @@ export const NOTIFICATION_KINDS = [
   "CONTENT_AWAITING_APPROVAL",
   "CONVERSION_ANOMALY",
   "HIGH_PRIORITY_OPPORTUNITY",
+  "COMPETITOR_PAGE_CHANGED",
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 export const NOTIFICATION_CHANNELS = ["IN_APP", "EMAIL", "WEBHOOK"] as const;
@@ -31,6 +32,7 @@ export const KIND_LABELS: Record<NotificationKind, string> = {
   CONTENT_AWAITING_APPROVAL: "Content awaiting approval",
   CONVERSION_ANOMALY: "Conversion anomaly",
   HIGH_PRIORITY_OPPORTUNITY: "High-priority opportunity",
+  COMPETITOR_PAGE_CHANGED: "Competitor page changed",
 };
 
 /** Digest titles per kind (`{n}` = number of signals in the digest). */
@@ -43,6 +45,7 @@ export const KIND_TITLES: Record<NotificationKind, string> = {
   CONTENT_AWAITING_APPROVAL: "Drafts awaiting approval: {n}",
   CONVERSION_ANOMALY: "Conversion anomalies: {n}",
   HIGH_PRIORITY_OPPORTUNITY: "New high-priority opportunities: {n}",
+  COMPETITOR_PAGE_CHANGED: "Competitor pages changed, to review: {n}",
 };
 
 /** Item templates (English keys, rendered through t()). */
@@ -56,6 +59,7 @@ export const ITEM_TEMPLATES = [
   "{title} is awaiting approval",
   "Conversions on {day}: {value} vs a 28-day average of {mean} (z = {z})",
   "{title} (priority {priority})",
+  "{competitor}: {url} changed ({added} line(s) added, {removed} removed). Review it before updating any fact.",
 ] as const;
 
 /** Item variables for display: a `status` variable is an enum value and is translated like every enum label. */
@@ -72,6 +76,7 @@ export const KIND_LINKS: Record<NotificationKind, string> = {
   CONTENT_AWAITING_APPROVAL: "/content?status=HUMAN_APPROVAL",
   CONVERSION_ANOMALY: "/conversions",
   HIGH_PRIORITY_OPPORTUNITY: "/opportunities?potential=HIGH",
+  COMPETITOR_PAGE_CHANGED: "/ai-visibility#watched-pages",
 };
 
 export type Thresholds = {

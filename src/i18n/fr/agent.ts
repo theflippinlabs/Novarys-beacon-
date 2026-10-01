@@ -38,4 +38,5 @@ export const fr: Record<string, string> = {
   "Adding a distribution target": "Ajout d’une cible de distribution",
   "Updating a distribution target": "Mise à jour d’une cible de distribution",
   "Queuing AI visibility tests": "Mise en file des tests de visibilité IA",
+  "Reading competitor page changes": "Lecture des changements de pages concurrentes",
 };

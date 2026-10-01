@@ -23,7 +23,8 @@ import { purgeExpiredSessions, purgeLoginThrottle } from "@/lib/auth/service";
 import { isoDay } from "@/core/util/text";
 import { generateBriefing } from "@/services/briefings";
 import { generateWeeklyReport } from "@/services/reports";
-import { evaluateNotifications } from "@/services/notifications";
+import { evaluateNotifications, type Delivery } from "@/services/notifications";
+import { orgsWithActiveWatches, runCompetitorWatch } from "@/services/competitor-watch";
 import { deliverEmail, deliverWebhook, PermanentDeliveryError } from "@/services/notification-delivery";
 import { emailConfig } from "@/integrations/email";
 import { enqueue, NonRetryableError, purgeFinishedJobs, type Job, type JobContext, type JobType } from "./queue";
@@ -32,6 +33,18 @@ import { enqueue, NonRetryableError, purgeFinishedJobs, type Job, type JobContex
 const evaluateAfter = (orgId: string, job: Job) => enqueue("notifications.evaluate", {}, { organizationId: orgId, idempotencyKey: `notif-eval:${job.id}`, runAt: new Date(Date.now() + 60_000) });
 
 type Handler = (job: Job, ctx: JobContext) => Promise<unknown>;
+
+/** Queue email and webhook deliveries of digests that were just committed (a little later, so same-run signals are merged). */
+async function enqueueDeliveries(orgId: string, deliveries: Delivery[]) {
+  const runAt = new Date(Date.now() + 2 * 60_000);
+  for (const d of deliveries)
+    await enqueue("notifications.deliver", d.channel === "WEBHOOK" ? { channel: d.channel, notificationId: d.notificationId, webhookId: d.webhookId } : { channel: d.channel, notificationId: d.notificationId }, {
+      organizationId: orgId,
+      idempotencyKey: `notif-deliver:${d.channel}:${d.notificationId}:${d.channel === "WEBHOOK" ? d.webhookId : d.userId}`,
+      runAt,
+      maxAttempts: 6,
+    });
+}
 
 const orgOf = (job: Job) => {
   if (!job.organizationId) throw new NonRetryableError("Job has no organization");
@@ -158,15 +171,8 @@ export const HANDLERS: Record<JobType, Handler> = {
     const orgId = orgOf(job);
     const emailConfigured = emailConfig().configured;
     const res = await evaluateNotifications(runner(orgId), orgId, { emailConfigured });
-    // Deliveries start after the digests are committed, a little later so same-run signals are merged.
-    const runAt = new Date(Date.now() + 2 * 60_000);
-    for (const d of res.deliveries)
-      await enqueue("notifications.deliver", d.channel === "WEBHOOK" ? { channel: d.channel, notificationId: d.notificationId, webhookId: d.webhookId } : { channel: d.channel, notificationId: d.notificationId }, {
-        organizationId: orgId,
-        idempotencyKey: `notif-deliver:${d.channel}:${d.notificationId}:${d.channel === "WEBHOOK" ? d.webhookId : d.userId}`,
-        runAt,
-        maxAttempts: 6,
-      });
+    // Deliveries start after the digests are committed.
+    await enqueueDeliveries(orgId, res.deliveries);
     return { signals: res.signals, fresh: res.fresh, digests: res.digests, deliveries: res.deliveries.length };
   },
   "notifications.deliver": async (job) => {
@@ -179,6 +185,14 @@ export const HANDLERS: Record<JobType, Handler> = {
       throw e;
     }
     throw new NonRetryableError("Unknown notification channel");
+  },
+  "competitor_watch.check": async (job, ctx) => {
+    // Robots-compliant check of watched competitor pages (one page each, outside any transaction); changes are only notified for human review.
+    const orgId = orgOf(job);
+    const watchIds = typeof job.payload.watchId === "string" ? [job.payload.watchId] : undefined;
+    const res = await runCompetitorWatch(beatingRunner(orgId, ctx), orgId, { watchIds, emailConfigured: emailConfig().configured, onProgress: () => void ctx.heartbeat().catch(() => undefined) });
+    await enqueueDeliveries(orgId, res.deliveries);
+    return { checked: res.checked, ok: res.ok, baselines: res.baselines, changed: res.changed, blocked: res.blocked, failed: res.failed, skipped: res.skipped, deliveries: res.deliveries.length };
   },
   "maintenance.cleanup": async () => {
     await purgeRateLimitBuckets();
@@ -205,6 +219,7 @@ export async function scheduleRecurring(now = new Date()) {
   for (const d of await asSystem((tx) => dueMeasurements(tx, day)))
     await enqueue("recommendation.measure", { recommendationId: d.id }, { organizationId: d.organizationId, idempotencyKey: `measure-sweep:${d.id}:${day}` });
   const orgs = await asSystem((tx) => tx.select({ id: organizations.id }).from(organizations));
+  const watching = new Set(await asSystem((tx) => orgsWithActiveWatches(tx)));
   for (const o of orgs) {
     // CONNECTED daily; ERROR again after a back-off; DISABLED and EXPIRED wait for a human (see core/integrations/health).
     const integ = await asSystem((tx) => tx.select().from(integrations).where(and(eq(integrations.organizationId, o.id), inArray(integrations.status, ["CONNECTED", "ERROR"]))));
@@ -220,6 +235,8 @@ export async function scheduleRecurring(now = new Date()) {
     await enqueue("reports.generate", {}, { organizationId: o.id, idempotencyKey: `report-weekly:${o.id}:${week}` });
     await enqueue("notifications.evaluate", {}, { organizationId: o.id, idempotencyKey: `notif-eval:${o.id}:${day}` });
     await enqueue("sources.check", {}, { organizationId: o.id, idempotencyKey: `sources:${o.id}:${week}` });
+    // Weekly competitor page watch (only pages not checked for 6 days are fetched).
+    if (watching.has(o.id)) await enqueue("competitor_watch.check", {}, { organizationId: o.id, idempotencyKey: `cwatch:${o.id}:${week}` });
     // Weekly technical audit of every product whose own domain is verified.
     for (const productId of await asSystem((tx) => productsWithVerifiedDomain(tx, o.id)))
       await enqueue("seo.audit", { productId, scheduled: true }, { organizationId: o.id, idempotencyKey: `audit-weekly:${productId}:${week}` });

@@ -127,6 +127,20 @@
       "when": 1790867216352,
       "tag": "0017_schema_snapshot_sync",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1790867276352,
+      "tag": "0018_competitor_watch",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1790881675485,
+      "tag": "0019_schema_snapshot_sync",
+      "breakpoints": true
     }
   ]
 }

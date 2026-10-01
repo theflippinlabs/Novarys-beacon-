@@ -36,6 +36,7 @@ import type { ExecutedRef, ExecutionPlan, MeasurementSnapshot, RecommendationOut
 import type { ExperimentArm } from "@/core/experiments/stats";
 import type { StoredOnboardingSteps } from "@/core/onboarding/steps";
 import type { LaunchBaseline, LaunchMode } from "@/core/launch/checklist";
+import type { WatchDiff, WatchKind, WatchStatus } from "@/core/competitors/watch";
 
 const id = () => uuid("id").primaryKey().defaultRandom();
 const orgId = () =>
@@ -2037,6 +2038,7 @@ export const notificationKindEnum = pgEnum("notification_kind", [
   "CONTENT_AWAITING_APPROVAL",
   "CONVERSION_ANOMALY",
   "HIGH_PRIORITY_OPPORTUNITY",
+  "COMPETITOR_PAGE_CHANGED",
 ]);
 export const notificationChannelEnum = pgEnum("notification_channel", ["IN_APP", "EMAIL", "WEBHOOK"]);
 export const reportKindEnum = pgEnum("report_kind", ["WEEKLY"]);
@@ -2147,6 +2149,73 @@ export const notificationWebhooks = pgTable(
   (t) => [index("notification_webhooks_org_idx").on(t.organizationId, t.active)],
 );
 
+// ─── Competitor page watch (wave 4a) ─────────────────────────────────────
+/**
+ * One watched competitor page (pricing first). Fetched weekly (robots.txt
+ * respected, one page, no crawling beyond it); `last_text` keeps the
+ * normalised main text for the next diff. A change never updates a fact:
+ * it stores a snapshot and notifies members for human review.
+ */
+export const competitorWatches = pgTable(
+  "competitor_watches",
+  {
+    id: id(),
+    organizationId: orgId(),
+    competitorId: uuid("competitor_id")
+      .notNull()
+      .references(() => competitors.id, { onDelete: "cascade" }),
+    url: text("url").notNull(),
+    kind: text("kind").$type<WatchKind>().notNull().default("PRICING"),
+    active: boolean("active").notNull().default(true),
+    status: text("status").$type<WatchStatus>().notNull().default("PENDING"),
+    httpStatus: integer("http_status"),
+    lastFetchedAt: timestamp("last_fetched_at", { withTimezone: true }),
+    lastSuccessAt: timestamp("last_success_at", { withTimezone: true }),
+    lastChangedAt: timestamp("last_changed_at", { withTimezone: true }),
+    contentHash: text("content_hash"),
+    excerpt: text("excerpt"),
+    lastText: text("last_text"),
+    finalUrl: text("final_url"),
+    error: text("error"),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex("competitor_watches_org_url_uq").on(t.organizationId, t.url),
+    index("competitor_watches_due_idx").on(t.organizationId, t.active, t.lastFetchedAt),
+    index("competitor_watches_competitor_idx").on(t.competitorId),
+    check("competitor_watches_kind_ck", sql`${t.kind} IN ('PRICING', 'FEATURES', 'HOME', 'OTHER')`),
+    check("competitor_watches_status_ck", sql`${t.status} IN ('PENDING', 'OK', 'BLOCKED_BY_ROBOTS', 'HTTP_ERROR', 'NOT_HTML', 'FETCH_ERROR')`),
+  ],
+);
+
+/** History of a watched page: the first successful fetch (BASELINE) and every content change (CHANGED, with a factual diff summary). */
+export const competitorWatchSnapshots = pgTable(
+  "competitor_watch_snapshots",
+  {
+    id: id(),
+    organizationId: orgId(),
+    watchId: uuid("watch_id")
+      .notNull()
+      .references(() => competitorWatches.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<"BASELINE" | "CHANGED">().notNull().default("CHANGED"),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
+    contentHash: text("content_hash").notNull(),
+    previousHash: text("previous_hash"),
+    excerpt: text("excerpt").notNull().default(""),
+    /** core/competitors/watch.ts WatchDiff; null for a baseline. */
+    diff: jsonb("diff").$type<WatchDiff | null>(),
+    httpStatus: integer("http_status"),
+    finalUrl: text("final_url"),
+  },
+  (t) => [
+    index("competitor_watch_snapshots_watch_idx").on(t.watchId, t.fetchedAt),
+    index("competitor_watch_snapshots_org_idx").on(t.organizationId, t.fetchedAt),
+    check("competitor_watch_snapshots_kind_ck", sql`${t.kind} IN ('BASELINE', 'CHANGED')`),
+  ],
+);
+
 export const TENANT_TABLES = [
   "memberships",
   "api_keys",
@@ -2215,4 +2284,6 @@ export const TENANT_TABLES = [
   "notification_preferences",
   "notification_webhooks",
   "autopilot_learning",
+  "competitor_watches",
+  "competitor_watch_snapshots",
 ] as const;

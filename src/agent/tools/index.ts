@@ -8,6 +8,7 @@ import { generateOpportunities, getOpportunity, listOpportunities, setOpportunit
 import { getAiVisibility, getAutopilot, getConversionsSummary, getRevenueSummary, queueAiVisibilityTests } from "./growth";
 import { createProductTool, getProduct, listProductPhotos, listProducts, recomputeBeaconScore, setProductLogoTool, updateProductTool } from "./products";
 import { getWorkspaceOverview } from "./overview";
+import { listCompetitorChanges } from "./competitors";
 
 /**
  * Every tool the agent may call. Order is stable (it is part of the cached prompt prefix):
@@ -33,6 +34,7 @@ export const AGENT_TOOLS: AgentTool[] = [
   getConversionsSummary,
   getRevenueSummary,
   getAutopilot,
+  listCompetitorChanges,
   // Write: products & knowledge graph (facts are always saved UNVERIFIED)
   createProductTool,
   updateProductTool,

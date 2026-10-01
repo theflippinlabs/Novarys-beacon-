@@ -285,6 +285,8 @@ test("RBAC: a viewer cannot mutate", async () => {
   await page.fill('input[name="password"]', "viewer-password-123");
   await page.fill('input[name="confirm"]', "viewer-password-123");
   await page.click("text=Create my account and accept →");
+  // Wait for the account to exist (the page leaves the invitation) before dropping the session.
+  await page.waitForURL((u) => !u.pathname.startsWith("/invite/"));
   await page.context().clearCookies();
   await page.goto("/login");
   await page.fill('input[name="email"]', "viewer@beacon.test");
