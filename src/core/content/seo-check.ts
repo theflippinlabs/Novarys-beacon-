@@ -21,9 +21,9 @@ export function seoCheck(input: { type: ContentType; body: string; metaTitle: st
     add("single_h1", h1.length === 1, `${h1.length} H1 heading(s).`);
     add("has_sections", (body.match(/^## .+$/gm) ?? []).length >= 2, "At least two H2 sections structure the page for readers and answer engines.");
     const tl = input.metaTitle?.length ?? 0;
-    add("meta_title", tl >= 15 && tl <= 65, input.metaTitle ? `Meta title ${tl} chars (15–65).` : "Missing meta title.");
+    add("meta_title", tl >= 15 && tl <= 65, input.metaTitle ? `Meta title ${tl} chars (15 to 65).` : "Missing meta title.");
     const dl = input.metaDescription?.length ?? 0;
-    add("meta_description", dl >= 50 && dl <= 160, input.metaDescription ? `Meta description ${dl} chars (50–160).` : "Missing meta description.");
+    add("meta_description", dl >= 50 && dl <= 160, input.metaDescription ? `Meta description ${dl} chars (50 to 160).` : "Missing meta description.");
     const words = body.split(/\s+/).filter(Boolean).length;
     const min = MIN_WORDS[input.type] ?? 120;
     add("depth", words >= min, `${words} words (minimum ${min} for this format).`);

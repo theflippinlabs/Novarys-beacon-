@@ -2,7 +2,7 @@
 
 **Build once. Be found everywhere.**
 
-Beacon is the distribution, discovery and growth engine of the Novarys ecosystem — the control tower that makes every Novarys product discoverable, measurable and commercially actionable. It is operational infrastructure, not an analytics dashboard and not an AI wrapper:
+Beacon is the distribution, discovery and growth engine of the Novarys ecosystem: the control tower that makes every Novarys product discoverable, measurable and commercially actionable. It is operational infrastructure, not an analytics dashboard and not an AI wrapper:
 
 - a **product knowledge graph** (single source of truth, verification-aware, unknowns stay unknown);
 - a **discovery engine** that plans product/feature/use-case/industry/audience/integration/comparison/answer pages behind a publication quality gate;
@@ -54,11 +54,11 @@ Then: verify facts in the **Knowledge graph** tab, create tracking keys in **Tra
 | `POST /api/v1/revenue` | secret | revenue & subscriptions (idempotent) |
 | `GET /api/v1/cross-sell?identityRef=` · `POST /api/v1/cross-sell/event` | secret | ecosystem recommendations |
 | `POST /api/webhooks/stripe/{integrationId}` | Stripe signature | revenue from Stripe |
-| `GET /r/{CODE}` | — | referral links |
-| `POST /api/v1/recommend` · `/ask/{org}` | — (rate-limited) | AI sales agent (verified facts only) |
-| `GET /api/v1/entity/{org}/{product}` | — | machine-readable entity profile |
-| `GET /api/v1/published/{org}/{product}` · `/p/{org}/sitemap.xml` · `/p/{org}/llms.txt` | — | published discovery content |
-| `GET /api/health` | — | liveness/readiness |
+| `GET /r/{CODE}` | none | referral links |
+| `POST /api/v1/recommend` · `/ask/{org}` | none (rate-limited) | AI sales agent (verified facts only) |
+| `GET /api/v1/entity/{org}/{product}` | none | machine-readable entity profile |
+| `GET /api/v1/published/{org}/{product}` · `/p/{org}/sitemap.xml` · `/p/{org}/llms.txt` | none | published discovery content |
+| `GET /api/health` | none | liveness/readiness |
 
 ## Quality gates
 
@@ -66,9 +66,9 @@ Then: verify facts in the **Knowledge graph** tab, create tracking keys in **Tra
 pnpm typecheck
 pnpm lint
 pnpm test                 # unit (core engines, security, adapters)
-pnpm test:integration     # Postgres (RLS, auth, workflows, APIs, webhooks) — uses beacon_test
+pnpm test:integration     # Postgres (RLS, auth, workflows, APIs, webhooks), uses beacon_test
 pnpm build
-pnpm test:e2e             # Playwright journeys — uses beacon_e2e, runs `next dev` with the embedded worker
+pnpm test:e2e             # Playwright journeys, uses beacon_e2e, runs `next dev` with the embedded worker
 pnpm audit:deps
 ```
 

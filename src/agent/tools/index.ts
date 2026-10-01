@@ -33,7 +33,7 @@ export const AGENT_TOOLS: AgentTool[] = [
   getConversionsSummary,
   getRevenueSummary,
   getAutopilot,
-  // Write — products & knowledge graph (facts are always saved UNVERIFIED)
+  // Write: products & knowledge graph (facts are always saved UNVERIFIED)
   createProductTool,
   updateProductTool,
   addProductFacet,
@@ -43,18 +43,18 @@ export const AGENT_TOOLS: AgentTool[] = [
   addCompetitorTool,
   addComparisonFactTool,
   setProductLogoTool,
-  // Write — discovery
+  // Write: discovery
   addQueryTool,
   generateQuerySuggestions,
   syncPagePlanTool,
   queueSeoAudit,
   recomputeBeaconScore,
-  // Write — opportunities & content (never approve or publish)
+  // Write: opportunities & content (never approve or publish)
   generateOpportunities,
   setOpportunityStatusTool,
   createContentDraft,
   regenerateContentDraft,
-  // Write — distribution (never submits externally) & AI visibility
+  // Write: distribution (never submits externally) & AI visibility
   addDistributionTargetTool,
   setDistributionTargetStatus,
   queueAiVisibilityTests,

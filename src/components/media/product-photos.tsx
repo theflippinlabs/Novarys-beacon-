@@ -58,7 +58,7 @@ export async function ProductPhotos({ product, photos, canEdit, back }: { produc
             })}
           </ul>
         ) : (
-          <p className="text-sm text-muted">{t("No photos yet. Add product screenshots, photos or a logo — they can be used on pages and in content.")}</p>
+          <p className="text-sm text-muted">{t("No photos yet. Add product screenshots, photos or a logo to use on pages and in content.")}</p>
         )}
         {externalLogo && (
           <p className="text-xs text-muted">

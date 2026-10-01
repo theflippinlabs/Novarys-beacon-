@@ -27,7 +27,7 @@ export const ONBOARDING_STEPS = [
 ] as const;
 
 /**
- * PRODUCT ANALYSIS — runs after onboarding (as a background job):
+ * PRODUCT ANALYSIS: runs after onboarding (as a background job):
  * entity model → query map → content-gap analysis & suggested pages →
  * GEO/AEO questions → distribution suggestions. The technical audit,
  * opportunities and score are enqueued as follow-up jobs by the handler.
@@ -43,7 +43,7 @@ export async function analyzeProduct(tx: Tx, organizationId: string, productId: 
   let suggested = 0;
   for (const d of DISTRIBUTION_CATALOG) {
     if (existing.some((e) => e.name === d.name)) continue;
-    await tx.insert(distributionTargets).values({ organizationId, productId, kind: d.kind, name: d.name, url: d.url, status: "DISCOVERED", notes: "Suggested from the Beacon venue catalogue — qualify relevance before preparing a submission." });
+    await tx.insert(distributionTargets).values({ organizationId, productId, kind: d.kind, name: d.name, url: d.url, status: "DISCOVERED", notes: "Suggested from the Beacon venue catalogue. Qualify relevance before preparing a submission." });
     suggested++;
   }
   await tx.update(products).set({ onboardingCompletedAt: new Date() }).where(eq(products.id, productId));
@@ -52,7 +52,7 @@ export async function analyzeProduct(tx: Tx, organizationId: string, productId: 
 
 export type ChecklistItem = { label: string; done: boolean; href: string; detail?: string };
 
-/** Launch checklist — every item is derived from real state, nothing is self-reported. */
+/** Launch checklist: every item is derived from real state, nothing is self-reported. */
 export async function launchChecklist(tx: Tx, organizationId: string, productId: string): Promise<ChecklistItem[]> {
   const g = await loadProductGraph(tx, organizationId, productId);
   if (!g) throw new Error("Product not found");

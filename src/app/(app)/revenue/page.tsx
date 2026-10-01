@@ -149,13 +149,13 @@ export default async function RevenuePage({ searchParams }: { searchParams: Prom
                 {data.recent.map(({ e, productName }) => (
                   <tr key={e.id}>
                     <Td className="num text-xs">{e.occurredAt.toISOString().slice(0, 16).replace("T", " ")}</Td>
-                    <Td className="text-xs">{productName ?? "—"}</Td>
+                    <Td className="text-xs">{productName ?? t("n/a")}</Td>
                     <Td>
                       <Badge tone={e.type === "CHURN" || e.type === "REFUND" ? "crit" : e.type === "NEW" ? "ok" : "neutral"}>{evType(e.type)}</Badge>
                     </Td>
                     <Td className="num text-right text-platinum">{money(e.amountCents, e.currency)}</Td>
                     <Td className={`num text-right text-xs ${e.mrrDeltaCents > 0 ? "text-ok" : e.mrrDeltaCents < 0 ? "text-crit" : "text-muted"}`}>
-                      {e.mrrDeltaCents === 0 ? "—" : `${e.mrrDeltaCents > 0 ? "+" : ""}${money(e.mrrDeltaCents, e.currency)}`}
+                      {e.mrrDeltaCents === 0 ? t("n/a") : `${e.mrrDeltaCents > 0 ? "+" : ""}${money(e.mrrDeltaCents, e.currency)}`}
                     </Td>
                     <Td className="num text-xs">{e.currency}</Td>
                     <Td>

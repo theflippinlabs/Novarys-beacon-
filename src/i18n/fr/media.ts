@@ -15,7 +15,7 @@ export const fr: Record<string, string> = {
   "Remove the organisation logo?": "Retirer le logo de l’organisation ?",
   "Delete this image?": "Supprimer cette image ?",
   "Delete this image? It is the current logo and will be removed from the product.": "Supprimer cette image ? C’est le logo actuel : il sera retiré du produit.",
-  "No photos yet. Add product screenshots, photos or a logo — they can be used on pages and in content.":
+  "No photos yet. Add product screenshots, photos or a logo to use on pages and in content.":
     "Aucune photo pour l’instant. Ajoutez des captures d’écran, des photos ou un logo du produit : ils pourront servir dans les pages et les contenus.",
   "No images yet. Uploaded images can be placed in the draft with Markdown.": "Aucune image pour l’instant. Les images envoyées peuvent être placées dans le brouillon en Markdown.",
   "Images are not facts: the fact check reads only their alt text. Save a new version after inserting an image.":
@@ -38,7 +38,7 @@ export const fr: Record<string, string> = {
   "Remove {name}": "Retirer {name}",
   "Only image files can be uploaded.": "Seules les images peuvent être envoyées.",
   "JPEG, PNG, WebP, GIF or HEIC, up to 15 MB each. Location and camera data are removed.": "JPEG, PNG, WebP, GIF ou HEIC, 15 Mo maximum chacune. Les données de localisation et d’appareil photo sont supprimées.",
-  "Too many large photos at once — upload them in smaller batches.": "Trop de photos volumineuses à la fois : envoyez-les en plusieurs fois.",
+  "Too many large photos at once. Upload them in smaller batches.": "Trop de photos volumineuses à la fois : envoyez-les en plusieurs fois.",
 
   // Markdown snippets
   "Copy Markdown": "Copier le Markdown",

@@ -54,7 +54,7 @@ function channelLabel(t: T, locale: Locale, c: string) {
 export default async function ConversionsPage({ searchParams }: { searchParams: Promise<SP> }) {
   const sp = await searchParams;
   const { t, intl, locale } = await getI18n();
-  const pct = (v: number | null) => (v === null ? "—" : formatValue(v, "percent", undefined, intl));
+  const pct = (v: number | null) => (v === null ? t("n/a") : formatValue(v, "percent", undefined, intl));
   const ch = (c: string) => channelLabel(t, locale, c);
   const num = (v: number) => formatValue(v, "count", undefined, intl);
   const days = daysParam(sp);
@@ -95,7 +95,7 @@ export default async function ConversionsPage({ searchParams }: { searchParams: 
       <PageHeader
         eyebrow={t("09 / Conversions")}
         title={t("Conversion engine")}
-        description={t("From first page view to paid subscription, measured from first-party Beacon events. Rates without a denominator are shown as —, never 0%.")}
+        description={t("From first page view to paid subscription, measured from first-party Beacon events. Rates without a denominator are shown as n/a, never 0%.")}
         actions={<RangePicker base={base} days={days} />}
       />
       <Flash searchParams={sp} />
@@ -186,7 +186,7 @@ export default async function ConversionsPage({ searchParams }: { searchParams: 
                     {data.ctas.map((c, i) => (
                       <tr key={`${c.cta_id ?? ""}|${c.page_path ?? ""}|${i}`}>
                         <Td className="num text-xs text-platinum">{c.cta_id ?? <span className="text-muted">{t("unnamed")}</span>}</Td>
-                        <Td className="num text-xs">{c.page_path ?? "—"}</Td>
+                        <Td className="num text-xs">{c.page_path ?? t("n/a")}</Td>
                         <Td className="num text-right text-platinum">{num(c.clicks)}</Td>
                       </tr>
                     ))}
@@ -194,7 +194,7 @@ export default async function ConversionsPage({ searchParams }: { searchParams: 
                 </Table>
               ) : (
                 <p className="p-4 text-sm text-muted">
-                  {t("No CTA clicks recorded. Mark conversion links with")} <code className="text-chrome">data-beacon-cta</code> {t("— see the")} <Link href={trackingHref} className="text-blue-bright hover:text-cyan">{t("Tracking tab")}</Link>.
+                  {t("No CTA clicks recorded. Mark conversion links with")} <code className="text-chrome">data-beacon-cta</code> {t("(see the")} <Link href={trackingHref} className="text-blue-bright hover:text-cyan">{t("Tracking tab")}</Link>).
                 </p>
               )}
             </Panel>
@@ -227,7 +227,7 @@ export default async function ConversionsPage({ searchParams }: { searchParams: 
                       {enumLabel(t, c.type).toLocaleLowerCase(intl)} · {c.product ?? t("ecosystem")}
                     </div>
                   </Td>
-                  <Td className="num text-xs">{c.path ?? "—"}</Td>
+                  <Td className="num text-xs">{c.path ?? t("n/a")}</Td>
                   <Td className="num text-right text-platinum">{num(c.views)}</Td>
                   <Td className="num text-right">{num(c.cta)}</Td>
                   <Td className="num text-right">{num(c.signups)}</Td>
@@ -258,7 +258,7 @@ export default async function ConversionsPage({ searchParams }: { searchParams: 
             items={[
               [t("Model"), rules.model === "LAST_TOUCH" ? t("Last non-direct touch") : t("First touch")],
               [t("Lookback window"), t("{n} days", { n: rules.lookbackDays })],
-              [t("Referral precedence"), rules.referralPrecedence ? t("On — the most recent referral/affiliate touch wins") : t("Off")],
+              [t("Referral precedence"), rules.referralPrecedence ? t("On: the most recent referral/affiliate touch wins") : t("Off")],
               [t("Source"), ctx.org.settings.attribution ? t("Organisation settings") : t("Default rules (not customised)")],
             ]}
           />
@@ -279,7 +279,7 @@ export default async function ConversionsPage({ searchParams }: { searchParams: 
               {conversionEventEnum.enumValues.map((ev) => (
                 <tr key={ev}>
                   <Th>{ev}</Th>
-                  <Td className="text-xs">{EVENT_HELP[ev] ? t(EVENT_HELP[ev]) : "—"}</Td>
+                  <Td className="text-xs">{EVENT_HELP[ev] ? t(EVENT_HELP[ev]) : t("n/a")}</Td>
                 </tr>
               ))}
             </tbody>

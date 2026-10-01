@@ -24,14 +24,14 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
     return { list, creds: new Map(creds.map((c) => [c.integrationId, c])), prods };
   });
   const back = "/settings/integrations";
-  const pname = (id: string | null) => (id ? data.prods.find((p) => p.id === id)?.name ?? "—" : t("Organisation"));
+  const pname = (id: string | null) => (id ? data.prods.find((p) => p.id === id)?.name ?? t("n/a") : t("Organisation"));
   const base = env().BEACON_BASE_URL;
   return (
     <>
       <PageHeader
         eyebrow={t("13 / Settings")}
         title={t("Integrations")}
-        description={t("Provider adapters are swappable; Beacon core never depends on one vendor. Credentials are encrypted with AES-256-GCM, never returned to the browser and never logged. Only official APIs are used — no scraping.")}
+        description={t("Provider adapters are swappable; Beacon core never depends on one vendor. Credentials are encrypted with AES-256-GCM, never returned to the browser and never logged. Only official APIs are used, no scraping.")}
       />
       <SettingsTabs active="integrations" />
       <Flash searchParams={sp} />
@@ -57,7 +57,7 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
                   <Td className="num text-[11px]">
                     {Object.entries(i.config)
                       .map(([k, v]) => `${k}=${v}`)
-                      .join(" · ") || "—"}
+                      .join(" · ") || t("n/a")}
                     {i.provider === "STRIPE" && <div className="text-muted">{t("Webhook URL: {url}", { url: `${base}/api/webhooks/stripe/${i.id}` })}</div>}
                   </Td>
                   <Td className="text-xs">{data.creds.has(i.id) ? <Badge tone="ok">{t("encrypted")}</Badge> : <Badge tone="muted">{t("none")}</Badge>}</Td>
@@ -66,7 +66,7 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
                     {i.lastError && <div className="mt-1 max-w-xs text-[10px] text-crit">{i.lastError}</div>}
                     {i.consecutiveFailures > 0 && <div className="num text-[10px] text-muted">{t("{n} consecutive failure(s)", { n: i.consecutiveFailures })}</div>}
                   </Td>
-                  <Td className="num text-xs">{i.lastSyncAt?.toISOString().slice(0, 16).replace("T", " ") ?? "—"}</Td>
+                  <Td className="num text-xs">{i.lastSyncAt?.toISOString().slice(0, 16).replace("T", " ") ?? t("n/a")}</Td>
                   <Td>
                     <div className="flex flex-wrap gap-2">
                       {can("integration:manage") && (

@@ -2,7 +2,7 @@ import { slugify } from "@/core/util/text";
 
 /**
  * Parsers for the onboarding wizard's line-based inputs. Each line is one
- * item; fields are separated by " | " (or " — " for name/description).
+ * item; fields are separated by " | " (or a spaced dash for name/description).
  */
 export function splitLines(text: string | null | undefined, max = 200): string[] {
   return (text ?? "")
@@ -14,7 +14,7 @@ export function splitLines(text: string | null | undefined, max = 200): string[]
 
 function splitFields(line: string): string[] {
   if (line.includes("|")) return line.split("|").map((s) => s.trim());
-  const m = line.split(/\s+[—–]\s+|\s+-\s+/);
+  const m = line.split(/\s+[\u2014\u2013]\s+|\s+-\s+/);
   return m.length > 1 ? [m[0].trim(), m.slice(1).join(" - ").trim()] : [line.trim()];
 }
 
@@ -33,7 +33,7 @@ export function parseNamed(text: string | null | undefined): { name: string; slu
 
 export const INTERVALS = ["ONE_TIME", "MONTH", "YEAR", "USAGE", "CUSTOM"] as const;
 
-/** "Plan | price | currency | interval | trial days | description" — blank price means unknown/not public. */
+/** "Plan | price | currency | interval | trial days | description": blank price means unknown/not public. */
 export function parsePricing(text: string | null | undefined) {
   return splitLines(text, 20).map((line, i) => {
     const [planName, price, currency, interval, trial, description] = line.split("|").map((s) => s?.trim() ?? "");

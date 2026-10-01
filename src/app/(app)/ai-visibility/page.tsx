@@ -6,6 +6,7 @@ import { aiVisibilityTests, products } from "@/db/schema";
 import { availableProviders } from "@/ai/registry";
 import { aiVisibilityTrend, promptSummaries } from "@/services/ai-visibility";
 import { pageData, type SP } from "@/lib/page";
+import { stripLongDashes } from "@/core/util/text";
 import { enumLabel } from "@/i18n/core";
 import { getI18n, getT } from "@/i18n/server";
 import type { Metadata } from "next";
@@ -32,7 +33,7 @@ export default async function AiVisibilityPage({ searchParams }: { searchParams:
       <PageHeader
         eyebrow={t("07 / AI visibility")}
         title={t("Observable AI visibility")}
-        description={t("Sampled observations: Beacon sends tracked questions to AI providers through their official APIs and records which products, competitors and sources appear. API answers can differ from consumer apps and between users — these are samples, not totals, and no placement can be guaranteed.")}
+        description={t("Sampled observations: Beacon sends tracked questions to AI providers through their official APIs and records which products, competitors and sources appear. API answers can differ from consumer apps and between users: these are samples, not totals, and no placement can be guaranteed.")}
         actions={
           can("job:run") &&
           data.providers.length > 0 && (
@@ -117,11 +118,11 @@ export default async function AiVisibilityPage({ searchParams }: { searchParams:
                     <div className="text-[11px] text-muted">{s.prompt.category ?? ""}</div>
                   </Td>
                   <Td className="num">{s.testsRun}</Td>
-                  <Td className="num">{s.testsRun ? `${s.mentions}/${s.testsRun}` : "—"}</Td>
-                  <Td className="num">{s.testsRun ? `${s.cited}/${s.testsRun}` : "—"}</Td>
-                  <Td className="text-xs">{s.competitors.join(", ") || "—"}</Td>
+                  <Td className="num">{s.testsRun ? `${s.mentions}/${s.testsRun}` : t("n/a")}</Td>
+                  <Td className="num">{s.testsRun ? `${s.cited}/${s.testsRun}` : t("n/a")}</Td>
+                  <Td className="text-xs">{s.competitors.join(", ") || t("None")}</Td>
                   <Td className="num text-xs" title={t("Order of first appearance among detected entities in the latest answer")}>
-                    {s.last?.position ?? "—"}
+                    {s.last?.position ?? t("n/a")}
                   </Td>
                   <Td>
                     <div className="flex items-center gap-2">
@@ -174,7 +175,7 @@ export default async function AiVisibilityPage({ searchParams }: { searchParams:
                 </div>
                 <details className="mt-2">
                   <summary className="cursor-pointer text-xs text-chrome">{t("Response & {n} citation(s)", { n: obs.citations.length })}</summary>
-                  <p className="mt-2 whitespace-pre-wrap text-xs text-chrome">{obs.response.slice(0, 4000)}</p>
+                  <p className="mt-2 whitespace-pre-wrap text-xs text-chrome">{stripLongDashes(obs.response.slice(0, 4000))}</p>
                   <ul className="mt-2 text-[11px] text-muted">
                     {obs.citations.slice(0, 20).map((c) => (
                       <li key={c} className="num truncate">

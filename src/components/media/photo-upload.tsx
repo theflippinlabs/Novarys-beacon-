@@ -170,7 +170,7 @@ export function PhotoUpload({ action, kind = "photos", children, compact = false
       <div aria-live="polite" className="text-xs">
         {busy && <span className="text-chrome">{t("Preparing images…")}</span>}
         {notice && <span className="text-warn">{notice}</span>}
-        {overTotal && <span className="text-warn">{t("Too many large photos at once — upload them in smaller batches.")}</span>}
+        {overTotal && <span className="text-warn">{t("Too many large photos at once. Upload them in smaller batches.")}</span>}
       </div>
       {items.length > 0 && (
         <ul className="grid grid-cols-3 gap-2 sm:grid-cols-4" aria-label={t("Selected images")}>

@@ -12,7 +12,7 @@ export const listOpportunities = defineTool({
   name: "list_opportunities",
   label: "Reading opportunities",
   description:
-    "List growth opportunities, highest priority first (priority = impact × confidence × urgency ÷ effort). Each has a type, title, problem, potential (LOW/MEDIUM/HIGH — never a promised number), status and product. Filter by product, status (default OPEN), potential or type. Use get_opportunity for evidence and actions.",
+    "List growth opportunities, highest priority first (priority = impact × confidence × urgency ÷ effort). Each has a type, title, problem, potential (LOW/MEDIUM/HIGH, never a promised number), status and product. Filter by product, status (default OPEN), potential or type. Use get_opportunity for evidence and actions.",
   permission: "read",
   kind: "read",
   input: z.object({
@@ -114,7 +114,7 @@ export const setOpportunityStatusTool = defineTool({
   name: "set_opportunity_status",
   label: "Updating an opportunity",
   description:
-    "Change an opportunity's status: ACCEPTED (will do), IN_PROGRESS (being worked on), DISMISSED (not relevant), OPEN (reopen), or DONE — only when the user confirms the work is actually finished. Confirm with the user before dismissing.",
+    "Change an opportunity's status: ACCEPTED (will do), IN_PROGRESS (being worked on), DISMISSED (not relevant), OPEN (reopen), or DONE (only when the user confirms the work is actually finished). Confirm with the user before dismissing.",
   permission: "growth:write",
   kind: "write",
   input: z.object({ id: idRef("Opportunity id."), status: STATUS.describe("New status.") }),

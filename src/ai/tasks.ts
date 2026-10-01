@@ -10,13 +10,14 @@ import { recommendProducts, type RecommendationResult } from "@/core/sales/recom
 import { analyzeAiResponse, type EntityRef, type ResponseAnalysis } from "@/core/visibility/ai-response";
 import { generateOpportunities, type OpportunitySignals, type OpportunityDraft } from "@/core/opportunities/engine";
 import { sha256 } from "@/lib/security/crypto";
+import { stripLongDashes } from "@/core/util/text";
 import { log } from "@/lib/logger";
 import type { LlmProvider } from "./types";
 
 /** Versioned prompts/rule-sets. Bump when behaviour changes so outputs stay traceable. */
 export const PROMPT_VERSIONS = {
   generateContent: "content-v1",
-  rewriteContent: "content-rewrite-v1",
+  rewriteContent: "content-rewrite-v2",
   factCheckDraft: "factcheck-v1",
   classifyIntent: "intent-rules-v1",
   analyzeVisibility: "ai-visibility-parse-v1",
@@ -61,7 +62,8 @@ Hard rules:
 - Use ONLY the facts provided. Do not add customers, testimonials, statistics, integrations, awards, reviews, prices or claims about competitors that are not in the facts.
 - Keep every URL in the Sources section and every line starting with "> TODO(editor):" unchanged.
 - Keep markdown structure: one H1, H2 sections, lists where helpful. No superlatives such as "best" or "#1".
-- Prefer concise, citation-friendly sentences that an answer engine could quote.`;
+- Prefer concise, citation-friendly sentences that an answer engine could quote.
+- Never use em dashes (\u2014) or en dashes (\u2013); use commas, colons, parentheses or full stops instead. Write ranges as "1 to 5".`;
 
 /**
  * generateContent(): deterministic fact-grounded draft; optionally rewritten
@@ -79,7 +81,8 @@ export async function generateContent(tx: Tx, organizationId: string, g: Product
   const prompt = `FORMAT: ${req.type}${req.targetQuery ? `\nTARGET QUERY: ${req.targetQuery}` : ""}\n\nFACTS (the only allowed source of claims):\n${JSON.stringify(facts, null, 1)}\n\nDRAFT:\n${draft.body}`;
   try {
     const out = await llm.generateObject({ system: REWRITE_SYSTEM, prompt, schema: RewriteSchema });
-    const rewritten: Draft = { ...draft, title: out.title || draft.title, metaTitle: out.metaTitle || draft.metaTitle, metaDescription: out.metaDescription || draft.metaDescription, body: out.body };
+    // The model is told not to use long dashes; strip any that slip through before storing.
+    const rewritten: Draft = { ...draft, title: stripLongDashes(out.title) || draft.title, metaTitle: stripLongDashes(out.metaTitle) || draft.metaTitle, metaDescription: stripLongDashes(out.metaDescription) || draft.metaDescription, body: stripLongDashes(out.body) };
     // Guard: if the rewrite fails the fact check where the template passed, keep the template draft.
     const before = factCheck(draft.body, g);
     const after = factCheck(rewritten.body, g);

@@ -8,7 +8,7 @@ import { act, zBoolTri, zCheckbox, zId, zList, zOptText, zOptUrl } from "@/lib/a
 import { audit } from "@/lib/audit";
 import { normalizeDomain, parseCtas, parseNamed, parsePricing, parseSocial, parseSources, splitLines } from "@/core/knowledge/parse";
 import { ONBOARDING_STEPS } from "@/services/onboarding";
-import { createProduct, getProductBySlug, replacePricing, syncCompetitors, syncFacets, syncSources, updateProduct } from "@/services/products";
+import { createProduct, deleteProduct, getProductBySlug, replacePricing, syncCompetitors, syncFacets, syncSources, updateProduct } from "@/services/products";
 import { generateApiKey } from "@/services/tracking";
 import { addComparisonFact, addFaq } from "@/services/knowledge";
 import { enqueue } from "@/jobs/queue";
@@ -19,7 +19,7 @@ import { saveIntegration } from "@/services/visibility";
 export async function createProductAction(fd: FormData) {
   return act(fd, "product:write", z.object({ name: z.string().trim().min(2).max(80), slug: zOptText(80) }), async ({ tx, actor }, input) => {
     const p = await createProduct(tx, actor, input);
-    return { redirect: `/products/${p.slug}/onboarding?step=1`, ok: `${p.name} created — describe it once, Beacon does the rest.` };
+    return { redirect: `/products/${p.slug}/onboarding?step=1`, ok: `${p.name} created. Describe it once, Beacon does the rest.` };
   });
 }
 
@@ -71,7 +71,7 @@ const StepSchema = z.object({
   gscServiceAccount: zOptText(20000),
 });
 
-/** Saves one onboarding step. Every field maps to the knowledge graph — the single source of truth. */
+/** Saves one onboarding step. Every field maps to the knowledge graph, the single source of truth. */
 export async function saveOnboardingStepAction(fd: FormData) {
   return act(fd, "product:write", StepSchema, async ({ tx, actor }, i) => {
     const product = await tx.query.products.findFirst({ where: and(eq(products.id, i.productId), eq(products.organizationId, actor.organizationId)) });
@@ -141,7 +141,7 @@ export async function saveOnboardingStepAction(fd: FormData) {
     if (i.intent === "save") return { ok: "Saved." };
     if (last) {
       await enqueue("product.analyze", { productId: product.id }, { organizationId: actor.organizationId, idempotencyKey: `analyze:${product.id}:${Date.now()}` });
-      return { redirect: `/products/${product.slug}`, ok: "Onboarding complete — product analysis queued." };
+      return { redirect: `/products/${product.slug}`, ok: "Onboarding complete, product analysis queued." };
     }
     return { redirect: `/products/${product.slug}/onboarding?step=${i.step + 1}` };
   });
@@ -273,7 +273,7 @@ export async function createApiKeyAction(fd: FormData) {
     await audit(tx, actor, "apikey.create", "api_key", row.id, { kind: i.kind, prefix });
     // The raw key is shown once via a short-lived, path-scoped httpOnly cookie (never in a URL or log); only its HMAC is stored.
     (await cookies()).set("beacon_new_key", key, { httpOnly: true, sameSite: "strict", secure: process.env.NODE_ENV === "production", maxAge: 120, path: `/products/${product.slug}/tracking` });
-    return { redirect: `/products/${product.slug}/tracking`, ok: "Key created. Copy it now — it will not be shown again." };
+    return { redirect: `/products/${product.slug}/tracking`, ok: "Key created. Copy it now: it will not be shown again." };
   });
 }
 
@@ -288,6 +288,17 @@ export async function revokeApiKeyAction(fd: FormData) {
 export async function updateFacetAction(fd: FormData) {
   return act(fd, "product:write", z.object({ id: zId, description: zOptText(2000) }), async ({ tx, actor }, i) => {
     await tx.update(productFacets).set({ description: i.description, verification: "NEEDS_REVIEW" }).where(and(eq(productFacets.id, i.id), eq(productFacets.organizationId, actor.organizationId)));
-    return { ok: "Updated — marked for review." };
+    return { ok: "Updated and marked for review." };
+  });
+}
+
+/** Owners and admins delete a product after typing its name to confirm. */
+export async function deleteProductAction(fd: FormData) {
+  return act(fd, "product:delete", z.object({ productId: zId, confirm: z.string().max(200) }), async ({ tx, actor }, i) => {
+    const p = await tx.query.products.findFirst({ where: and(eq(products.id, i.productId), eq(products.organizationId, actor.organizationId)) });
+    if (!p) throw new Error("Product not found");
+    if (i.confirm.trim().toLocaleLowerCase() !== p.name.trim().toLocaleLowerCase()) throw new Error("Type the product name exactly to confirm the deletion.");
+    await deleteProduct(tx, actor, p.id);
+    return { ok: `Product “${p.name}” deleted.`, redirect: "/products" };
   });
 }

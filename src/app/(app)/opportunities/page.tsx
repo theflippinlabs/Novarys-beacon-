@@ -44,7 +44,7 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
       <PageHeader
         eyebrow={t("08 / Opportunities")}
         title={t("Opportunity engine")}
-        description={t("Evidence-based growth opportunities ranked by impact × confidence × urgency ÷ effort. Potential is expressed as LOW / MEDIUM / HIGH — Beacon does not fabricate traffic or revenue forecasts.")}
+        description={t("Evidence-based growth opportunities ranked by impact × confidence × urgency ÷ effort. Potential is expressed as LOW / MEDIUM / HIGH; Beacon does not fabricate traffic or revenue forecasts.")}
         actions={
           can("job:run") && (
             <form action={regenerateOpportunitiesAction}>

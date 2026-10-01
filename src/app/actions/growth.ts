@@ -94,7 +94,7 @@ export async function addDistributionTargetAction(fd: FormData) {
 
 /**
  * Status transitions. SUBMITTED/PUBLISHED/PERFORMING require a recorded
- * approval from a user with `distribution:approve` — Beacon never submits to
+ * approval from a user with `distribution:approve`; Beacon never submits to
  * third-party platforms on its own.
  */
 export async function setDistributionStatusAction(fd: FormData) {

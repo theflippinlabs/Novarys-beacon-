@@ -1,4 +1,4 @@
-# Novarys Beacon — Architecture
+# Novarys Beacon: Architecture
 
 > **Build once. Be found everywhere.**
 > Beacon is the distribution, discovery and growth infrastructure of the Novarys ecosystem: it understands every product, generates its discovery infrastructure, monitors visibility, finds missing opportunities, turns traffic into users, cross-sells between products and measures the revenue of every acquisition source.
@@ -26,7 +26,7 @@ The repository was **empty** when Beacon was started (no commits, no files). Con
 | Integrations | none | Adapter interfaces; Stripe webhooks; Anthropic/OpenAI/Perplexity providers |
 | Security controls | none | See §7 |
 
-**Seed data.** No product facts existed in the repository, so only product **names** are seeded (Novus Live, Operator, NovaLex, Aerys / Iris). Every other field is *unknown* until a human completes onboarding. Example queries and prompts quoted in the Beacon brief are seeded as `CANDIDATE` queries / inactive prompts, labelled “from brief — validate”.
+**Seed data.** No product facts existed in the repository, so only product **names** are seeded (Novus Live, Operator, NovaLex, Aerys / Iris). Every other field is *unknown* until a human completes onboarding. Example queries and prompts quoted in the Beacon brief are seeded as `CANDIDATE` queries / inactive prompts, labelled “from brief, validate”.
 
 ---
 
@@ -61,11 +61,11 @@ The repository was **empty** when Beacon was started (no commits, no files). Con
 
 ### Layering rules
 
-1. **`src/core/*`** — pure functions. No DB, no network, no Novarys-specific assumptions. Everything that decides (classification, scoring, gating, attribution, recommendation) lives here and is unit-tested.
-2. **`src/services/*`** — orchestration over a tenant-scoped transaction (`Tx`). They load data, call core engines, persist results and write audit logs.
-3. **`src/app/*`** — UI and HTTP. Server Actions use `act()` (`src/lib/actions.ts`): authenticate → authorise (RBAC) → validate (zod) → run inside `withOrg()` → flash + redirect. Route handlers resolve the tenant from a hashed API key or webhook integration id, never from user input.
-4. **`src/jobs/*`** — background execution. Long work (crawls, generation, syncs, analyses) never blocks a web request.
-5. **`src/integrations/*`, `src/ai/*`** — adapters behind interfaces (`VisibilityAdapter`, `LlmProvider`).
+1. **`src/core/*`**: pure functions. No DB, no network, no Novarys-specific assumptions. Everything that decides (classification, scoring, gating, attribution, recommendation) lives here and is unit-tested.
+2. **`src/services/*`**: orchestration over a tenant-scoped transaction (`Tx`). They load data, call core engines, persist results and write audit logs.
+3. **`src/app/*`**: UI and HTTP. Server Actions use `act()` (`src/lib/actions.ts`): authenticate → authorise (RBAC) → validate (zod) → run inside `withOrg()` → flash + redirect. Route handlers resolve the tenant from a hashed API key or webhook integration id, never from user input.
+4. **`src/jobs/*`**: background execution. Long work (crawls, generation, syncs, analyses) never blocks a web request.
+5. **`src/integrations/*`, `src/ai/*`**: adapters behind interfaces (`VisibilityAdapter`, `LlmProvider`).
 
 ### Source map
 
@@ -129,13 +129,13 @@ Onboarding (14 steps: identity → website → category → description → audi
 `planPages` derives the page set (`/{product}`, `/{product}/features/{f}`, `/use-cases/`, `/industries/`, `/for/`, `/integrations/`, `/compare/`, `/alternatives/`, `/answers/`, `/changelog/`) **only when the graph holds enough material** (e.g. facet description ≥ 60 chars; comparisons need ≥ 3 sourced facts) and reports skipped pages with the reason. `assessPage` scores information completeness, factual confidence (verification × sourcing), intent match, duplicate similarity (word-shingle Jaccard) and usefulness. Pages failing any threshold cannot be published.
 
 ### C. SEO engine
-SSRF-safe crawler (robots.txt aware, sitemap/sitemap-index discovery, page budget). Page rules: status, redirects, title/description, H1/hierarchy, canonical, robots/noindex, OpenGraph/Twitter, viewport, `lang`, image alt/dimensions, empty links, hreflang, JSON-LD validity, mixed content, thin/stale content, server-response and weight *signals* (explicitly not Core Web Vitals). Site rules: duplicate titles/descriptions, orphans, broken internal links, sitemap hygiene, missing entity schema. JSON-LD generators (`SoftwareApplication`/`WebApplication`, `Organization`, `Offer` — verified prices only, `FAQPage`, `Article`, `BreadcrumbList`, `HowTo` — only with ≥ 2 real steps). Sitemaps and sitemap indexes are generated for published pages.
+SSRF-safe crawler (robots.txt aware, sitemap/sitemap-index discovery, page budget). Page rules: status, redirects, title/description, H1/hierarchy, canonical, robots/noindex, OpenGraph/Twitter, viewport, `lang`, image alt/dimensions, empty links, hreflang, JSON-LD validity, mixed content, thin/stale content, server-response and weight *signals* (explicitly not Core Web Vitals). Site rules: duplicate titles/descriptions, orphans, broken internal links, sitemap hygiene, missing entity schema. JSON-LD generators (`SoftwareApplication`/`WebApplication`, `Organization`, `Offer` (verified prices only), `FAQPage`, `Article`, `BreadcrumbList`, `HowTo` (only with ≥ 2 real steps)). Sitemaps and sitemap indexes are generated for published pages.
 
 ### D. GEO / AEO engine
 Machine-readable entity profile per product with sourced claims, `unknowns` and `lastVerified`, published at `/api/v1/entity/{org}/{product}` (verified facts only). Answer blocks (“What is X?”, “Who is X for?”, “How much does X cost?”, “Does X support/integrate …?”, “Alternatives to …?”, FAQs) each cite their sources; questions without facts are returned as gaps. `llms.txt` per organisation.
 
 ### E. Query intelligence
-Rule-based, explainable intent classifier (INFORMATIONAL, COMMERCIAL, TRANSACTIONAL, NAVIGATIONAL, COMPARISON, PROBLEM, ALTERNATIVE) with confidence and funnel stage; brand-aware. Query universe expansion combines category/keywords with audiences, industries, problems, features, integrations and competitors, de-duplicated by token set and capped; results are `CANDIDATE`s for human curation — long-tail variations are tracked, never mass-produced into pages. Coverage (NONE/PARTIAL/COVERED) is recomputed from page status.
+Rule-based, explainable intent classifier (INFORMATIONAL, COMMERCIAL, TRANSACTIONAL, NAVIGATIONAL, COMPARISON, PROBLEM, ALTERNATIVE) with confidence and funnel stage; brand-aware. Query universe expansion combines category/keywords with audiences, industries, problems, features, integrations and competitors, de-duplicated by token set and capped; results are `CANDIDATE`s for human curation; long-tail variations are tracked, never mass-produced into pages. Coverage (NONE/PARTIAL/COVERED) is recomputed from page status.
 
 ### F. Visibility monitor
 Provider adapters (`VisibilityAdapter`): Google Search Console (Search Analytics API, service-account JWT), GA4 Data API (sessions by channel incl. AI-assistant referrers), Bing Webmaster (rank & traffic). First-party events add visitors, CTA clicks and AI referrals (chatgpt.com, perplexity.ai, claude.ai, gemini, copilot, …). Metrics land in `visibility_metrics`; unconnected sources render as **Not connected**, never zero.
@@ -144,7 +144,7 @@ Provider adapters (`VisibilityAdapter`): Google Search Console (Search Analytics
 Tracked prompts are sent to configured providers through official APIs; responses are parsed objectively (entities mentioned, order of first appearance, citations, own-domain citations) and stored as `SAMPLED_OBSERVATION`s with weekly trends. The UI states that samples do not represent every user’s AI response.
 
 ### H. Opportunity engine
-Rules over measured evidence: content gaps, striking distance (positions 8–20), low CTR, AI-visibility gaps (competitors mentioned, product absent), critical/high technical issues, entity completeness, missing comparison facts, orphan pages, low-converting pages, visibility drops. Each opportunity carries evidence, competitors, ordered actions, impact/confidence/effort/urgency and `priority = impact × confidence × urgency ÷ effort`; potential is LOW/MEDIUM/HIGH only. Regeneration is idempotent and preserves human decisions; resolved conditions auto-close.
+Rules over measured evidence: content gaps, striking distance (positions 8 to 20), low CTR, AI-visibility gaps (competitors mentioned, product absent), critical/high technical issues, entity completeness, missing comparison facts, orphan pages, low-converting pages, visibility drops. Each opportunity carries evidence, competitors, ordered actions, impact/confidence/effort/urgency and `priority = impact × confidence × urgency ÷ effort`; potential is LOW/MEDIUM/HIGH only. Regeneration is idempotent and preserves human decisions; resolved conditions auto-close.
 
 ### I. AI content studio
 `IDEA → GENERATED → FACT CHECK → SEO/GEO CHECK → HUMAN APPROVAL → APPROVED → PUBLISHED → performance`. The deterministic generator composes every sentence from graph facts (with `factRefs`) for 13 formats; missing material becomes `> TODO(editor):` markers that block approval. An optional LLM rewrite is constrained to the same facts and **kept only if it does not increase unsupported claims**. The fact checker flags invented numbers, customers, awards, ratings, superlatives and unsourced competitor claims. Only `content:approve` holders approve/publish.
@@ -159,7 +159,7 @@ Targets by kind (directories, launch platforms, communities, social, newsletters
 Rules (source → destination, required shared traits, minimum tenure, source status), message, CTA, per-rule frequency cap, lifetime cap, global daily cap per identity. Requires explicit `crossProduct` consent; never targets users already on the destination; dismissals and conversions suppress. Impressions/clicks/conversions/revenue are tracked per rule.
 
 ### M. Novarys ID (architecture + foundation)
-One `identity` per person per organisation keyed by an external reference supplied by the identity provider or product (`/api/v1/identify`). Stored: keyed email hash (never the raw email), consent (analytics, marketing, crossProduct), acquisition, products used with plan/status, and only the traits a product **explicitly** shares. Product data stays in the product. Future: a central Novarys IdP (OIDC) issuing the `external_ref`, single sign-on across products, and consent management UI — the schema already supports it.
+One `identity` per person per organisation keyed by an external reference supplied by the identity provider or product (`/api/v1/identify`). Stored: keyed email hash (never the raw email), consent (analytics, marketing, crossProduct), acquisition, products used with plan/status, and only the traits a product **explicitly** shares. Product data stays in the product. Future: a central Novarys IdP (OIDC) issuing the `external_ref`, single sign-on across products, and consent management UI; the schema already supports it.
 
 ### N. Referral / affiliate engine
 Referral links `/r/{CODE}` (destination restricted to the product’s https domain), affiliates with commission rate, duration and hold period, campaigns with UTMs, VISIT → SIGNUP → ACTIVATION → PURCHASE → RECURRING REVENUE tracking, commissions with PENDING/APPROVED/PAID/VOID/ON_HOLD and fraud flags (self-referral, instant conversion, IP velocity, refunds).
@@ -167,16 +167,16 @@ Referral links `/r/{CODE}` (destination restricted to the product’s https doma
 **Attribution rules (explicit, per organisation):** touches within a lookback window (default 30 days); referral/affiliate touches take precedence (configurable); otherwise LAST non-direct touch (default) or FIRST touch; no touch → DIRECT. Revenue is attributed at the identity’s first conversion into the product so renewals keep their original channel. Channel classification order is documented in `classifyChannel`.
 
 ### O. Conversion engine
-Tracker `beacon.js` (first-party cookie, honours DNT/GPC, no fingerprinting) sends `PAGE_VIEW`/`CTA_CLICK` with publishable keys from allowed origins; lifecycle events (`SIGNUP`, `TRIAL_STARTED`, `ACTIVATED`, `CHECKOUT_STARTED`, `SUBSCRIBED`, `UPGRADED`, `CANCELLED`) require secret server keys. Funnels by product and channel; rates are `null` (shown “—”) without a denominator.
+Tracker `beacon.js` (first-party cookie, honours DNT/GPC, no fingerprinting) sends `PAGE_VIEW`/`CTA_CLICK` with publishable keys from allowed origins; lifecycle events (`SIGNUP`, `TRIAL_STARTED`, `ACTIVATED`, `CHECKOUT_STARTED`, `SUBSCRIBED`, `UPGRADED`, `CANCELLED`) require secret server keys. Funnels by product and channel; rates are `null` (shown “n/a”) without a denominator.
 
 ### P. Growth autopilot
-Weekly (and on-demand) deterministic analyst: *what happened* (period-over-period metrics with sources), *why it may have happened* (coinciding events, labelled CORRELATION or INSUFFICIENT_DATA — never causation), opportunities, recommended actions (approval required for production content, external accounts, paid campaigns), content to create, technical issues, experiments and signals to monitor, plus data-coverage gaps.
+Weekly (and on-demand) deterministic analyst: *what happened* (period-over-period metrics with sources), *why it may have happened* (coinciding events, labelled CORRELATION or INSUFFICIENT_DATA, never causation), opportunities, recommended actions (approval required for production content, external accounts, paid campaigns), content to create, technical issues, experiments and signals to monitor, plus data-coverage gaps.
 
 ### Q. Beacon Score
-0–100 = Technical Discovery 20 + Content Coverage 20 + Entity Completeness 15 + Authority Signals 15 + Query Coverage 15 + Conversion Readiness 10 + Measurement Coverage 5. Every line shows earned/max and the reason; “Fastest path to N” ranks fixes by points per effort. It measures readiness, not rankings.
+0 to 100 = Technical Discovery 20 + Content Coverage 20 + Entity Completeness 15 + Authority Signals 15 + Query Coverage 15 + Conversion Readiness 10 + Measurement Coverage 5. Every line shows earned/max and the reason; “Fastest path to N” ranks fixes by points per effort. It measures readiness, not rankings.
 
 ### R. Daily command center
-“What needs my attention today?” — critical SEO problems, products losing organic visibility, high-potential opportunities, drafts ready for approval / blocked, pending external submissions, recommendations, experiments ready, referral conversions, commissions on hold, failing integrations, dead jobs, incomplete onboarding — ranked by impact × confidence × urgency ÷ effort. KPI groups (discovery, acquisition, revenue, ecosystem, content) compare equal-length periods.
+“What needs my attention today?”: critical SEO problems, products losing organic visibility, high-potential opportunities, drafts ready for approval / blocked, pending external submissions, recommendations, experiments ready, referral conversions, commissions on hold, failing integrations, dead jobs, incomplete onboarding, ranked by impact × confidence × urgency ÷ effort. KPI groups (discovery, acquisition, revenue, ecosystem, content) compare equal-length periods.
 
 ---
 
@@ -184,7 +184,7 @@ Weekly (and on-demand) deterministic analyst: *what happened* (period-over-perio
 
 Postgres-backed queue (`src/jobs/queue.ts`):
 
-- **Claiming:** `UPDATE … WHERE id = (SELECT … FOR UPDATE SKIP LOCKED)` — safe with many workers.
+- **Claiming:** `UPDATE … WHERE id = (SELECT … FOR UPDATE SKIP LOCKED)`: safe with many workers.
 - **Retry & backoff:** exponential with jitter (30 s → 1 h cap), `max_attempts` (default 5), `NonRetryableError` → `DEAD` immediately.
 - **Idempotency:** unique `idempotency_key`; recurring work uses period-scoped keys (`sync:{integration}:{day}`, `autopilot:{org}:{week}`).
 - **Recovery:** stale `RUNNING` jobs (worker died) return to the queue after 15 minutes.
@@ -263,12 +263,12 @@ Beacon is internal first but tenant-isolated from day one: every relevant entity
 
 | Phase | Scope | Status |
 |---|---|---|
-| 1 — Foundation | Auth, organisations, RBAC, products, knowledge graph, onboarding, dashboard, database + RLS | ✅ |
-| 2 — Discovery | Queries & clusters, page inventory & planner, quality gate, SEO audits, sitemaps, structured data, Search Console architecture | ✅ |
-| 3 — Intelligence | Opportunity engine, AI provider layer, content studio, GEO/AEO layer, AI-visibility tests | ✅ |
-| 4 — Measurement | Tracker & events, conversions/funnels, attribution, revenue, Stripe | ✅ |
-| 5 — Distribution | Campaigns, referrals, affiliates, commissions, distribution center | ✅ |
-| 6 — Autopilot | Growth analyst, recommendations, experiments, cross-sell, sales agent | ✅ |
+| 1. Foundation | Auth, organisations, RBAC, products, knowledge graph, onboarding, dashboard, database + RLS | ✅ |
+| 2. Discovery | Queries & clusters, page inventory & planner, quality gate, SEO audits, sitemaps, structured data, Search Console architecture | ✅ |
+| 3. Intelligence | Opportunity engine, AI provider layer, content studio, GEO/AEO layer, AI-visibility tests | ✅ |
+| 4. Measurement | Tracker & events, conversions/funnels, attribution, revenue, Stripe | ✅ |
+| 5. Distribution | Campaigns, referrals, affiliates, commissions, distribution center | ✅ |
+| 6. Autopilot | Growth analyst, recommendations, experiments, cross-sell, sales agent | ✅ |
 
 Each phase was committed separately with typecheck, lint, tests and build passing.
 
@@ -279,7 +279,7 @@ Each phase was committed separately with typecheck, lint, tests and build passin
 - **No product facts in the repository** → products are seeded by name only; all facts must be entered and verified by humans.
 - **Search Console/GA4 auth** uses service accounts (simplest secure server-to-server option). An OAuth consent flow can be added behind the same adapter.
 - **Backlinks / referring domains** require an SEO data provider; the interface exists, but no provider is bundled, so the score shows “not connected” rather than estimating.
-- **Page-speed** findings are server-side signals; Core Web Vitals require a field-data source (e.g. CrUX API) — a future adapter.
+- **Page-speed** findings are server-side signals; Core Web Vitals require a field-data source (e.g. CrUX API), a future adapter.
 - **LLM rewriting** is optional; the deterministic generator produces factual but plain prose.
 - **In-process API metrics** are per instance; ship logs to a central platform for fleet-wide metrics.
 - **Currency**: aggregates are per currency; there is no FX conversion.

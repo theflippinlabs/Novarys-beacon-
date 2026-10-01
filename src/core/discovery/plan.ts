@@ -1,5 +1,6 @@
 import { facetsOf, type Facet, type ProductGraph } from "@/core/knowledge/types";
 import { pagePath, type PageType } from "./urls";
+import { stripLongDashes } from "@/core/util/text";
 
 export type FactRef = { ref: string; text: string; verification: "VERIFIED" | "UNVERIFIED" | "NEEDS_REVIEW" | "REJECTED"; sourceUrl?: string };
 
@@ -50,7 +51,7 @@ export function planPages(g: ProductGraph): { planned: PagePlan[]; skipped: Skip
   planned.push({
     type: "PRODUCT",
     path: pagePath("PRODUCT", p.slug),
-    title: p.shortDescription ? `${p.name} — ${p.shortDescription}` : p.name,
+    title: stripLongDashes(p.shortDescription ? `${p.name}: ${p.shortDescription}` : p.name),
     facts: [...coreFacts(g), ...features.slice(0, 8).map((f) => facetFact(g, f)), ...audiences.map((f) => facetFact(g, f))],
     requirements: [
       { label: "Short description", met: Boolean(p.shortDescription) },
@@ -72,14 +73,14 @@ export function planPages(g: ProductGraph): { planned: PagePlan[]; skipped: Skip
     for (const f of list) {
       const descOk = (f.description?.length ?? 0) >= MIN_DESC;
       if (!descOk) {
-        skipped.push({ type, item: f.name, reason: `Description shorter than ${MIN_DESC} characters — not enough material for a standalone page.` });
+        skipped.push({ type, item: f.name, reason: `Description shorter than ${MIN_DESC} characters: not enough material for a standalone page.` });
         continue;
       }
       const supporting = type === "FEATURE" || type === "INTEGRATION" ? [] : [...features.slice(0, 4), ...problems.slice(0, 3)].map((x) => facetFact(g, x));
       planned.push({
         type,
         path: pagePath(type, p.slug, f.slug),
-        title: titleFor(type, p.name, f.name),
+        title: stripLongDashes(titleFor(type, p.name, f.name)),
         facetId: f.id,
         facts: [facetFact(g, f), ...coreFacts(g).slice(0, 1), ...supporting],
         requirements: [
@@ -154,7 +155,7 @@ export function planPages(g: ProductGraph): { planned: PagePlan[]; skipped: Skip
 function titleFor(type: PageType, product: string, item: string): string {
   switch (type) {
     case "FEATURE":
-      return `${item} — ${product}`;
+      return `${item} | ${product}`;
     case "USE_CASE":
       return `${product} for ${item.charAt(0).toLowerCase()}${item.slice(1)}`;
     case "INDUSTRY":

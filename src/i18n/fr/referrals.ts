@@ -1,8 +1,8 @@
 export const fr: Record<string, string> = {
   "10 / Referrals": "10 / Parrainages",
   "Referral & affiliate engine": "Moteur de parrainage et d’affiliation",
-  "Tracked referral links, affiliates and their commissions. Commissions flagged by fraud heuristics are held for human review — never auto-voided, never paid before the hold period ends.":
-    "Liens de parrainage suivis, affiliés et leurs commissions. Les commissions signalées par les heuristiques antifraude sont mises en attente de revue humaine — jamais annulées automatiquement, jamais versées avant la fin de la période de blocage.",
+  "Tracked referral links, affiliates and their commissions. Commissions flagged by fraud heuristics are held for human review: never auto-voided, never paid before the hold period ends.":
+    "Liens de parrainage suivis, affiliés et leurs commissions. Les commissions signalées par les heuristiques antifraude sont mises en attente de revue humaine : jamais annulées automatiquement, jamais versées avant la fin de la période de blocage.",
 
   // Pipeline
   "Pipeline · last {days} days": "Pipeline · {days} derniers jours",
@@ -38,7 +38,7 @@ export const fr: Record<string, string> = {
   "Create referral link": "Créer un lien de parrainage",
   Product: "Produit",
   Code: "Code",
-  "Optional. 3–40 letters, digits, - or _. Generated when empty.":
+  "Optional. 3 to 40 letters, digits, - or _. Generated when empty.":
     "Facultatif. 3 à 40 lettres, chiffres, - ou _. Généré automatiquement s’il est vide.",
   "SPRING-PARTNER": "PARTENAIRE-PRINTEMPS",
   Affiliate: "Affilié",
@@ -50,8 +50,8 @@ export const fr: Record<string, string> = {
   Campaign: "Campagne",
   None: "Aucune",
   "Create link": "Créer le lien",
-  "Set a domain on at least one product first — referral destinations must be on the product’s own domain.":
-    "Définissez d’abord un domaine sur au moins un produit — les destinations de parrainage doivent se trouver sur le domaine du produit.",
+  "Set a domain on at least one product first: referral destinations must be on the product’s own domain.":
+    "Définissez d’abord un domaine sur au moins un produit : les destinations de parrainage doivent se trouver sur le domaine du produit.",
 
   // Affiliates
   Affiliates: "Affiliés",

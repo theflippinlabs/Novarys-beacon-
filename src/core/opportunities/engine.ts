@@ -42,7 +42,7 @@ export type OpportunitySignals = {
   searchTrend?: { clicksNow: number; clicksPrev: number } | null;
 };
 
-/** Priority = impact × confidence × urgency ÷ effort (each 1–5). Transparent and sortable. */
+/** Priority = impact × confidence × urgency ÷ effort (each 1 to 5). Transparent and sortable. */
 export const priority = (impact: number, confidence: number, effort: number, urgency: number) => Math.round(((impact * confidence * urgency) / effort) * 10) / 10;
 
 const INTENT_PAGE: Record<Intent, PageType> = {
@@ -65,7 +65,7 @@ const actions = (...xs: [string, string][]): OpportunityAction[] => xs.map(([kin
 
 /**
  * Rules-based opportunity generation. Every opportunity names the evidence
- * it is based on. Impact is expressed as LOW / MEDIUM / HIGH potential only —
+ * it is based on. Impact is expressed as LOW / MEDIUM / HIGH potential only:
  * no fabricated traffic or revenue forecasts.
  */
 export function generateOpportunities(s: OpportunitySignals): OpportunityDraft[] {
@@ -141,7 +141,7 @@ export function generateOpportunities(s: OpportunitySignals): OpportunityDraft[]
           queryId: q.id,
           type: "LOW_CTR",
           title: `Low click-through for "${q.query}"`,
-          problem: "Page ranks on the first page but earns few clicks — title and description may not match intent.",
+          problem: "Page ranks on the first page but earns few clicks; title and description may not match intent.",
           evidence: [
             { label: "CTR", value: `${((q.search.clicks / q.search.impressions) * 100).toFixed(2)}%` },
             { label: "Impressions (28d)", value: String(q.search.impressions) },

@@ -18,7 +18,7 @@ beforeAll(async () => {
 });
 afterAll(closeDb);
 
-const desc = (s: string) => `${s} — described at length so that the discovery planner has enough factual material.`;
+const desc = (s: string) => `${s}, described at length so that the discovery planner has enough factual material.`;
 
 describe("product knowledge graph + onboarding analysis", () => {
   it("createProduct slugifies, rejects duplicates and writes an audit log", async () => {

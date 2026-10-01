@@ -58,7 +58,7 @@ export default async function GeoPage({ params }: { params: Promise<{ slug: stri
               [t("Price"), profile.price.length ? profile.price.map((x) => (x.verified ? t("{plan}: {price}", { plan: x.plan, price: x.price ?? t("not public") }) : t("{plan}: {price} (unverified)", { plan: x.plan, price: x.price ?? t("not public") }))).join(" · ") : null],
               [t("Differentiation"), <Claims key="d" items={profile.differentiation} />],
               [t("Last verified"), profile.lastVerified?.slice(0, 10) ?? t("Never")],
-              [t("Unknown"), profile.unknowns.map((u) => t(u)).join(", ") || "—"],
+              [t("Unknown"), profile.unknowns.map((u) => t(u)).join(", ") || t("None")],
             ]}
           />
           <div className="mt-5 border-t border-line pt-4 text-xs text-chrome">

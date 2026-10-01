@@ -3,8 +3,8 @@ export const fr: Record<string, string> = {
   "Command center": "Centre de commande",
   "01 / Overview · {date}": "01 / Vue d’ensemble · {date}",
   "What needs my attention today?": "Qu’est-ce qui demande mon attention aujourd’hui ?",
-  "{org} ecosystem — {n} product(s). Everything below is measured; unconnected sources are shown as such, never estimated.":
-    "Écosystème {org} — {n} produit(s). Tout ce qui suit est mesuré : les sources non connectées sont signalées comme telles, jamais estimées.",
+  "{org} ecosystem: {n} product(s). Everything below is measured; unconnected sources are shown as such, never estimated.":
+    "Écosystème {org} : {n} produit(s). Tout ce qui suit est mesuré : les sources non connectées sont signalées comme telles, jamais estimées.",
   "Start here": "Commencez ici",
   "Add your first product →": "Ajouter votre premier produit →",
   "Beacon has no products yet. Onboard a Novarys application: describe it once, connect its data sources, and Beacon builds its query universe, discovery plan, audits and opportunities.":
@@ -21,8 +21,8 @@ export const fr: Record<string, string> = {
   Ecosystem: "Écosystème",
   Trend: "Tendance",
   "Visitors, signups & AI referrals · last {days} days": "Visiteurs, inscriptions et référents IA · {days} derniers jours",
-  "No first-party events yet — install the Beacon tracker from a product’s Tracking tab.":
-    "Aucun événement first-party pour l’instant — installez le traceur Beacon depuis l’onglet Suivi d’un produit.",
+  "No first-party events yet. Install the Beacon tracker from a product’s Tracking tab.":
+    "Aucun événement first-party pour l’instant. Installez le traceur Beacon depuis l’onglet Suivi d’un produit.",
   "Daily visitors, signups and AI referrals": "Visiteurs, inscriptions et référents IA par jour",
   Definitions: "Définitions",
   "How these numbers are defined": "Comment ces chiffres sont définis",
@@ -48,13 +48,13 @@ export const fr: Record<string, string> = {
   "Prioritised by impact × confidence × urgency ÷ effort.": "Priorisées selon impact × confiance × urgence ÷ effort.",
   "{n} content draft ready for approval": "{n} brouillon de contenu prêt à approuver",
   "{n} content drafts ready for approval": "{n} brouillons de contenu prêts à approuver",
-  "Passed fact and SEO/GEO checks — awaiting a human decision.": "Vérifications des faits et SEO/GEO réussies — en attente d’une décision humaine.",
+  "Passed fact and SEO/GEO checks, awaiting a human decision.": "Vérifications des faits et SEO/GEO réussies, en attente d’une décision humaine.",
   "{n} draft blocked by checks": "{n} brouillon bloqué par les contrôles",
   "{n} drafts blocked by checks": "{n} brouillons bloqués par les contrôles",
   "Unsupported claims or SEO issues need an editor.": "Des affirmations non étayées ou des problèmes SEO nécessitent l’intervention d’un éditeur.",
   "{n} external submission awaiting approval": "{n} soumission externe en attente d’approbation",
   "{n} external submissions awaiting approval": "{n} soumissions externes en attente d’approbation",
-  "Prepared distribution targets — nothing is submitted without approval.": "Cibles de distribution préparées — rien n’est soumis sans approbation.",
+  "Prepared distribution targets. Nothing is submitted without approval.": "Cibles de distribution préparées. Rien n’est soumis sans approbation.",
   "{n} autopilot recommendation to review": "{n} recommandation du pilote automatique à examiner",
   "{n} autopilot recommendations to review": "{n} recommandations du pilote automatique à examiner",
   "Proposed by the growth analyst.": "Proposées par l’analyste croissance.",

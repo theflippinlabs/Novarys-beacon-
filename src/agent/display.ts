@@ -1,4 +1,5 @@
 import type { ChatItem } from "@/components/agent/chat";
+import { stripLongDashes } from "@/core/util/text";
 import { mediaUrl } from "@/services/media";
 import type { StoredMessage } from "./store";
 import { AGENT_TOOLS } from "./tools";
@@ -51,7 +52,7 @@ export function toChatItems(messages: StoredMessage[]): ChatItem[] {
     } else {
       let buf = "";
       const flush = () => {
-        if (buf.trim()) items.push({ kind: "assistant", key: key(), text: buf });
+        if (buf.trim()) items.push({ kind: "assistant", key: key(), text: stripLongDashes(buf) });
         buf = "";
       };
       for (const b of blocks) {

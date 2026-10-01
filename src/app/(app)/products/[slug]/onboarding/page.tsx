@@ -46,7 +46,7 @@ export default async function OnboardingPage({ params, searchParams }: { params:
 
   return (
     <>
-      <PageHeader eyebrow={t("Onboarding · {name}", { name: p.name })} title={`${String(step).padStart(2, "0")} — ${t(ONBOARDING_STEPS[step - 1])}`} description={t("Describe the product once. Only enter facts you can stand behind; leave anything unknown blank — Beacon marks it unknown instead of guessing.")} actions={<Link href={`/products/${p.slug}`} className="eyebrow hover:text-chrome">{t("Exit to product →")}</Link>} />
+      <PageHeader eyebrow={t("Onboarding · {name}", { name: p.name })} title={`${String(step).padStart(2, "0")} · ${t(ONBOARDING_STEPS[step - 1])}`} description={t("Describe the product once. Only enter facts you can stand behind; leave anything unknown blank. Beacon marks it unknown instead of guessing.")} actions={<Link href={`/products/${p.slug}`} className="eyebrow hover:text-chrome">{t("Exit to product →")}</Link>} />
       <Flash searchParams={sp} />
       <div className="grid gap-6 lg:grid-cols-[14rem_1fr]">
         <ol className="flex flex-row gap-1 overflow-x-auto lg:flex-col">
@@ -117,7 +117,7 @@ export default async function OnboardingPage({ params, searchParams }: { params:
                     <input name="supportedCountries" defaultValue={p.supportedCountries.join(", ")} placeholder="FR, BE, US" />
                   </Field>
                 </div>
-                <Field label={t("Social accounts — one per line: network | https://url")}>
+                <Field label={t("Social accounts (one per line): network | https://url")}>
                   <textarea name="social" className={TEXTAREA} defaultValue={p.socialAccounts.map((s) => `${s.network} | ${s.url}`).join("\n")} />
                 </Field>
               </>
@@ -164,34 +164,34 @@ export default async function OnboardingPage({ params, searchParams }: { params:
 
             {step === 5 && (
               <>
-                <Field label={t("Target audiences — one per line: Name | description")}>
+                <Field label={t("Target audiences (one per line): Name | description")}>
                   <textarea name="audiences" className={TEXTAREA} defaultValue={lines("AUDIENCE")} placeholder={t("TikTok agencies | Agencies managing a roster of LIVE creators")} />
                 </Field>
-                <Field label={t("Industries — one per line")}>
+                <Field label={t("Industries (one per line)")}>
                   <textarea name="industries" className={TEXTAREA} defaultValue={lines("INDUSTRY")} />
                 </Field>
               </>
             )}
 
             {step === 6 && (
-              <Field label={t("Problems solved — one per line: Problem | explanation")}>
+              <Field label={t("Problems solved (one per line): Problem | explanation")}>
                 <textarea name="problems" className={TEXTAREA} defaultValue={lines("PROBLEM")} />
               </Field>
             )}
 
             {step === 7 && (
               <>
-                <Field label={t("Features — one per line: Feature | description (≥ 60 chars enables a dedicated page)")}>
+                <Field label={t("Features (one per line): Feature | description (≥ 60 chars enables a dedicated page)")}>
                   <textarea name="features" className={TEXTAREA} defaultValue={lines("FEATURE")} />
                 </Field>
-                <Field label={t("Use cases — one per line: Use case | description")}>
+                <Field label={t("Use cases (one per line): Use case | description")}>
                   <textarea name="useCases" className={TEXTAREA} defaultValue={lines("USE_CASE")} />
                 </Field>
               </>
             )}
 
             {step === 8 && (
-              <Field label={t("Plans — one per line: Plan | price | currency | MONTH/YEAR/ONE_TIME/USAGE/CUSTOM | trial days | description")} hint={t("Leave the price blank when it is not public. Prices are only published in structured data once verified.")}>
+              <Field label={t("Plans (one per line): Plan | price | currency | MONTH/YEAR/ONE_TIME/USAGE/CUSTOM | trial days | description")} hint={t("Leave the price blank when it is not public. Prices are only published in structured data once verified.")}>
                 <textarea
                   name="pricing"
                   className={TEXTAREA}
@@ -201,23 +201,23 @@ export default async function OnboardingPage({ params, searchParams }: { params:
             )}
 
             {step === 9 && (
-              <Field label={t("Competitors — one per line: Name | domain")} hint={t("Add sourced comparison facts later in the knowledge editor. Comparison pages require ≥ 3 sourced facts.")}>
+              <Field label={t("Competitors (one per line): Name | domain")} hint={t("Add sourced comparison facts later in the knowledge editor. Comparison pages require ≥ 3 sourced facts.")}>
                 <textarea name="competitors" className={TEXTAREA} defaultValue={g.competitors.map((c) => [c.competitor.name, c.competitor.domain ?? ""].join(" | ")).join("\n")} />
               </Field>
             )}
 
             {step === 10 && (
-              <Field label={t("Integrations — one per line: Integration | description")} hint={t("Only list integrations that exist today.")}>
+              <Field label={t("Integrations (one per line): Integration | description")} hint={t("Only list integrations that exist today.")}>
                 <textarea name="integrations" className={TEXTAREA} defaultValue={lines("INTEGRATION")} />
               </Field>
             )}
 
             {step === 11 && (
               <>
-                <Field label={t("Canonical sources — one per line: Title | https://url | WEBSITE/DOCUMENTATION/PRICING/CHANGELOG/CASE_STUDY/PRESS/REPOSITORY/LEGAL/OTHER")} hint={t("Every public claim should trace back to one of these URLs.")}>
+                <Field label={t("Canonical sources (one per line): Title | https://url | WEBSITE/DOCUMENTATION/PRICING/CHANGELOG/CASE_STUDY/PRESS/REPOSITORY/LEGAL/OTHER")} hint={t("Every public claim should trace back to one of these URLs.")}>
                   <textarea name="sources" className={TEXTAREA} defaultValue={g.sources.map((s) => [s.title, s.url, s.kind].join(" | ")).join("\n")} />
                 </Field>
-                <Field label={t("Factual differentiators — one per line: Differentiator | evidence")}>
+                <Field label={t("Factual differentiators (one per line): Differentiator | evidence")}>
                   <textarea name="differentiators" className={TEXTAREA} defaultValue={lines("DIFFERENTIATOR")} />
                 </Field>
                 <p className="text-xs text-muted">{t("Testimonials, case studies and metrics are added in the knowledge editor, where each item needs a source and explicit permission to publish.")}</p>
@@ -256,7 +256,7 @@ export default async function OnboardingPage({ params, searchParams }: { params:
 
             {step === 14 && (
               <>
-                <Field label={t("Conversion URLs — one per line: Label | https://url | TRY_FREE/START_NOW/VIEW_DEMO/COMPARE_PLANS/BOOK_DEMO/ASK/OTHER")}>
+                <Field label={t("Conversion URLs (one per line): Label | https://url | TRY_FREE/START_NOW/VIEW_DEMO/COMPARE_PLANS/BOOK_DEMO/ASK/OTHER")}>
                   <textarea name="ctas" className={TEXTAREA} defaultValue={p.conversionUrls.map((c) => [c.label, c.url, c.kind].join(" | ")).join("\n")} />
                 </Field>
                 <p className="text-sm text-chrome">

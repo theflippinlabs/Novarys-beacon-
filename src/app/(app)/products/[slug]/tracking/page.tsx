@@ -37,7 +37,7 @@ export default async function TrackingPage({ params, searchParams }: { params: P
       <Flash searchParams={sp} />
       {newKey && (
         <div className="mb-6 border border-gold px-4 py-3">
-          <div className="eyebrow text-gold">{t("New key — shown once")}</div>
+          <div className="eyebrow text-gold">{t("New key (shown once)")}</div>
           <code className="num mt-1 block break-all text-sm text-platinum">{newKey}</code>
         </div>
       )}
@@ -112,14 +112,14 @@ export default async function TrackingPage({ params, searchParams }: { params: P
       </div>
 
       <Panel title={t("Install")} eyebrow={t("Snippets")} className="mt-6">
-        <div className="eyebrow mb-2">{t("Browser — page views & CTA clicks (add data-beacon-cta to CTA links)")}</div>
+        <div className="eyebrow mb-2">{t("Browser: page views & CTA clicks (add data-beacon-cta to CTA links)")}</div>
         <pre className="overflow-x-auto border border-line bg-obsidian p-3 text-[12px] text-chrome">{`<script async src="${base}/beacon.js" data-key="${pk ? `bpk_${pk.prefix}_…` : "YOUR_PUBLISHABLE_KEY"}" data-product="${slug}"></script>
 <a href="/signup" data-beacon-cta="TRY_FREE">Try free</a>`}</pre>
-        <div className="eyebrow mb-2 mt-5">{t("Server — lifecycle events (signup → subscription)")}</div>
+        <div className="eyebrow mb-2 mt-5">{t("Server: lifecycle events (signup → subscription)")}</div>
         <pre className="overflow-x-auto border border-line bg-obsidian p-3 text-[12px] text-chrome">{`curl -X POST ${base}/api/v1/events \\
   -H "authorization: Bearer $BEACON_SECRET_KEY" -H "content-type: application/json" \\
   -d '{"type":"SIGNUP","identityRef":"user_123","visitorId":"<from beacon cookie bcn_vid>","consent":{"analytics":true,"marketing":false,"crossProduct":false}}'`}</pre>
-        <div className="eyebrow mb-2 mt-5">{t("Server — revenue (or connect Stripe webhooks in Settings → Integrations)")}</div>
+        <div className="eyebrow mb-2 mt-5">{t("Server: revenue (or connect Stripe webhooks in Settings → Integrations)")}</div>
         <pre className="overflow-x-auto border border-line bg-obsidian p-3 text-[12px] text-chrome">{`curl -X POST ${base}/api/v1/revenue -H "authorization: Bearer $BEACON_SECRET_KEY" -H "content-type: application/json" \\
   -d '{"externalId":"inv_001","type":"NEW","amountCents":4900,"mrrDeltaCents":4900,"currency":"EUR","identityRef":"user_123",
        "subscription":{"externalId":"sub_001","plan":"Pro","status":"ACTIVE","mrrCents":4900}}'`}</pre>
@@ -144,9 +144,9 @@ export default async function TrackingPage({ params, searchParams }: { params: P
                   <Td>
                     <Badge>{label(e.type)}</Badge>
                   </Td>
-                  <Td className="num text-xs">{e.pagePath ?? "—"}</Td>
-                  <Td className="text-xs">{e.channel ? (e.channel === "PAID" && locale === "fr" ? t("PAID ADS") : label(e.channel)) : "—"}</Td>
-                  <Td className="text-xs">{e.ctaId ?? "—"}</Td>
+                  <Td className="num text-xs">{e.pagePath ?? t("n/a")}</Td>
+                  <Td className="text-xs">{e.channel ? (e.channel === "PAID" && locale === "fr" ? t("PAID ADS") : label(e.channel)) : t("n/a")}</Td>
+                  <Td className="text-xs">{e.ctaId ?? t("n/a")}</Td>
                 </tr>
               ))}
             </tbody>

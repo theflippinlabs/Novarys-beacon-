@@ -17,7 +17,7 @@ export const isUuid = (v: string) => UUID_RE.test(v);
 export const productRef = (what = "The product") => z.string().trim().min(1).max(100).describe(`${what}: its slug (preferred, e.g. "novus-live") or its id. Use list_products to find it.`);
 export const optionalProductRef = (what = "Only this product") => z.string().trim().min(1).max(100).optional().describe(`${what}: slug or id. Omit for all products.`);
 export const idRef = (what: string) => z.string().trim().regex(UUID_RE, "must be an id (uuid)").describe(what);
-export const limitInput = z.number().int().min(1).max(LIST_CAP).optional().describe(`Maximum number of items to return (1–${LIST_CAP}, default ${LIST_CAP}).`);
+export const limitInput = z.number().int().min(1).max(LIST_CAP).optional().describe(`Maximum number of items to return (1 to ${LIST_CAP}, default ${LIST_CAP}).`);
 export const daysInput = z.number().int().min(1).max(365).optional().describe("Reporting window in days (e.g. 7, 28 or 90; default 28). Compared with the previous window of equal length.");
 
 // ── Output helpers ──────────────────────────────────────────────────────
@@ -37,7 +37,7 @@ export function iso(d: Date | string | null | undefined): string | null {
   return d instanceof Date ? d.toISOString() : String(d);
 }
 
-/** A measured KPI, or an explicit "not connected" marker — never an estimate or a zero standing in for missing data. */
+/** A measured KPI, or an explicit "not connected" marker, never an estimate or a zero standing in for missing data. */
 export function kpi(k: Kpi, unit: "count" | "money_minor_units" | "ratio" = "count") {
   if (k.now === null) return { status: "not connected" as const, source: k.source };
   return { now: k.now, previous: k.prev, unit, source: k.source };

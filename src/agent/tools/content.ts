@@ -16,7 +16,7 @@ const BODY_MAX = 6000;
 /**
  * Generate the next draft version. The deterministic generator runs now (fact-grounded,
  * no LLM); an LLM rewrite is queued for the worker. Checks leave the asset at most in
- * HUMAN_APPROVAL — never APPROVED or PUBLISHED.
+ * HUMAN_APPROVAL, never APPROVED or PUBLISHED.
  */
 async function draft(c: AgentToolContext, actor: Actor, assetId: string, useLlm: boolean) {
   if (useLlm) {
@@ -155,7 +155,7 @@ export const createContentDraft = defineTool({
 export const regenerateContentDraft = defineTool({
   name: "regenerate_content_draft",
   label: "Regenerating a draft",
-  description: `Generate a new draft version of an existing content asset (e.g. after facts were added to the knowledge graph), then re-run the fact and SEO/GEO checks. Not allowed on APPROVED or PUBLISHED content — changing those is a human decision in the app. ${HUMAN_NOTE}`,
+  description: `Generate a new draft version of an existing content asset (e.g. after facts were added to the knowledge graph), then re-run the fact and SEO/GEO checks. Not allowed on APPROVED or PUBLISHED content: changing those is a human decision in the app. ${HUMAN_NOTE}`,
   permission: "content:write",
   kind: "write",
   input: z.object({ id: idRef("Content asset id."), useLlm: z.boolean().optional().describe("Queue an LLM rewrite constrained to the facts instead of the immediate deterministic draft (default false).") }),

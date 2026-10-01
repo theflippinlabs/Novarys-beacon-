@@ -145,7 +145,7 @@ export default async function DistributionPage({ searchParams }: { searchParams:
                   ))}
                 </select>
               </Field>
-              <Field label={t("Relevance (1–5)")}>
+              <Field label={t("Relevance (1 to 5)")}>
                 <input name="relevance" type="number" min={1} max={5} defaultValue={3} />
               </Field>
               <Field label={t("Notes")}>

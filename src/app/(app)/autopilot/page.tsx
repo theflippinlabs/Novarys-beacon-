@@ -43,7 +43,7 @@ export default async function AutopilotPage({ searchParams }: { searchParams: Pr
   });
   const back = "/autopilot";
   const s = data.report?.sections as GrowthAnalysis | undefined;
-  const pname = (id: string) => data.prods.find((p) => p.id === id)?.name ?? "—";
+  const pname = (id: string) => data.prods.find((p) => p.id === id)?.name ?? t("n/a");
   /** Enum value in lower case (English output keeps the raw value when `raw` is set). */
   const lower = (v: string, raw = false) => (locale === "en" && raw ? v : enumLabel(t, v).toLocaleLowerCase(intl));
   const recBody = (body: string) => {
@@ -57,7 +57,7 @@ export default async function AutopilotPage({ searchParams }: { searchParams: Pr
       <PageHeader
         eyebrow={t("12 / Autopilot")}
         title={t("Growth autopilot")}
-        description={t("A deterministic growth analyst: measured changes, coinciding events (correlation — not proven causation), prioritised actions, content to create, technical issues, experiments and signals to monitor. Anything touching production content, external accounts or paid campaigns needs approval.")}
+        description={t("A deterministic growth analyst: measured changes, coinciding events (correlation, not proven causation), prioritised actions, content to create, technical issues, experiments and signals to monitor. Anything touching production content, external accounts or paid campaigns needs approval.")}
         actions={
           can("job:run") && (
             <form action={runReportAction} className="flex items-center gap-2">
@@ -108,7 +108,7 @@ export default async function AutopilotPage({ searchParams }: { searchParams: Pr
           </Panel>
           <Panel title={t("Actions & signals")} eyebrow={t("Recommended")}>
             <div className="eyebrow mb-2">{t("Content to create")}</div>
-            <ul className="mb-4 flex flex-col gap-1 text-sm text-chrome">{s.contentToCreate.length ? s.contentToCreate.map((c) => <li key={c}>○ {t(c)}</li>) : <li className="text-muted">—</li>}</ul>
+            <ul className="mb-4 flex flex-col gap-1 text-sm text-chrome">{s.contentToCreate.length ? s.contentToCreate.map((c) => <li key={c}>○ {t(c)}</li>) : <li className="text-muted">{t("None")}</li>}</ul>
             <div className="eyebrow mb-2">{t("Technical issues")}</div>
             <ul className="mb-4 flex flex-col gap-1 text-sm text-chrome">{s.technicalIssues.length ? s.technicalIssues.map((c) => <li key={c}>✕ {c}</li>) : <li className="text-muted">{t("No open critical issues.")}</li>}</ul>
             <div className="eyebrow mb-2">{t("Experiments proposed")}</div>
@@ -123,7 +123,7 @@ export default async function AutopilotPage({ searchParams }: { searchParams: Pr
                   </li>
                 ))
               ) : (
-                <li className="text-muted">—</li>
+                <li className="text-muted">{t("None")}</li>
               )}
             </ul>
             <div className="eyebrow mb-2">{t("Expected signals to monitor")}</div>
@@ -393,7 +393,7 @@ export default async function AutopilotPage({ searchParams }: { searchParams: Pr
         )}
       </div>
 
-      <Panel title={t("AI sales agent — test a visitor need")} eyebrow={t("Explainable product recommendation")} className="mt-6">
+      <Panel title={t("AI sales agent: test a visitor need")} eyebrow={t("Explainable product recommendation")} className="mt-6">
         <form method="get" action="/autopilot#sales" className="flex flex-col gap-3 md:flex-row" id="sales">
           <input name="need" defaultValue={need ?? ""} placeholder={t("I run a TikTok agency with 30 creators.")} aria-label={t("Visitor need")} />
           <Button>{t("Recommend")}</Button>
@@ -420,7 +420,7 @@ export default async function AutopilotPage({ searchParams }: { searchParams: Pr
                     ))}
                   </ul>
                   <div className="eyebrow mb-1 mt-3">{t("Relevant features")}</div>
-                  <p className="text-xs text-chrome">{data.recommendation.primary.relevantFeatures.join(", ") || "—"}</p>
+                  <p className="text-xs text-chrome">{data.recommendation.primary.relevantFeatures.join(", ") || t("None")}</p>
                   <div className="eyebrow mb-1 mt-3">{t("Pricing (verified)")}</div>
                   <p className="text-xs text-chrome">{data.recommendation.primary.pricing.map((x) => t(x)).join(" · ") || t("No verified pricing recorded")}</p>
                   {data.recommendation.primary.cta && <div className="mt-3 text-xs text-gold-bright">{t("CTA: {label} → {url}", { label: data.recommendation.primary.cta.label, url: data.recommendation.primary.cta.url })}</div>}
@@ -430,7 +430,7 @@ export default async function AutopilotPage({ searchParams }: { searchParams: Pr
                   {data.recommendation.complementary.length ? (
                     data.recommendation.complementary.map((c) => (
                       <div key={c.productId} className="mt-2 text-sm text-chrome">
-                        {c.productName} <span className="text-xs text-muted">— {c.why.map((w) => w.fact).join(", ")}</span>
+                        {c.productName} <span className="text-xs text-muted">({c.why.map((w) => w.fact).join(", ")})</span>
                       </div>
                     ))
                   ) : (

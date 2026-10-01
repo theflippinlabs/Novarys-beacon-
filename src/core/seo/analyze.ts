@@ -40,7 +40,7 @@ export function normalizeUrl(href: string, base: string): string | null {
 /**
  * Analyse one HTML document. Pure: takes the fetched response, returns facts
  * and issues. Page-speed findings here are server-side signals only
- * (response time and weight), clearly labelled — not lab/field Web Vitals.
+ * (response time and weight), clearly labelled, not lab/field Web Vitals.
  */
 export function analyzeHtml(input: {
   url: string;
@@ -62,11 +62,11 @@ export function analyzeHtml(input: {
 
   const title = $("head > title").first().text().trim() || null;
   if (!title) add("meta.title_missing", "HIGH", "Missing <title>.");
-  else if (title.length < 15 || title.length > 65) add("meta.title_length", "LOW", `Title is ${title.length} characters (aim for 15–65).`, { length: title.length });
+  else if (title.length < 15 || title.length > 65) add("meta.title_length", "LOW", `Title is ${title.length} characters (aim for 15 to 65).`, { length: title.length });
 
   const metaDescription = $('meta[name="description"]').attr("content")?.trim() || null;
   if (!metaDescription) add("meta.description_missing", "MEDIUM", "Missing meta description.");
-  else if (metaDescription.length < 50 || metaDescription.length > 165) add("meta.description_length", "LOW", `Meta description is ${metaDescription.length} characters (aim for 50–165).`);
+  else if (metaDescription.length < 50 || metaDescription.length > 165) add("meta.description_length", "LOW", `Meta description is ${metaDescription.length} characters (aim for 50 to 165).`);
 
   const h1 = $("h1").map((_, el) => $(el).text().trim()).get();
   if (h1.length === 0) add("headings.h1_missing", "HIGH", "No H1 heading.");

@@ -48,8 +48,8 @@ export const fr: Record<string, string> = {
   "Change password": "Changer le mot de passe",
 
   // Integrations
-  "Provider adapters are swappable; Beacon core never depends on one vendor. Credentials are encrypted with AES-256-GCM, never returned to the browser and never logged. Only official APIs are used — no scraping.":
-    "Les adaptateurs de fournisseurs sont interchangeables : le cœur de Beacon ne dépend jamais d’un seul éditeur. Les identifiants sont chiffrés en AES-256-GCM, jamais renvoyés au navigateur et jamais journalisés. Seules les API officielles sont utilisées — aucun scraping.",
+  "Provider adapters are swappable; Beacon core never depends on one vendor. Credentials are encrypted with AES-256-GCM, never returned to the browser and never logged. Only official APIs are used, no scraping.":
+    "Les adaptateurs de fournisseurs sont interchangeables : le cœur de Beacon ne dépend jamais d’un seul éditeur. Les identifiants sont chiffrés en AES-256-GCM, jamais renvoyés au navigateur et jamais journalisés. Seules les API officielles sont utilisées, aucun scraping.",
   Organisation: "Organisation",
   Connected: "Connectées",
   Health: "Santé",
@@ -110,8 +110,8 @@ export const fr: Record<string, string> = {
   "Oldest queued": "Plus ancienne en file",
   "{n}s": "{n} s",
   "Last job started": "Dernière tâche démarrée",
-  "Jobs are waiting > 10 minutes — is the worker running? (`pnpm worker` or BEACON_EMBEDDED_WORKER=true)":
-    "Des tâches attendent depuis plus de 10 minutes — le worker est-il lancé ? (`pnpm worker` ou BEACON_EMBEDDED_WORKER=true)",
+  "Jobs are waiting > 10 minutes. Is the worker running? (`pnpm worker` or BEACON_EMBEDDED_WORKER=true)":
+    "Des tâches attendent depuis plus de 10 minutes. Le worker est-il lancé ? (`pnpm worker` ou BEACON_EMBEDDED_WORKER=true)",
   "Integration health": "Santé des intégrations",
   Sync: "Synchronisation",
   "No integrations.": "Aucune intégration.",

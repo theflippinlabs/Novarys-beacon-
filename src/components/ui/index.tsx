@@ -58,7 +58,7 @@ export async function Delta({ now, prev }: { now: number | null; prev: number | 
   );
 }
 
-/** KPI tile. `value === null` renders an explicit "not connected" state — never a fake zero. */
+/** KPI tile. `value === null` renders an explicit "not connected" state, never a fake zero. */
 export async function Stat({ label, value, prev, fmt = "count", currency, source, href }: { label: string; value: number | null; prev?: number | null; fmt?: Fmt; currency?: string; source?: string; href?: string }) {
   const { t, intl } = await getI18n();
   const body = (
@@ -66,10 +66,8 @@ export async function Stat({ label, value, prev, fmt = "count", currency, source
       <div className="eyebrow">{label}</div>
       {value === null ? (
         <div>
-          <div className="num text-lg text-muted">—</div>
-          <div className="mt-1 text-[11px] text-muted">
-            {t("Not connected")} · {source}
-          </div>
+          <div className="text-lg text-muted">{t("Not connected")}</div>
+          {source && <div className="mt-1 text-[11px] text-muted">{source}</div>}
         </div>
       ) : (
         <div>

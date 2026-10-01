@@ -101,7 +101,7 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
               </Field>
               <Field label={t("Target query (optional)")}>
                 <select name="targetQueryId" defaultValue="">
-                  <option value="">—</option>
+                  <option value="">{t("None")}</option>
                   {data.qs.map((q) => (
                     <option key={q.id} value={q.id}>
                       {q.query}

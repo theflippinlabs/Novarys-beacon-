@@ -1,4 +1,12 @@
 export const fr: Record<string, string> = {
+  "Edit product": "Modifier le produit",
+  "Continue editing →": "Continuer la saisie →",
+  "Danger zone": "Zone sensible",
+  "Delete this product": "Supprimer ce produit",
+  "This permanently removes the product and everything attached to it: knowledge graph, queries, planned pages, content, audits, opportunities and scores. Uploaded photos and revenue history are kept. This cannot be undone.":
+    "Le produit est supprimé définitivement, avec tout ce qui s’y rattache : graphe de connaissances, requêtes, pages planifiées, contenus, audits, opportunités et scores. Les photos téléversées et l’historique des revenus sont conservés. Cette action est irréversible.",
+  "Type “{name}” to confirm": "Saisissez « {name} » pour confirmer",
+  "Delete product": "Supprimer le produit",
   "PAID ADS": "PUBLICITÉ PAYANTE",
   // Product tabs
   Dashboard: "Tableau de bord",
@@ -10,8 +18,8 @@ export const fr: Record<string, string> = {
   // Products list
   "02 / Products": "02 / Produits",
   "Product knowledge graph": "Graphe de connaissances produit",
-  "The single source of truth for every Novarys product. Everything Beacon generates is derived from these facts — unknown facts stay unknown until a human provides them.":
-    "La source de vérité unique pour chaque produit Novarys. Tout ce que Beacon génère découle de ces faits — les faits inconnus restent inconnus tant qu’un humain ne les a pas renseignés.",
+  "The single source of truth for every Novarys product. Everything Beacon generates is derived from these facts; unknown facts stay unknown until a human provides them.":
+    "La source de vérité unique pour chaque produit Novarys. Tout ce que Beacon génère découle de ces faits ; les faits inconnus restent inconnus tant qu’un humain ne les a pas renseignés.",
   "No products yet": "Aucun produit pour l’instant",
   "Add the first Novarys product. The onboarding takes a few minutes and drives the entire discovery engine.":
     "Ajoutez le premier produit Novarys. L’intégration guidée prend quelques minutes et alimente tout le moteur de découverte.",
@@ -36,7 +44,7 @@ export const fr: Record<string, string> = {
   // Product dashboard
   "Product · {category}": "Produit · {category}",
   "category unknown": "catégorie inconnue",
-  "No short description yet — complete onboarding step 4.": "Pas encore de description courte — complétez l’étape 4 de l’intégration guidée.",
+  "No short description yet. Complete onboarding step 4.": "Pas encore de description courte. Complétez l’étape 4 de l’intégration guidée.",
   "Re-run analysis": "Relancer l’analyse",
   "Product analysis failed: {error}": "L’analyse du produit a échoué : {error}",
   "Product analysis is queued or running in the background worker.": "L’analyse du produit est en file d’attente ou en cours d’exécution en arrière-plan.",
@@ -157,7 +165,7 @@ export const fr: Record<string, string> = {
   "{n} canonical source URL(s).": "{n} URL de source canonique.",
   "Link documentation, pricing and website sources.": "Reliez les sources de documentation, de tarifs et du site web.",
   "Referring domains": "Domaines référents",
-  "Backlink data not connected — cannot be scored.": "Données de backlinks non connectées — impossible à évaluer.",
+  "Backlink data not connected: cannot be scored.": "Données de backlinks non connectées : impossible à évaluer.",
   "{n} referring domains observed.": "{n} domaines référents observés.",
   "Connect a source of backlink data (e.g. Bing Webmaster).": "Connectez une source de données de backlinks (par ex. Bing Webmaster).",
   "Earn links through directories, partners and useful content.": "Obtenez des liens grâce aux annuaires, aux partenaires et à des contenus utiles.",
@@ -240,18 +248,18 @@ export const fr: Record<string, string> = {
   "free trial": "essai gratuit",
   languages: "langues",
   // Answer-block gaps
-  "What is {name}? — needs a short description": "Qu’est-ce que {name} ? — nécessite une description courte",
-  "Who is {name} for? — needs target audiences": "À qui s’adresse {name} ? — nécessite des audiences cibles",
-  "What does {name} do? — needs features or problems solved": "Que fait {name} ? — nécessite des fonctionnalités ou des problèmes résolus",
-  "How much does {name} cost? — no public prices recorded": "Combien coûte {name} ? — aucun prix public enregistré",
-  "Alternatives to {name}? — needs ≥ 2 sourced comparison facts": "Alternatives à {name} ? — nécessite ≥ 2 faits comparatifs sourcés",
+  "What is {name}? (needs a short description)": "Qu’est-ce que {name} ? (nécessite une description courte)",
+  "Who is {name} for? (needs target audiences)": "À qui s’adresse {name} ? (nécessite des audiences cibles)",
+  "What does {name} do? (needs features or problems solved)": "Que fait {name} ? (nécessite des fonctionnalités ou des problèmes résolus)",
+  "How much does {name} cost? (no public prices recorded)": "Combien coûte {name} ? (aucun prix public enregistré)",
+  "Alternatives to {name}? (needs ≥ 2 sourced comparison facts)": "Alternatives à {name} ? (nécessite ≥ 2 faits comparatifs sourcés)",
 
   // Tracking
   "Tracking · {name}": "Suivi · {name}",
   "Conversion tracking & keys": "Suivi des conversions et clés",
   "First-party, privacy-respecting measurement. Browser (publishable) keys can only send PAGE_VIEW and CTA_CLICK from allowed origins; lifecycle and revenue events require a secret server key.":
     "Mesure first-party, respectueuse de la vie privée. Les clés navigateur (publiables) ne peuvent envoyer que PAGE_VIEW et CTA_CLICK depuis les origines autorisées ; les événements de cycle de vie et de revenus exigent une clé serveur secrète.",
-  "New key — shown once": "Nouvelle clé — affichée une seule fois",
+  "New key (shown once)": "Nouvelle clé (affichée une seule fois)",
   "API keys": "Clés API",
   Name: "Nom",
   Type: "Type",
@@ -272,9 +280,9 @@ export const fr: Record<string, string> = {
     "Hôtes séparés par des virgules. Le domaine du produit est toujours autorisé pour les clés publiables.",
   Install: "Installation",
   Snippets: "Extraits de code",
-  "Browser — page views & CTA clicks (add data-beacon-cta to CTA links)": "Navigateur — pages vues et clics sur CTA (ajoutez data-beacon-cta aux liens CTA)",
-  "Server — lifecycle events (signup → subscription)": "Serveur — événements de cycle de vie (inscription → abonnement)",
-  "Server — revenue (or connect Stripe webhooks in Settings → Integrations)": "Serveur — revenus (ou connectez les webhooks Stripe dans Paramètres → Intégrations)",
+  "Browser: page views & CTA clicks (add data-beacon-cta to CTA links)": "Navigateur : pages vues et clics sur CTA (ajoutez data-beacon-cta aux liens CTA)",
+  "Server: lifecycle events (signup → subscription)": "Serveur : événements de cycle de vie (inscription → abonnement)",
+  "Server: revenue (or connect Stripe webhooks in Settings → Integrations)": "Serveur : revenus (ou connectez les webhooks Stripe dans Paramètres → Intégrations)",
   "Latest events": "Derniers événements",
   Live: "En direct",
   Time: "Heure",

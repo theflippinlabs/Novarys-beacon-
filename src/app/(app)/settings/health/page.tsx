@@ -59,12 +59,12 @@ export default async function HealthPage({ searchParams }: { searchParams: Promi
                 [t("Running"), health.queue.running],
                 [t("Retrying"), health.queue.retrying],
                 [t("Dead (24h)"), health.queue.dead24h],
-                [t("Oldest queued"), health.queue.oldestQueuedSeconds === null ? "—" : t("{n}s", { n: health.queue.oldestQueuedSeconds })],
+                [t("Oldest queued"), health.queue.oldestQueuedSeconds === null ? t("n/a") : t("{n}s", { n: health.queue.oldestQueuedSeconds })],
                 [t("Last job started"), health.queue.lastJobStartedAt?.slice(0, 19) ?? t("never")],
               ]}
             />
           )}
-          {health.queue?.workerStale && <p className="mt-3 text-xs text-warn">◐ {t("Jobs are waiting > 10 minutes — is the worker running? (`pnpm worker` or BEACON_EMBEDDED_WORKER=true)")}</p>}
+          {health.queue?.workerStale && <p className="mt-3 text-xs text-warn">◐ {t("Jobs are waiting > 10 minutes. Is the worker running? (`pnpm worker` or BEACON_EMBEDDED_WORKER=true)")}</p>}
         </Panel>
         <Panel title={t("Integration health")} eyebrow={t("Sync")}>
           <ul className="flex flex-col gap-2">
@@ -96,7 +96,7 @@ export default async function HealthPage({ searchParams }: { searchParams: Promi
                   <Td className="num text-xs">{r.type}</Td>
                   <Td className="num">{r.ok}</Td>
                   <Td className={`num ${Number(r.dead) ? "text-crit" : ""}`}>{r.dead}</Td>
-                  <Td className="num">{r.avg_s === null ? "—" : t("{n}s", { n: Number(r.avg_s).toLocaleString(intl, { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false }) })}</Td>
+                  <Td className="num">{r.avg_s === null ? t("n/a") : t("{n}s", { n: Number(r.avg_s).toLocaleString(intl, { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false }) })}</Td>
                 </tr>
               ))}
             </tbody>
@@ -186,7 +186,7 @@ export default async function HealthPage({ searchParams }: { searchParams: Promi
                   <StatusBadge status={j.status} />
                 </Td>
                 <Td className="num">{j.attempts}</Td>
-                <Td className="num text-xs">{j.startedAt && j.finishedAt ? t("{n}s", { n: ((j.finishedAt.getTime() - j.startedAt.getTime()) / 1000).toLocaleString(intl, { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false }) }) : "—"}</Td>
+                <Td className="num text-xs">{j.startedAt && j.finishedAt ? t("{n}s", { n: ((j.finishedAt.getTime() - j.startedAt.getTime()) / 1000).toLocaleString(intl, { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false }) }) : t("n/a")}</Td>
               </tr>
             ))}
           </tbody>

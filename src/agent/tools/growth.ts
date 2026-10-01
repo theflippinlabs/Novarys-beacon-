@@ -48,7 +48,7 @@ export const queueAiVisibilityTests = defineTool({
     requirePermission(c, "job:run");
     const org = c.ctx.org.id;
     const providers = await availableProviders(c.tx, org);
-    if (!providers.length) throw new Error("No AI provider is connected — an admin can add one in Settings → Integrations.");
+    if (!providers.length) throw new Error("No AI provider is connected. An admin can add one in Settings → Integrations.");
     if (i.promptId) {
       const p = await c.tx.query.aiVisibilityPrompts.findFirst({ where: and(eq(aiVisibilityPrompts.id, i.promptId), eq(aiVisibilityPrompts.organizationId, org)) });
       if (!p) throw new Error("Prompt not found");
@@ -65,14 +65,14 @@ export const queueAiVisibilityTests = defineTool({
 export const getConversionsSummary = defineTool({
   name: "get_conversions_summary",
   label: "Reading conversions",
-  description: "Read the conversion funnel (page view → CTA click → signup → trial → activation → checkout → subscription, distinct visitors per step and step rates) and the breakdown by acquisition channel for a period, from Beacon's first-party events. If no events were ever received, returns \"not connected\" — never estimate.",
+  description: "Read the conversion funnel (page view → CTA click → signup → trial → activation → checkout → subscription, distinct visitors per step and step rates) and the breakdown by acquisition channel for a period, from Beacon's first-party events. If no events were ever received, returns \"not connected\"; never estimate.",
   permission: "read",
   kind: "read",
   input: z.object({ days: daysInput, product: optionalProductRef() }),
   run: async ({ tx, ctx }, i) => {
     const days = i.days ?? 28;
     const product = await resolveOptionalProduct(tx, ctx.org.id, i.product);
-    if (!(await hasConversionEvents(tx, ctx.org.id))) return { status: "not connected", detail: "No first-party events received yet — install the Beacon tracker from a product's Tracking tab.", link: product ? `/products/${product.slug}/tracking` : "/conversions" };
+    if (!(await hasConversionEvents(tx, ctx.org.id))) return { status: "not connected", detail: "No first-party events received yet. Install the Beacon tracker from a product's Tracking tab.", link: product ? `/products/${product.slug}/tracking` : "/conversions" };
     const counts = await funnelCounts(tx, ctx.org.id, days, product?.id ?? null, null);
     const byChannel = await conversionsByChannel(tx, ctx.org.id, days, product?.id ?? null);
     return {
@@ -119,7 +119,7 @@ export const getAutopilot = defineTool({
   name: "get_autopilot",
   label: "Reading the growth autopilot",
   description:
-    "Read the latest growth-analyst report (what happened with sources, possible explanations labelled CORRELATION or INSUFFICIENT_DATA — never causation, content to create, technical issues, signals to monitor, data-coverage gaps), the recommendations awaiting a human decision, and experiments. Recommendations are approved or rejected by an authorised person in the app.",
+    "Read the latest growth-analyst report (what happened with sources, possible explanations labelled CORRELATION or INSUFFICIENT_DATA (never causation), content to create, technical issues, signals to monitor, data-coverage gaps), the recommendations awaiting a human decision, and experiments. Recommendations are approved or rejected by an authorised person in the app.",
   permission: "read",
   kind: "read",
   input: z.object({}),

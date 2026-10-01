@@ -14,7 +14,7 @@ export const listQueries = defineTool({
   name: "list_queries",
   label: "Reading queries",
   description:
-    "List tracked search queries (with intent, funnel stage, importance 1–5, coverage NONE/PARTIAL/COVERED, status, cluster), plus status counts and the top clusters with their coverage. Filter by product, status, intent, coverage or a text search. CANDIDATE queries are suggestions awaiting human curation.",
+    "List tracked search queries (with intent, funnel stage, importance 1 to 5, coverage NONE/PARTIAL/COVERED, status, cluster), plus status counts and the top clusters with their coverage. Filter by product, status, intent, coverage or a text search. CANDIDATE queries are suggestions awaiting human curation.",
   permission: "read",
   kind: "read",
   input: z.object({
@@ -102,7 +102,7 @@ export const generateQuerySuggestions = defineTool({
   name: "generate_query_suggestions",
   label: "Generating query suggestions",
   description:
-    "Expand a product's query universe from its knowledge graph (category, audiences, problems, features, integrations, competitors). New queries are added as CANDIDATE for the user to curate on the Queries page — they are not tracked until a human activates them. Returns how many were generated and inserted.",
+    "Expand a product's query universe from its knowledge graph (category, audiences, problems, features, integrations, competitors). New queries are added as CANDIDATE for the user to curate on the Queries page; they are not tracked until a human activates them. Returns how many were generated and inserted.",
   permission: "query:write",
   kind: "write",
   input: z.object({ product: productRef(), max: z.number().int().min(10).max(150).optional().describe("Maximum candidates to generate (default 150).") }),

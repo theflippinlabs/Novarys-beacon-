@@ -116,7 +116,7 @@ export function buildAnswerBlocks(g: ProductGraph): { answers: AnswerBlock[]; ga
       confidence: conf(Boolean(p.lastVerifiedAt)),
       basedOn: ["product.short_description", "product.category"],
     });
-  } else gaps.push(`What is ${p.name}? — needs a short description`);
+  } else gaps.push(`What is ${p.name}? (needs a short description)`);
 
   const audiences = facetsOf(g, "AUDIENCE");
   if (audiences.length) {
@@ -137,7 +137,7 @@ export function buildAnswerBlocks(g: ProductGraph): { answers: AnswerBlock[]; ga
         confidence: conf(isVerified(a)),
         basedOn: [`facet:${a.id}`],
       });
-  } else gaps.push(`Who is ${p.name} for? — needs target audiences`);
+  } else gaps.push(`Who is ${p.name} for? (needs target audiences)`);
 
   const features = facetsOf(g, "FEATURE");
   const problems = facetsOf(g, "PROBLEM");
@@ -153,7 +153,7 @@ export function buildAnswerBlocks(g: ProductGraph): { answers: AnswerBlock[]; ga
       confidence: conf([...features, ...problems].every(isVerified)),
       basedOn: [...features, ...problems].map((f) => `facet:${f.id}`),
     });
-  } else gaps.push(`What does ${p.name} do? — needs features or problems solved`);
+  } else gaps.push(`What does ${p.name} do? (needs features or problems solved)`);
 
   const priced = g.pricing.filter((pl) => pl.priceCents !== null);
   if (priced.length) {
@@ -167,7 +167,7 @@ export function buildAnswerBlocks(g: ProductGraph): { answers: AnswerBlock[]; ga
       confidence: conf(priced.every(isVerified)),
       basedOn: priced.map((pl) => `pricing:${pl.id}`),
     });
-  } else gaps.push(`How much does ${p.name} cost? — no public prices recorded`);
+  } else gaps.push(`How much does ${p.name} cost? (no public prices recorded)`);
 
   for (const integ of facetsOf(g, "INTEGRATION"))
     answers.push({
@@ -182,13 +182,13 @@ export function buildAnswerBlocks(g: ProductGraph): { answers: AnswerBlock[]; ga
   for (const pc of g.competitors) {
     const sourced = pc.comparisonFacts.filter((f) => f.sourceUrl);
     if (sourced.length < 2) {
-      gaps.push(`Alternatives to ${pc.competitor.name}? — needs ≥ 2 sourced comparison facts`);
+      gaps.push(`Alternatives to ${pc.competitor.name}? (needs ≥ 2 sourced comparison facts)`);
       continue;
     }
     answers.push({
       id: `alternative-${pc.competitor.slug}`,
       question: `What is an alternative to ${pc.competitor.name}?`,
-      answer: `${p.name} is an alternative to ${pc.competitor.name}. ${sourced.map((f) => `${f.dimension}: ${p.name} — ${f.product}; ${pc.competitor.name} — ${f.competitor}.`).join(" ")}`,
+      answer: `${p.name} is an alternative to ${pc.competitor.name}. ${sourced.map((f) => `${f.dimension}: ${f.product} for ${p.name}; ${f.competitor} for ${pc.competitor.name}.`).join(" ")}`,
       sources: [...new Set(sourced.map((f) => f.sourceUrl))],
       confidence: conf(sourced.every((f) => f.verifiedAt)),
       basedOn: sourced.map((_, i) => `comparison:${pc.competitorId}:${i}`),

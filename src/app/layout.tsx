@@ -9,7 +9,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const t = await getT();
   return {
     metadataBase: new URL(process.env.BEACON_BASE_URL ?? "http://localhost:3000"),
-    title: { default: "Novarys Beacon", template: "%s — Beacon" },
+    title: { default: "Novarys Beacon", template: "%s | Beacon" },
     description: t("Build once. Be found everywhere. The distribution and discovery engine of the Novarys ecosystem."),
     robots: { index: false, follow: false },
     appleWebApp: { capable: true, title: "Beacon", statusBarStyle: "black-translucent" },

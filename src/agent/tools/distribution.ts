@@ -11,7 +11,7 @@ const NEVER_SUBMITS = "Beacon never submits to third-party platforms: SUBMITTED/
 export const listDistributionTargets = defineTool({
   name: "list_distribution_targets",
   label: "Reading distribution targets",
-  description: `List distribution targets (directories, launch platforms, communities, newsletters, partners, media…) with their stage DISCOVERED → QUALIFIED → PREPARED → SUBMITTED → PUBLISHED → PERFORMING (+ FOLLOW_UP, REJECTED), relevance 1–5 and whether an external submission was approved. ${NEVER_SUBMITS}`,
+  description: `List distribution targets (directories, launch platforms, communities, newsletters, partners, media…) with their stage DISCOVERED → QUALIFIED → PREPARED → SUBMITTED → PUBLISHED → PERFORMING (+ FOLLOW_UP, REJECTED), relevance 1 to 5 and whether an external submission was approved. ${NEVER_SUBMITS}`,
   permission: "read",
   kind: "read",
   input: z.object({
@@ -51,7 +51,7 @@ export const addDistributionTargetTool = defineTool({
     kind: KINDS.describe("Kind of venue."),
     url: z.string().trim().max(2000).regex(/^https:\/\/\S+$/i, "must be an https:// URL").optional().describe("Venue URL (https)."),
     product: optionalProductRef("The product to distribute"),
-    relevance: z.number().int().min(1).max(5).optional().describe("Relevance 1–5 for this product."),
+    relevance: z.number().int().min(1).max(5).optional().describe("Relevance 1 to 5 for this product."),
     notes: z.string().trim().max(1000).optional().describe("Why it fits, requirements, audience."),
   }),
   run: async (c, i) => {

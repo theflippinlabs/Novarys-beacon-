@@ -32,13 +32,13 @@ beforeAll(async () => {
       case "/sitemap.xml":
         return send(200, "application/xml", `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>${base}/</loc></url><url><loc>${base}/about</loc></url><url><loc>${base}/orphan</loc></url></urlset>`);
       case "/":
-        return send(200, "text/html; charset=utf-8", page("Tiny Test Site — Home page", ["/about", "/broken"]));
+        return send(200, "text/html; charset=utf-8", page("Tiny Test Site | Home page", ["/about", "/broken"]));
       case "/about":
         return send(200, "text/html; charset=utf-8", page(null, ["/"]));
       case "/orphan":
         return send(200, "text/html; charset=utf-8", page("Orphan page nobody links to", ["/"]));
       default:
-        return send(404, "text/html", page("Not found — Tiny Test Site", []));
+        return send(404, "text/html", page("Not found | Tiny Test Site", []));
     }
   });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));

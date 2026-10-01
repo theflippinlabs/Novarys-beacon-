@@ -12,7 +12,7 @@ export default async function globalSetup() {
   const routes: Record<string, [number, string, string]> = {
     "/robots.txt": [200, "text/plain", `User-agent: *\nAllow: /\nSitemap: http://127.0.0.1:${port}/sitemap.xml\n`],
     "/sitemap.xml": [200, "application/xml", `<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>http://127.0.0.1:${port}/</loc></url><url><loc>http://127.0.0.1:${port}/orphan</loc></url></urlset>`],
-    "/": [200, "text/html", page("Acme Live — TikTok LIVE moderation", `<h1>Acme Live</h1><p>Home</p><a href="/features">Features</a> <a href="/missing">Broken</a>`, `<meta name="description" content="Acme Live helps agencies moderate TikTok LIVE streams in real time with filters.">`)],
+    "/": [200, "text/html", page("Acme Live | TikTok LIVE moderation", `<h1>Acme Live</h1><p>Home</p><a href="/features">Features</a> <a href="/missing">Broken</a>`, `<meta name="description" content="Acme Live helps agencies moderate TikTok LIVE streams in real time with filters.">`)],
     "/features": [200, "text/html", page("", `<h1>Features</h1><img src="/x.png"><a href="/">Home</a>`)],
     "/orphan": [200, "text/html", page("Orphan page title here", `<h1>Orphan</h1>`)],
   };
@@ -34,8 +34,8 @@ export default async function globalSetup() {
 
 /**
  * Minimal stand-in for the Claude Messages API (streaming), used by the agent
- * E2E journey via ANTHROPIC_BASE_URL: first answers with a tool call, then —
- * once it receives the tool result — with a short Markdown reply.
+ * E2E journey via ANTHROPIC_BASE_URL: first answers with a tool call, then,
+ * once it receives the tool result, with a short Markdown reply.
  */
 function fakeClaude(req: http.IncomingMessage, res: http.ServerResponse) {
   let raw = "";

@@ -1,7 +1,7 @@
 import { inSequence } from "@/db";
 import Link from "next/link";
 import { and, desc, eq, sql } from "drizzle-orm";
-import { runProductAnalysisAction } from "@/app/actions/products";
+import { deleteProductAction, runProductAnalysisAction } from "@/app/actions/products";
 import { Badge, Button, EmptyState, Flash, HiddenBack, KV, LinkButton, Meter, PageHeader, Panel, PotentialBadge, Stat, StatusBadge, Table, Td, Th } from "@/components/ui";
 import { LineChart } from "@/components/charts/line-chart";
 import { ProductTabs, RangePicker } from "@/components/shell/product-tabs";
@@ -64,10 +64,15 @@ export default async function ProductDashboard({ params, searchParams }: { param
       <PageHeader
         eyebrow={t("Product · {category}", { category: p.category ?? t("category unknown") })}
         title={p.name}
-        description={p.shortDescription ?? <span className="text-muted">{t("No short description yet — complete onboarding step 4.")}</span>}
+        description={p.shortDescription ?? <span className="text-muted">{t("No short description yet. Complete onboarding step 4.")}</span>}
         actions={
           <>
             <RangePicker base={base} days={days} />
+            {can("product:write") && (
+              <LinkButton variant="gold" href={`${base}/onboarding?step=${p.onboardingCompletedAt ? 1 : Math.max(1, p.onboardingStep)}`}>
+                {p.onboardingCompletedAt ? t("Edit product") : t("Continue editing →")}
+              </LinkButton>
+            )}
             {can("job:run") && (
               <form action={runProductAnalysisAction}>
                 <HiddenBack path={base} />
@@ -228,8 +233,8 @@ export default async function ProductDashboard({ params, searchParams }: { param
                   <tr key={a.prompt.id}>
                     <Td className="max-w-xs">{a.prompt.prompt}</Td>
                     <Td className="num">{a.testsRun}</Td>
-                    <Td className="num">{a.testsRun ? `${a.mentions}/${a.testsRun}` : "—"}</Td>
-                    <Td className="text-xs">{a.competitors.join(", ") || "—"}</Td>
+                    <Td className="num">{a.testsRun ? `${a.mentions}/${a.testsRun}` : t("n/a")}</Td>
+                    <Td className="text-xs">{a.competitors.join(", ") || t("None")}</Td>
                   </tr>
                 ))}
               </tbody>
@@ -282,6 +287,25 @@ export default async function ProductDashboard({ params, searchParams }: { param
       </div>
 
       <ProductPhotos product={p} photos={data.photos} canEdit={can("product:write")} back={`${base}#photos`} />
+
+      {can("product:delete") && (
+        <section id="delete" className="mt-6 border border-crit/40 bg-crit/5 p-4">
+          <div className="eyebrow text-crit">{t("Danger zone")}</div>
+          <h2 className="mt-1 text-sm font-medium text-platinum">{t("Delete this product")}</h2>
+          <p className="mt-2 max-w-2xl text-sm text-chrome">
+            {t("This permanently removes the product and everything attached to it: knowledge graph, queries, planned pages, content, audits, opportunities and scores. Uploaded photos and revenue history are kept. This cannot be undone.")}
+          </p>
+          <form action={deleteProductAction} className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+            <HiddenBack path={`${base}#delete`} />
+            <input type="hidden" name="productId" value={p.id} />
+            <label className="flex min-w-0 flex-1 flex-col gap-1.5">
+              <span className="eyebrow text-chrome">{t("Type “{name}” to confirm", { name: p.name })}</span>
+              <input name="confirm" autoComplete="off" required placeholder={p.name} />
+            </label>
+            <Button variant="danger">{t("Delete product")}</Button>
+          </form>
+        </section>
+      )}
     </>
   );
 }

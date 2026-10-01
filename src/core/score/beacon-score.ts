@@ -29,12 +29,12 @@ function component(key: string, label: string, lines: ScoreLine[]): ScoreCompone
 }
 
 /**
- * Beacon Score: a transparent 0–100 operational readiness score. Every point
+ * Beacon Score: a transparent 0 to 100 operational readiness score. Every point
  * gained or lost is attributed to a concrete, inspectable reason. It measures
- * what Beacon can observe — it is NOT a prediction of rankings or traffic.
+ * what Beacon can observe; it is NOT a prediction of rankings or traffic.
  */
 export function computeBeaconScore(i: ScoreInput): BeaconScore {
-  // Technical Discovery — 20
+  // Technical Discovery: 20
   let technical: ScoreLine[];
   if (!i.audit) technical = [line("Technical audit", 0, 20, "No technical audit has been run.", "Run a technical SEO audit of the product website.", 1)];
   else {
@@ -48,7 +48,7 @@ export function computeBeaconScore(i: ScoreInput): BeaconScore {
     ];
   }
 
-  // Content Coverage — 20
+  // Content Coverage: 20
   const pagesRatio = i.pages.planned ? i.pages.published / i.pages.planned : 0;
   const content = [
     line("Product page published", i.pages.productPagePublished ? 5 : 0, 5, i.pages.productPagePublished ? "Canonical product page is published." : "No published product page.", "Generate, approve and publish the product page.", 2),
@@ -64,10 +64,10 @@ export function computeBeaconScore(i: ScoreInput): BeaconScore {
     ),
   ];
 
-  // Entity Completeness — 15 (components: 20+20+15+15+15+10+5 = 100)
+  // Entity Completeness: 15 (components: 20+20+15+15+15+10+5 = 100)
   const entity = [line("Knowledge graph completeness", 15 * i.completeness, 15, `${Math.round(i.completeness * 100)}% of weighted entity facts present.`, "Fill the missing knowledge-graph fields listed on the product page.", 1)];
 
-  // Authority Signals — 15
+  // Authority Signals: 15
   const authority = [
     line("Verified proof", Math.min(5, i.authority.verifiedProofs * 2.5), 5, `${i.authority.verifiedProofs} verified, publishable proof item(s) (case studies, testimonials, metrics).`, "Add verified case studies or testimonials with publication permission.", 3),
     line("Canonical sources", Math.min(3, i.authority.sources), 3, `${i.authority.sources} canonical source URL(s).`, "Link documentation, pricing and website sources.", 1),
@@ -75,7 +75,7 @@ export function computeBeaconScore(i: ScoreInput): BeaconScore {
       "Referring domains",
       i.authority.referringDomains === null ? 0 : Math.min(4, Math.log10(1 + i.authority.referringDomains) * 2),
       4,
-      i.authority.referringDomains === null ? "Backlink data not connected — cannot be scored." : `${i.authority.referringDomains} referring domains observed.`,
+      i.authority.referringDomains === null ? "Backlink data not connected: cannot be scored." : `${i.authority.referringDomains} referring domains observed.`,
       i.authority.referringDomains === null ? "Connect a source of backlink data (e.g. Bing Webmaster)." : "Earn links through directories, partners and useful content.",
       3,
     ),
@@ -89,14 +89,14 @@ export function computeBeaconScore(i: ScoreInput): BeaconScore {
     ),
   ];
 
-  // Query Coverage — 15
+  // Query Coverage: 15
   const qc = i.queries.weightedTotal ? i.queries.weightedCovered / i.queries.weightedTotal : 0;
   const queries = [
     line("Query universe defined", i.queries.active >= 20 ? 3 : (3 * i.queries.active) / 20, 3, `${i.queries.active} active queries tracked.`, "Generate and curate the query universe (target ≥ 20).", 1),
     line("Importance-weighted coverage", 12 * qc, 12, `${Math.round(qc * 100)}% of importance-weighted queries covered by published content.`, "Cover high-importance queries with dedicated pages.", 3),
   ];
 
-  // Conversion Readiness — 10
+  // Conversion Readiness: 10
   const conversion = [
     line("Conversion URLs", i.conversion.conversionUrls ? 3 : 0, 3, `${i.conversion.conversionUrls} conversion URL(s) declared.`, "Declare trial/demo/signup URLs.", 1),
     line("CTA tracking live", i.conversion.ctaEvents30d > 0 ? 3 : 0, 3, `${i.conversion.ctaEvents30d} CTA click event(s) received in 30 days.`, "Install the Beacon tracker and tag CTAs.", 1),
@@ -104,7 +104,7 @@ export function computeBeaconScore(i: ScoreInput): BeaconScore {
     line("Low-friction entry", i.conversion.hasTrialOrDemo ? 2 : 0, 2, i.conversion.hasTrialOrDemo ? "Free trial or demo path exists." : "No free trial or demo path recorded.", "Offer and declare a trial or demo path.", 2),
   ];
 
-  // Measurement Coverage — 5
+  // Measurement Coverage: 5
   const m = i.measurement;
   const measurement = [
     line("Search Console", m.searchConsole ? 2 : 0, 2, m.searchConsole ? "Connected." : "Not connected.", "Connect Google Search Console.", 1),

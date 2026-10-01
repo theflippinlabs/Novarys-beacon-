@@ -19,7 +19,7 @@ export async function generateContentAction(fd: FormData) {
   return act(fd, "content:write", z.object({ assetId: zId, useLlm: z.string().optional() }), async ({ tx, actor }, i) => {
     const asset = await getAsset(tx, actor.organizationId, i.assetId);
     await enqueue("content.generate", { assetId: asset.id, userId: actor.userId, useLlm: Boolean(i.useLlm) }, { organizationId: actor.organizationId, idempotencyKey: `gen:${asset.id}:${asset.currentVersion + 1}` });
-    return { ok: "Generation queued — the draft appears when the worker completes it." };
+    return { ok: "Generation queued. The draft appears when the worker completes it." };
   });
 }
 

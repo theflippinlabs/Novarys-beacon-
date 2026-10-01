@@ -30,7 +30,7 @@ export function generateApiKey(kind: ApiKeyKind) {
 
 export type ResolvedKey = { id: string; organizationId: string; productId: string | null; kind: ApiKeyKind; allowedOrigins: string[]; scopes: string[] };
 
-/** Resolve a raw API key (system context — the key itself identifies the tenant). */
+/** Resolve a raw API key (system context: the key itself identifies the tenant). */
 export async function resolveApiKey(tx: Tx, raw: string | null | undefined): Promise<ResolvedKey | null> {
   if (!raw || !/^b[ps]k_[A-Za-z0-9]{8}_[A-Za-z0-9_-]{20,64}$/.test(raw)) return null;
   const row = await tx.query.apiKeys.findFirst({ where: and(eq(apiKeys.keyHash, hmac(raw, "apikey")), isNull(apiKeys.revokedAt)) });

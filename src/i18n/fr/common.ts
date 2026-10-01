@@ -9,6 +9,8 @@ export const fr: Record<string, string> = {
   new: "nouveau",
   "Previous period: {value}": "Période précédente : {value}",
   Unknown: "Inconnu",
+  "n/a": "n.d.",
+  Default: "Par défaut",
   "{level} potential": "Potentiel {level}",
   Apply: "Appliquer",
   All: "Tous",

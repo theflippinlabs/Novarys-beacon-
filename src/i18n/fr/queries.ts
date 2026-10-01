@@ -3,8 +3,8 @@ export const fr: Record<string, string> = {
   Queries: "Requêtes",
   "04 / Queries": "04 / Requêtes",
   "Query intelligence": "Analyse des requêtes",
-  "The discovery query universe: intent, funnel stage, importance and coverage per market and language. Generated queries arrive as candidates — long-tail variations are tracked, never mass-produced into pages.":
-    "L’univers des requêtes de découverte : intention, étape de l’entonnoir, importance et couverture par marché et par langue. Les requêtes générées arrivent comme candidates — les variantes de longue traîne sont suivies, jamais transformées en pages à la chaîne.",
+  "The discovery query universe: intent, funnel stage, importance and coverage per market and language. Generated queries arrive as candidates; long-tail variations are tracked, never mass-produced into pages.":
+    "L’univers des requêtes de découverte : intention, étape de l’entonnoir, importance et couverture par marché et par langue. Les requêtes générées arrivent comme candidates ; les variantes de longue traîne sont suivies, jamais transformées en pages à la chaîne.",
   Intent: "Intention",
   Coverage: "Couverture",
   ALL: "TOUS",
@@ -67,6 +67,6 @@ export const fr: Record<string, string> = {
   'Generated: Problem "{name}" in the graph': "Générée : problème « {name} » présent dans le graphe",
   'Generated: Feature "{name}" in the graph': "Générée : fonctionnalité « {name} » présente dans le graphe",
   'Generated: Use case "{name}" in the graph': "Générée : cas d’usage « {name} » présent dans le graphe",
-  "From the Beacon specification brief — validate relevance before activating.":
-    "Issue du brief de spécification Beacon — validez sa pertinence avant de l’activer.",
+  "From the Beacon specification brief. Validate relevance before activating.":
+    "Issue du brief de spécification Beacon. Validez sa pertinence avant de l’activer.",
 };

@@ -27,7 +27,7 @@ export const POST = instrument("POST /api/v1/recommend", async (req: Request) =>
     return err(400, "Invalid JSON", cors);
   }
   const parsed = Schema.safeParse(body);
-  if (!parsed.success) return err(400, "Provide { org, need } (need: 5–1000 chars)", cors);
+  if (!parsed.success) return err(400, "Provide { org, need } (need: 5 to 1000 chars)", cors);
   return asSystem(async (tx) => {
     const org = await orgBySlug(tx, parsed.data.org);
     if (!org) return err(404, "Unknown organisation", cors);

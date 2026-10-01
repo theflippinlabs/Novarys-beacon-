@@ -2,8 +2,8 @@ export const fr: Record<string, string> = {
   // Page
   "12 / Autopilot": "12 / Pilote automatique",
   "Growth autopilot": "Pilote automatique de croissance",
-  "A deterministic growth analyst: measured changes, coinciding events (correlation — not proven causation), prioritised actions, content to create, technical issues, experiments and signals to monitor. Anything touching production content, external accounts or paid campaigns needs approval.":
-    "Un analyste de croissance déterministe : variations mesurées, événements concomitants (corrélation — pas de causalité prouvée), actions priorisées, contenus à créer, problèmes techniques, expérimentations et signaux à surveiller. Toute action touchant au contenu en production, à des comptes externes ou à des campagnes payantes nécessite une approbation.",
+  "A deterministic growth analyst: measured changes, coinciding events (correlation, not proven causation), prioritised actions, content to create, technical issues, experiments and signals to monitor. Anything touching production content, external accounts or paid campaigns needs approval.":
+    "Un analyste de croissance déterministe : variations mesurées, événements concomitants (corrélation, pas de causalité prouvée), actions priorisées, contenus à créer, problèmes techniques, expérimentations et signaux à surveiller. Toute action touchant au contenu en production, à des comptes externes ou à des campagnes payantes nécessite une approbation.",
   Period: "Période",
   "7 days": "7 jours",
   "28 days": "28 jours",
@@ -87,7 +87,7 @@ export const fr: Record<string, string> = {
   "CTA URL (destination domain)": "URL du CTA (domaine de destination)",
   "Max impressions": "Impressions max.",
   "Create rule": "Créer la règle",
-  "AI sales agent — test a visitor need": "Agent commercial IA — tester un besoin visiteur",
+  "AI sales agent: test a visitor need": "Agent commercial IA : tester un besoin visiteur",
   "Explainable product recommendation": "Recommandation de produit explicable",
   "I run a TikTok agency with 30 creators.": "Je dirige une agence TikTok de 30 créateurs.",
   "Visitor need": "Besoin du visiteur",

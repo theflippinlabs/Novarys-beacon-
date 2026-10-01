@@ -82,7 +82,7 @@ describe("POST /api/v1/recommend", () => {
   });
 });
 
-describe("POST /api/v1/recommend — unverified product-level facts", () => {
+describe("POST /api/v1/recommend: unverified product-level facts", () => {
   // BUG: verifiedOnly() (src/core/knowledge/types.ts) withholds shortDescription/fullDescription/howItWorks
   // when the product is not verified (lastVerifiedAt null) but keeps `category`, which recommendProducts()
   // scores (weight 2 per matched term). An unverified category alone is enough to be recommended.

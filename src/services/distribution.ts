@@ -25,7 +25,7 @@ export async function addDistributionTarget(
 
 /**
  * Status transitions. SUBMITTED/PUBLISHED/PERFORMING require a recorded
- * approval from a user with `distribution:approve` — Beacon never submits to
+ * approval from a user with `distribution:approve`; Beacon never submits to
  * third-party platforms on its own.
  */
 export async function setDistributionStatus(tx: Tx, actor: Actor, id: string, status: Target["status"], extra: { publishedUrl?: string | null; followUpOn?: string | null } = {}) {

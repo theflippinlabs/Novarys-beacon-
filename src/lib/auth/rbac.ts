@@ -6,6 +6,7 @@ export const PERMISSIONS = [
   "query:write",
   "job:run",
   "product:write",
+  "product:delete",
   "content:write",
   "content:approve",
   "distribution:write",
@@ -26,6 +27,7 @@ const ANALYST: Permission[] = [...VIEWER, "query:write", "job:run", "audit:read"
 const EDITOR: Permission[] = [...ANALYST, "product:write", "content:write", "distribution:write", "growth:write"];
 const ADMIN: Permission[] = [
   ...EDITOR,
+  "product:delete",
   "content:approve",
   "distribution:approve",
   "recommendation:decide",

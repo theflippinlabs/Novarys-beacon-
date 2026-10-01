@@ -27,7 +27,7 @@ export const listProducts = defineTool({
   name: "list_products",
   label: "Listing products",
   description:
-    "List the workspace's products with slug, status, domain, knowledge-graph completeness (0–100 %), latest stored Beacon Score (or \"not computed yet\") and onboarding state. Use the slug to reference a product in other tools.",
+    "List the workspace's products with slug, status, domain, knowledge-graph completeness (0 to 100 %), latest stored Beacon Score (or \"not computed yet\") and onboarding state. Use the slug to reference a product in other tools.",
   permission: "read",
   kind: "read",
   input: z.object({}),
@@ -163,7 +163,7 @@ export const createProductTool = defineTool({
   name: "create_product",
   label: "Creating a product",
   description:
-    "Create a new product in the workspace, optionally with its basic onboarding fields (domain, category, descriptions…). Only use facts the user gave you or that come from the product's own website — never invent features, prices or claims. The product starts unverified; the user completes and verifies it in the app. Returns the product slug and links to its onboarding and knowledge graph.",
+    "Create a new product in the workspace, optionally with its basic onboarding fields (domain, category, descriptions…). Only use facts the user gave you or that come from the product's own website; never invent features, prices or claims. The product starts unverified; the user completes and verifies it in the app. Returns the product slug and links to its onboarding and knowledge graph.",
   permission: "product:write",
   kind: "write",
   input: z.object({
@@ -244,7 +244,7 @@ export const setProductLogoTool = defineTool({
 export const recomputeBeaconScore = defineTool({
   name: "recompute_beacon_score",
   label: "Recomputing the Beacon Score",
-  description: "Recompute and store a product's Beacon Score (0–100: technical discovery, content coverage, entity completeness, authority, query coverage, conversion readiness, measurement). Returns the total, each component and the fastest path to improve it. It measures readiness, not rankings.",
+  description: "Recompute and store a product's Beacon Score (0 to 100: technical discovery, content coverage, entity completeness, authority, query coverage, conversion readiness, measurement). Returns the total, each component and the fastest path to improve it. It measures readiness, not rankings.",
   permission: "job:run",
   kind: "write",
   input: z.object({ product: productRef() }),

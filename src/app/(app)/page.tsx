@@ -32,7 +32,7 @@ export default async function CommandCenter({ searchParams }: { searchParams: Pr
 
   return (
     <>
-      <PageHeader eyebrow={t("01 / Overview · {date}", { date: today })} title={t("What needs my attention today?")} description={t("{org} ecosystem — {n} product(s). Everything below is measured; unconnected sources are shown as such, never estimated.", { org: ctx.org.branding.displayName ?? ctx.org.name, n: n(c.products) })} actions={<RangePicker base="/" days={days} />} />
+      <PageHeader eyebrow={t("01 / Overview · {date}", { date: today })} title={t("What needs my attention today?")} description={t("{org} ecosystem: {n} product(s). Everything below is measured; unconnected sources are shown as such, never estimated.", { org: ctx.org.branding.displayName ?? ctx.org.name, n: n(c.products) })} actions={<RangePicker base="/" days={days} />} />
 
       {n(c.products) === 0 ? (
         <EmptyState title={t("Start here")} action={<LinkButton variant="gold" href="/products">{t("Add your first product →")}</LinkButton>}>
@@ -73,7 +73,7 @@ export default async function CommandCenter({ searchParams }: { searchParams: Pr
                     <Link href={`/products/${p.slug}`} className="text-sm text-chrome hover:text-platinum">
                       {p.name}
                     </Link>
-                    <span className="num text-sm text-platinum">{data.scores.has(p.id) ? Math.round(data.scores.get(p.id)!.total) : <span className="text-xs text-muted">—</span>}</span>
+                    <span className="num text-sm text-platinum">{data.scores.has(p.id) ? Math.round(data.scores.get(p.id)!.total) : <span className="text-xs text-muted">{t("n/a")}</span>}</span>
                   </li>
                 ))}
               </ul>
@@ -137,7 +137,7 @@ export default async function CommandCenter({ searchParams }: { searchParams: Pr
 
       <Panel eyebrow={t("Trend")} title={t("Visitors, signups & AI referrals · last {days} days", { days })} className="mt-8">
         {k.acquisition.visitors.now === null ? (
-          <p className="text-sm text-muted">{t("No first-party events yet — install the Beacon tracker from a product’s Tracking tab.")}</p>
+          <p className="text-sm text-muted">{t("No first-party events yet. Install the Beacon tracker from a product’s Tracking tab.")}</p>
         ) : (
           <LineChart
             title={t("Daily visitors, signups and AI referrals")}

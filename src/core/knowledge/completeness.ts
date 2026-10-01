@@ -28,7 +28,7 @@ export function computeCompleteness(g: ProductGraph): Completeness {
   add("identity", "Name, domain & category", 8, [has(p.name), has(p.domain), has(p.category)].filter(Boolean).length / 3, "Set the canonical domain and category.");
   add("short_description", "Short description", 6, has(p.shortDescription) ? 1 : 0, "One precise sentence: what it is and who it is for.");
   add("full_description", "Full description", 6, has(p.fullDescription) ? (p.fullDescription!.length >= 280 ? 1 : 0.5) : 0, "At least a paragraph describing the product.");
-  add("how_it_works", "How it works", 5, has(p.howItWorks) ? 1 : 0, "Explain the mechanism — this powers GEO 'HOW' answers.");
+  add("how_it_works", "How it works", 5, has(p.howItWorks) ? 1 : 0, "Explain the mechanism: this powers GEO 'HOW' answers.");
   add("status", "Product status & release", 3, (p.status !== "UNKNOWN" ? 0.6 : 0) + (p.releaseDate ? 0.4 : 0), "Set lifecycle status and release date.");
   add("audiences", "Target audiences", 8, countRatio(facetsOf(g, "AUDIENCE").length, 2), "Add at least two concrete audiences.");
   add("problems", "Problems solved", 8, countRatio(facetsOf(g, "PROBLEM").length, 3), "Add at least three problems the product solves.");

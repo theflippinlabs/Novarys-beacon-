@@ -20,7 +20,7 @@ async function login(p: Page) {
   await expect(p.getByRole("heading", { name: "What needs my attention today?" })).toBeVisible();
 }
 
-/** Reload until `check` passes — background jobs complete asynchronously. */
+/** Reload until `check` passes; background jobs complete asynchronously. */
 async function eventually(p: Page, check: () => Promise<boolean>, { timeout = 90_000, interval = 1500 } = {}) {
   const until = Date.now() + timeout;
   while (Date.now() < until) {
@@ -195,7 +195,7 @@ test("tracking keys, events and analytics", async () => {
   await page.goto("/products/acme-live/tracking");
   await page.fill('input[name="name"]', "Website tracker");
   await page.click("button:has-text('Create key')");
-  await expect(page.getByText("New key — shown once")).toBeVisible();
+  await expect(page.getByText("New key (shown once)")).toBeVisible();
   const key = (await page.locator("code").first().innerText()).trim();
   expect(key).toMatch(/^bpk_/);
 
@@ -285,4 +285,23 @@ test("agent: connect Claude, ask a question, the agent uses a tool and answers",
   await page.reload();
   await expect(page.getByText("Your workspace has")).toBeVisible();
   await expect(page.getByText("What needs my attention?").first()).toBeVisible();
+});
+
+test("edit and delete a product", async ({ page }) => {
+  await login(page);
+  await page.goto("/products");
+  await page.fill('input[name="name"]', "Throwaway App");
+  await page.getByRole("button", { name: "Add product →" }).click();
+  await page.goto("/products/throwaway-app");
+  await expect(page.getByRole("link", { name: "Continue editing →" })).toHaveAttribute("href", /\/products\/throwaway-app\/onboarding\?step=\d+/);
+
+  // A wrong confirmation is refused; the exact name deletes.
+  await page.locator('input[name="confirm"]').fill("something else");
+  await page.getByRole("button", { name: "Delete product" }).click();
+  await expect(page.getByRole("status")).toContainText("Type the product name exactly");
+  await page.locator('input[name="confirm"]').fill("Throwaway App");
+  await page.getByRole("button", { name: "Delete product" }).click();
+  await expect(page).toHaveURL(/\/products\?ok=/);
+  await expect(page.getByRole("status")).toContainText("deleted");
+  await expect(page.getByRole("link", { name: "Throwaway App" })).toHaveCount(0);
 });

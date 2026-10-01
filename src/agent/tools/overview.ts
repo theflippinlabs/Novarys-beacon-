@@ -8,7 +8,7 @@ export const getWorkspaceOverview = defineTool({
   name: "get_workspace_overview",
   label: "Reading the overview",
   description:
-    "Read the command center for the whole workspace: the ranked priority queue (what needs attention today), the measured KPIs (discovery, acquisition, revenue, ecosystem, content) for the period vs the previous period, and every product with its latest Beacon Score. Use it first when the user asks how things are going or what to do next. KPIs whose data source is not connected are returned as { status: \"not connected\" } — report them as such, never estimate them. Money values are in minor units (cents) of `currency`.",
+    "Read the command center for the whole workspace: the ranked priority queue (what needs attention today), the measured KPIs (discovery, acquisition, revenue, ecosystem, content) for the period vs the previous period, and every product with its latest Beacon Score. Use it first when the user asks how things are going or what to do next. KPIs whose data source is not connected are returned as { status: \"not connected\" }; report them as such, never estimate them. Money values are in minor units (cents) of `currency`.",
   permission: "read",
   kind: "read",
   input: z.object({ days: daysInput }),

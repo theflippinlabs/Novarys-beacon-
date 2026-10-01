@@ -4,8 +4,8 @@ export const fr: Record<string, string> = {
   // List
   "08 / Opportunities": "08 / Opportunités",
   "Opportunity engine": "Moteur d’opportunités",
-  "Evidence-based growth opportunities ranked by impact × confidence × urgency ÷ effort. Potential is expressed as LOW / MEDIUM / HIGH — Beacon does not fabricate traffic or revenue forecasts.":
-    "Opportunités de croissance fondées sur des preuves, classées selon impact × confiance × urgence ÷ effort. Le potentiel est exprimé en FAIBLE / MOYEN / ÉLEVÉ — Beacon n’invente aucune prévision de trafic ni de revenus.",
+  "Evidence-based growth opportunities ranked by impact × confidence × urgency ÷ effort. Potential is expressed as LOW / MEDIUM / HIGH; Beacon does not fabricate traffic or revenue forecasts.":
+    "Opportunités de croissance fondées sur des preuves, classées selon impact × confiance × urgence ÷ effort. Le potentiel est exprimé en FAIBLE / MOYEN / ÉLEVÉ ; Beacon n’invente aucune prévision de trafic ni de revenus.",
   Potential: "Potentiel",
   Type: "Type",
   "No opportunities": "Aucune opportunité",
@@ -72,8 +72,8 @@ export const fr: Record<string, string> = {
   "High-relevance alternative query with no content coverage.": "Requête de recherche d’alternative très pertinente sans aucun contenu associé.",
   "Query ranks just outside the first page; improvements to relevance and internal linking may move it.":
     "La requête se classe juste au-delà de la première page ; améliorer la pertinence et le maillage interne peut la faire progresser.",
-  "Page ranks on the first page but earns few clicks — title and description may not match intent.":
-    "La page se classe en première page mais obtient peu de clics — le titre et la description ne correspondent peut-être pas à l’intention.",
+  "Page ranks on the first page but earns few clicks; title and description may not match intent.":
+    "La page se classe en première page mais obtient peu de clics ; le titre et la description ne correspondent peut-être pas à l’intention.",
   "In {n} sampled observation(s), competitors were mentioned but {product} was not. Samples do not represent every user's AI response.":
     "Dans {n} observation(s) échantillonnée(s), des concurrents ont été mentionnés mais pas {product}. Les échantillons ne représentent pas la réponse IA obtenue par chaque utilisateur.",
   "{count} page(s) affected, e.g. {url}.": "{count} page(s) concernée(s), p. ex. {url}.",

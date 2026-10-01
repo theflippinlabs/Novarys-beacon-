@@ -45,7 +45,7 @@ beforeAll(async () => {
 });
 afterAll(closeDb);
 
-describe("agent tools — read", () => {
+describe("agent tools: read", () => {
   it("overview marks unconnected sources as not connected and lists products", async () => {
     const r = await run<{ kpis: { discovery: { organicClicks: { status?: string } }; revenue: { mrr: { status?: string } } }; products: { slug: string }[]; priorityQueue: unknown[] }>(a, "get_workspace_overview", {});
     expect(r.kpis.discovery.organicClicks.status).toBe("not connected");
@@ -80,7 +80,7 @@ describe("agent tools — read", () => {
   });
 });
 
-describe("agent tools — write flow", () => {
+describe("agent tools: write flow", () => {
   let slug: string;
   let productId: string;
 
@@ -183,7 +183,7 @@ describe("agent tools — write flow", () => {
   });
 });
 
-describe("agent tools — isolation and permissions", () => {
+describe("agent tools: isolation and permissions", () => {
   it("cannot read or write another tenant's data", async () => {
     await expect(run(b, "get_product", { product: seededSlug })).rejects.toThrow(/Product not found/);
     const aProduct = await withOrg(a.org.id, async (tx) => (await tx.query.products.findFirst({ where: eq(products.slug, seededSlug) }))!);

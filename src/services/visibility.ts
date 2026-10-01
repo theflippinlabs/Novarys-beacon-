@@ -59,7 +59,7 @@ export async function syncIntegration(run: <T>(fn: (tx: Tx) => Promise<T>) => Pr
   });
   if (!isVisibilityProvider(integ.provider) || !integ.productId) return { skipped: true };
   const adapter = VISIBILITY_ADAPTERS[integ.provider]();
-  // Search Console data lags ~2–3 days.
+  // Search Console data lags ~2 to 3 days.
   const end = isoDay(addDays(new Date(), -3));
   const start = isoDay(addDays(new Date(), -3 - days));
   try {

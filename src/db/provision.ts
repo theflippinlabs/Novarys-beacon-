@@ -1,7 +1,7 @@
 /**
  * Idempotent database provisioning for managed Postgres (e.g. Railway), run
  * before migrations. Managed databases hand out a SUPERUSER, and superusers
- * bypass row-level security — so Beacon creates a dedicated non-superuser,
+ * bypass row-level security, so Beacon creates a dedicated non-superuser,
  * non-BYPASSRLS application role and runs migrations and the app as that role.
  *
  *   DATABASE_ADMIN_URL      superuser connection (provider-supplied)
@@ -13,7 +13,7 @@ import { Client } from "pg";
 async function main() {
   const adminUrl = process.env.DATABASE_ADMIN_URL;
   if (!adminUrl) {
-    console.log("DATABASE_ADMIN_URL not set — skipping role provisioning");
+    console.log("DATABASE_ADMIN_URL not set, skipping role provisioning");
     return;
   }
   const user = process.env.BEACON_DB_APP_USER ?? "beacon_app";

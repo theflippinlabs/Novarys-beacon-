@@ -21,7 +21,7 @@ export type ChangelogEntry = typeof productChangelog.$inferSelect;
 export type Competitor = typeof competitors.$inferSelect;
 export type ProductCompetitor = typeof productCompetitors.$inferSelect & { competitor: Competitor };
 
-/** The complete knowledge graph for one product — the single source of truth for generation. */
+/** The complete knowledge graph for one product: the single source of truth for generation. */
 export type ProductGraph = {
   product: Product;
   facets: Facet[];

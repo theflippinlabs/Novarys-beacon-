@@ -1,6 +1,6 @@
 /** Distribution center. */
 export const fr: Record<string, string> = {
-  "Suggested from the Beacon venue catalogue — qualify relevance before preparing a submission.": "Suggéré par le catalogue de canaux Beacon — vérifiez sa pertinence avant de préparer une soumission.",
+  "Suggested from the Beacon venue catalogue. Qualify relevance before preparing a submission.": "Suggéré par le catalogue de canaux Beacon. Vérifiez sa pertinence avant de préparer une soumission.",
   "06 / Distribution": "06 / Distribution",
   "Distribution center": "Centre de distribution",
   "Directories, launch platforms, communities, partners, media and backlink opportunities. Beacon never spams third-party platforms: external submissions require a recorded human approval.":
@@ -16,7 +16,7 @@ export const fr: Record<string, string> = {
   "Add target": "Ajouter une cible",
   Name: "Nom",
   "URL (https)": "URL (https)",
-  "Relevance (1–5)": "Pertinence (1–5)",
+  "Relevance (1 to 5)": "Pertinence (1 à 5)",
   Notes: "Notes",
   Add: "Ajouter",
   "Prepare submission copy in the Content studio (format “Directory description” or “Outreach”).":

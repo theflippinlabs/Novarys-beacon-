@@ -16,12 +16,12 @@ describe("generateDraft", () => {
   it("LANDING_PAGE from a complete graph is structured, sourced and TODO-free", () => {
     const g = completeGraph();
     const d = generateDraft(g, { type: "LANDING_PAGE", publisher: "Novarys" });
-    expect(d.title).toBe("Beacon Live — Real-time moderation for TikTok live streams.");
+    expect(d.title).toBe("Beacon Live: Real-time moderation for TikTok live streams.");
     expect(d.body).not.toContain(EDITOR_TODO);
     expect(d.body.match(/^# /gm)).toHaveLength(1);
     for (const h of ["## Who it is for", "## Problems it solves", "## Key features", "## How it works", "## Integrations", "## Evidence", "## Pricing", "## Frequently asked questions", "## Get started", "## Sources"])
       expect(d.body).toContain(h);
-    expect(d.body).toContain("- **Pro** — €29 / month (14-day trial)");
+    expect(d.body).toContain("- **Pro**: €29 / month (14-day trial)");
     expect(d.body).toContain("[Start free trial](https://beaconlive.example/signup) {cta:TRY_FREE}");
     expect(d.factRefs.map((r) => r.ref)).toEqual(expect.arrayContaining(["product:short_description", "product:full_description", "product:how_it_works"]));
     expect(d.structuredData.map((s) => s["@type"])).toEqual(["WebApplication", "FAQPage", "BreadcrumbList"]);
@@ -33,7 +33,7 @@ describe("generateDraft", () => {
     const g = completeGraph();
     const facet = g.facets.find((f) => f.name === "Keyword filters")!;
     const d = generateDraft(g, { type: "LANDING_PAGE", publisher: "N", facetId: facet.id });
-    expect(d.title).toBe("Keyword filters — Beacon Live");
+    expect(d.title).toBe("Keyword filters | Beacon Live");
     expect(d.body).toContain("## Related capabilities");
     expect(d.body.split("## Related capabilities")[1].split("##")[0]).not.toContain("Keyword filters");
     const crumbs = d.structuredData.find((s) => s["@type"] === "BreadcrumbList")!.itemListElement as { item: string }[];
@@ -77,7 +77,7 @@ describe("generateDraft", () => {
     expect(d.body).not.toContain(EDITOR_TODO);
     expect(d.structuredData[0]["@type"]).toBe("FAQPage");
     const empty = generateDraft(makeGraph(), { type: "FAQ", publisher: "N" });
-    expect(empty.body).toContain(`${EDITOR_TODO} Unanswered: What is Acme? — needs a short description`);
+    expect(empty.body).toContain(`${EDITOR_TODO} Unanswered: What is Acme? (needs a short description)`);
     expect(empty.structuredData).toEqual([]);
   });
 
@@ -129,9 +129,9 @@ describe("factCheck", () => {
   });
 
   it("accepts prices that exist in the graph", () => {
-    expect(factCheck("Pro — €29 / month (14-day trial).", g).claims[0].status).toBe("SUPPORTED");
+    expect(factCheck("Pro: €29 / month (14-day trial).", g).claims[0].status).toBe("SUPPORTED");
     // A price that is not in the graph is an unsupported numeric claim.
-    expect(factCheck("Pro — €19 / month (14-day trial).", g).claims[0].status).toBe("UNSUPPORTED");
+    expect(factCheck("Pro: €19 / month (14-day trial).", g).claims[0].status).toBe("UNSUPPORTED");
   });
 
   it("flags invented statistics as UNSUPPORTED", () => {

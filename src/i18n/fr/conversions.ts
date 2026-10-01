@@ -1,8 +1,8 @@
 export const fr: Record<string, string> = {
   "09 / Conversions": "09 / Conversions",
   "Conversion engine": "Moteur de conversion",
-  "From first page view to paid subscription, measured from first-party Beacon events. Rates without a denominator are shown as —, never 0%.":
-    "De la première page vue à l’abonnement payant, mesuré à partir des événements first-party de Beacon. Les taux sans dénominateur s’affichent « — », jamais 0 %.",
+  "From first page view to paid subscription, measured from first-party Beacon events. Rates without a denominator are shown as n/a, never 0%.":
+    "De la première page vue à l’abonnement payant, mesuré à partir des événements first-party de Beacon. Les taux sans dénominateur s’affichent « n.d. », jamais 0 %.",
   Product: "Produit",
   Channel: "Canal",
   "PAID ADS": "PUBLICITÉ PAYANTE",
@@ -37,7 +37,7 @@ export const fr: Record<string, string> = {
   Clicks: "Clics",
   unnamed: "sans nom",
   "No CTA clicks recorded. Mark conversion links with": "Aucun clic sur CTA enregistré. Marquez les liens de conversion avec",
-  "— see the": "— voir",
+  "(see the": "(voir",
   "Tracking tab": "l’onglet Suivi",
   "Content performance · last {days} days": "Performance du contenu · {days} derniers jours",
   "Published content → CTA clicks → signups": "Contenu publié → clics sur CTA → inscriptions",
@@ -63,7 +63,7 @@ export const fr: Record<string, string> = {
   "Lookback window": "Fenêtre de rétrospection",
   "{n} days": "{n} jours",
   "Referral precedence": "Priorité au parrainage",
-  "On — the most recent referral/affiliate touch wins": "Activée — le contact de parrainage ou d’affiliation le plus récent l’emporte",
+  "On: the most recent referral/affiliate touch wins": "Activée : le contact de parrainage ou d’affiliation le plus récent l’emporte",
   Off: "Désactivée",
   Source: "Source",
   "Organisation settings": "Paramètres de l’organisation",

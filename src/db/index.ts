@@ -25,7 +25,7 @@ export function pool(): Pool {
 /**
  * Raw database handle. Tenant tables are protected by RLS, so queries against
  * them through this handle return nothing unless run inside `withOrg` or
- * `asSystem` — the system fails closed.
+ * `asSystem`: the system fails closed.
  */
 export function db(): DB {
   if (!globalForDb.beaconDb) globalForDb.beaconDb = drizzle(pool(), { schema });

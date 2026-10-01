@@ -2,7 +2,7 @@ import { facetsOf, isVerified, type Facet, type ProductGraph } from "@/core/know
 import { buildAnswerBlocks } from "@/core/geo/entity";
 import { breadcrumbJsonLd, faqPageJsonLd, softwareApplicationJsonLd, articleJsonLd } from "@/core/seo/schema-org";
 import { canonicalUrl, pagePath, type PageType } from "@/core/discovery/urls";
-import { formatMoney } from "@/core/util/text";
+import { formatMoney, stripLongDashes } from "@/core/util/text";
 
 export type ContentType =
   | "LANDING_PAGE"
@@ -91,7 +91,7 @@ function facetList(g: ProductGraph, w: Writer, facets: Facet[], heading: string)
   if (!facets.length) return;
   w.line(`## ${heading}`).line();
   for (const f of facets) {
-    w.line(`- **${f.name}**${f.description ? ` — ${sentence(f.description)}` : ""}`);
+    w.line(`- **${f.name}**${f.description ? `: ${sentence(f.description)}` : ""}`);
     w.ref(`facet:${f.id}`, src(g, f.sourceId));
   }
   w.line();
@@ -102,12 +102,12 @@ function pricingSection(g: ProductGraph, w: Writer) {
   w.line("## Pricing").line();
   if (!plans.length) {
     if (g.product.pricingUrl) w.line(`Current plans are listed on the [pricing page](${g.product.pricingUrl}).`).line();
-    else w.todo("No pricing recorded in the knowledge graph — add plans or remove this section.");
+    else w.todo("No pricing recorded in the knowledge graph. Add plans or remove this section.");
     return;
   }
   for (const p of plans) {
     const price = p.priceCents === null ? "price on request" : `${formatMoney(p.priceCents, p.currency)}${p.interval === "MONTH" ? " / month" : p.interval === "YEAR" ? " / year" : ""}`;
-    w.line(`- **${p.planName}** — ${price}${p.trialDays ? ` (${p.trialDays}-day trial)` : ""}${p.description ? `. ${sentence(p.description)}` : ""}`);
+    w.line(`- **${p.planName}**: ${price}${p.trialDays ? ` (${p.trialDays}-day trial)` : ""}${p.description ? `. ${sentence(p.description)}` : ""}`);
     w.ref(`pricing:${p.id}`, src(g, p.sourceId) ?? g.product.pricingUrl ?? undefined);
   }
   w.line();
@@ -148,7 +148,7 @@ export function generateDraft(g: ProductGraph, req: DraftRequest): Draft {
 
   const intro = () => {
     if (p.shortDescription) {
-      w.line(sentence(`${p.name} — ${lowerFirst(p.shortDescription)}`)).line();
+      w.line(sentence(`${p.name}: ${lowerFirst(p.shortDescription)}`)).line();
       w.ref("product:short_description", home);
     } else w.todo(`Add a short description of ${p.name} to the knowledge graph.`);
   };
@@ -157,7 +157,7 @@ export function generateDraft(g: ProductGraph, req: DraftRequest): Draft {
     case "LANDING_PAGE": {
       const pageType = req.pageType ?? (facet ? facetPageType(facet) : "PRODUCT");
       const path = pageType === "PRODUCT" ? pagePath("PRODUCT", p.slug) : pagePath(pageType, p.slug, facet?.slug ?? comp?.competitor.slug);
-      const title = facet ? landingTitle(pageType, p.name, facet.name) : p.shortDescription ? `${p.name} — ${p.shortDescription}` : p.name;
+      const title = facet ? landingTitle(pageType, p.name, facet.name) : p.shortDescription ? `${p.name}: ${p.shortDescription}` : p.name;
       w.line(`# ${title}`).line();
       if (facet) {
         if (facet.description) {
@@ -184,7 +184,7 @@ export function generateDraft(g: ProductGraph, req: DraftRequest): Draft {
       if (proofs.length) {
         w.line("## Evidence").line();
         for (const pr of proofs) {
-          w.line(`> ${pr.content}${pr.attribution ? ` — ${pr.attribution}` : ""}`).line();
+          w.line(`> ${pr.content}${pr.attribution ? ` (${pr.attribution})` : ""}`).line();
           w.ref(`proof:${pr.id}`, src(g, pr.sourceId));
         }
       }
@@ -270,7 +270,7 @@ export function generateDraft(g: ProductGraph, req: DraftRequest): Draft {
         w.line(`Released ${entry.releasedOn}.`).line();
         if (entry.body) w.line(entry.body.trim()).line();
         w.ref(`changelog:${entry.id}`, src(g, entry.sourceId));
-      } else w.todo("No changelog entry recorded — add one before drafting an announcement.");
+      } else w.todo("No changelog entry recorded. Add one before drafting an announcement.");
       intro();
       ctas(g, w);
       sourcesSection(w);
@@ -281,18 +281,18 @@ export function generateDraft(g: ProductGraph, req: DraftRequest): Draft {
       const feature = facet ?? features[0];
       const cta = p.conversionUrls[0]?.url ?? home;
       let text = p.shortDescription ? `${p.name}: ${lowerFirst(p.shortDescription.replace(/\.$/, ""))}.` : `${p.name}.`;
-      if (feature) text += ` ${feature.name}${feature.description ? ` — ${lowerFirst(feature.description.replace(/\.$/, ""))}` : ""}.`;
+      if (feature) text += ` ${feature.name}${feature.description ? `: ${lowerFirst(feature.description.replace(/\.$/, ""))}` : ""}.`;
       const budget = 280 - (cta ? cta.length + 1 : 0);
       text = truncate(text, budget) + (cta ? ` ${cta}` : "");
       w.line(text);
       if (p.shortDescription) w.ref("product:short_description", home);
       if (feature) w.ref(`facet:${feature.id}`, src(g, feature.sourceId));
-      return finish(w, `X post — ${p.name}`, null, structuredData);
+      return finish(w, `X post | ${p.name}`, null, structuredData);
     }
 
     case "LINKEDIN_POST":
     case "NEWSLETTER": {
-      const title = req.type === "NEWSLETTER" ? `${p.name} update` : `LinkedIn post — ${p.name}`;
+      const title = req.type === "NEWSLETTER" ? `${p.name} update` : `LinkedIn post | ${p.name}`;
       if (req.type === "NEWSLETTER") w.line(`# ${title}`).line();
       if (problems[0]) {
         w.line(sentence(`${problems[0].name} is a recurring problem for ${audiences[0] ? lowerFirst(audiences[0].name) : "teams"}`)).line();
@@ -309,7 +309,7 @@ export function generateDraft(g: ProductGraph, req: DraftRequest): Draft {
         w.line();
       }
       if (req.type === "NEWSLETTER" && g.changelog[0]) {
-        w.line(`## What's new`).line().line(`${g.changelog[0].releasedOn} — ${g.changelog[0].title}`).line();
+        w.line(`## What's new`).line().line(`${g.changelog[0].releasedOn}: ${g.changelog[0].title}`).line();
         w.ref(`changelog:${g.changelog[0].id}`, src(g, g.changelog[0].sourceId));
       }
       const cta = p.conversionUrls[0];
@@ -320,28 +320,28 @@ export function generateDraft(g: ProductGraph, req: DraftRequest): Draft {
 
     case "TIKTOK_SCRIPT":
     case "SHORT_VIDEO_SCRIPT": {
-      const title = `${req.type === "TIKTOK_SCRIPT" ? "TikTok" : "Short video"} script — ${p.name}`;
-      w.line(`# ${title}`).line().line("_Format: 30–45 seconds, vertical, on-screen text + voice-over._").line();
-      w.line("## Hook (0–3s)").line();
+      const title = `${req.type === "TIKTOK_SCRIPT" ? "TikTok" : "Short video"} script | ${p.name}`;
+      w.line(`# ${title}`).line().line("_Format: 30 to 45 seconds, vertical, on-screen text + voice-over._").line();
+      w.line("## Hook (0-3s)").line();
       if (problems[0]) {
         w.line(`"${sentence(problems[0].name)} Here's how ${audiences[0] ? lowerFirst(audiences[0].name) : "teams"} handle it."`).line();
         w.ref(`facet:${problems[0].id}`, src(g, problems[0].sourceId));
-      } else w.todo("Write a hook — no problem statement recorded in the graph.");
+      } else w.todo("Write a hook: no problem statement recorded in the graph.");
       w.line("## Beats").line();
       features.slice(0, 3).forEach((f, i) => {
-        w.line(`${i + 1}. Show **${f.name}** on screen${f.description ? ` — VO: "${sentence(f.description)}"` : ""}`);
+        w.line(`${i + 1}. Show **${f.name}** on screen${f.description ? ` (VO: "${sentence(f.description)}")` : ""}`);
         w.ref(`facet:${f.id}`, src(g, f.sourceId));
       });
       if (!features.length) w.todo("Add at least one feature to script product beats.");
       w.line().line("## Call to action").line();
       const cta = p.conversionUrls[0];
-      w.line(cta ? `On-screen: "${cta.label}" → ${cta.url}` : `On-screen: ${p.name}${home ? ` — ${home}` : ""}`);
+      w.line(cta ? `On-screen: "${cta.label}" → ${cta.url}` : `On-screen: ${p.name}${home ? ` (${home})` : ""}`);
       w.line().line("_Film real product footage only; do not stage fake results or testimonials._");
       return finish(w, title, null, structuredData);
     }
 
     case "DIRECTORY_DESCRIPTION": {
-      const title = `Directory listing — ${p.name}`;
+      const title = `Directory listing | ${p.name}`;
       w.line(`# ${title}`).line();
       w.line(`**Name:** ${p.name}`).line(`**Website:** ${home ?? "unknown"}`).line(`**Category:** ${p.category ?? "unknown"}`).line();
       w.line("**Tagline (≤ 60 chars):**").line();
@@ -359,7 +359,7 @@ export function generateDraft(g: ProductGraph, req: DraftRequest): Draft {
     }
 
     case "OUTREACH": {
-      const title = `Outreach draft — ${p.name}`;
+      const title = `Outreach draft | ${p.name}`;
       w.line(`# ${title}`).line().line("**Subject:** " + (p.shortDescription ? truncate(`${p.name}: ${lowerFirst(p.shortDescription)}`, 70) : p.name)).line();
       w.line("Hi {{recipient_name}},").line();
       w.todo("Personalise one sentence about why this recipient/publication is relevant. Do not send without human review.");
@@ -380,7 +380,7 @@ export const facetPageType = (f: Facet): PageType => FACET_PAGE[f.kind] ?? "PROD
 function landingTitle(type: PageType, product: string, item: string) {
   switch (type) {
     case "FEATURE":
-      return `${item} — ${product}`;
+      return `${item} | ${product}`;
     case "USE_CASE":
       return `${product} for ${lowerFirst(item)}`;
     case "INDUSTRY":
@@ -394,13 +394,23 @@ function landingTitle(type: PageType, product: string, item: string) {
   }
 }
 
-function finish(w: Writer, title: string, description: string | null, structuredData: Record<string, unknown>[]): Draft {
+/** Facts entered by people may contain long dashes; generated content never does. */
+function noLongDashes<T>(v: T): T {
+  if (typeof v === "string") return stripLongDashes(v) as T;
+  if (Array.isArray(v)) return v.map(noLongDashes) as T;
+  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, noLongDashes(x)])) as T;
+  return v;
+}
+
+function finish(w: Writer, rawTitle: string, rawDescription: string | null, structuredData: Record<string, unknown>[]): Draft {
+  const title = stripLongDashes(rawTitle);
+  const description = rawDescription === null ? null : stripLongDashes(rawDescription);
   return {
     title,
     metaTitle: truncate(title, 65),
     metaDescription: description ? truncate(description.replace(/\s+/g, " "), 160) : null,
-    body: w.text(),
+    body: stripLongDashes(w.text()),
     factRefs: w.factRefs(),
-    structuredData,
+    structuredData: noLongDashes(structuredData),
   };
 }

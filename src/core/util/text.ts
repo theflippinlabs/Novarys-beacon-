@@ -71,3 +71,33 @@ export function isoDay(d: Date): string {
 export function addDays(d: Date, days: number): Date {
   return new Date(d.getTime() + days * 86_400_000);
 }
+
+const LONG_DASH = "\u2014\u2013";
+
+/**
+ * Removes em dashes (U+2014) and en dashes (U+2013) from generated text, which
+ * Beacon never displays. Numeric ranges become a hyphen ("1-5"), a dash that
+ * opens a line (a list bullet) or stands alone in a table cell becomes "-",
+ * an en dash joining two words becomes a hyphen, and every other dash (asides,
+ * title separators) becomes a comma. Text without long dashes is returned as is.
+ */
+export function stripLongDashes(s: string): string {
+  if (!/[\u2014\u2013]/.test(s)) return s;
+  const D = `[${LONG_DASH}]+`;
+  return (
+    s
+      // numeric ranges: "1<en>5", "2020 <en> 2024" become "1-5", "2020-2024"
+      .replace(new RegExp(`(\\d)[ \\t]*${D}[ \\t]*(?=\\d)`, "g"), "$1-")
+      // line-leading bullets and lone table cells or openers: "<dash> item", "| <dash> |"
+      .replace(new RegExp(`^([ \\t>]*)${D}(?=[ \\t]|$)`, "gm"), "$1-")
+      .replace(new RegExp(`([|(\\[])([ \\t]*)${D}`, "g"), "$1$2-")
+      // already punctuated: "end. <dash> Next" becomes "end. Next"
+      .replace(new RegExp(`([.,;:!?])[ \\t]*${D}[ \\t]*(?=\\S)`, "g"), "$1 ")
+      // en dash joining two words: "Paris<en>Lyon" becomes "Paris-Lyon"
+      .replace(/([\p{L}\p{N}])\u2013(?=[\p{L}\p{N}])/gu, "$1-")
+      // dangling dash at the end of a line or of the text
+      .replace(new RegExp(`[ \\t]*${D}[ \\t]*$`, "gm"), "")
+      // every other aside or separator: "X <dash> Y" and "X<dash>Y" become "X, Y" (no comma before punctuation)
+      .replace(new RegExp(`[ \\t]*${D}[ \\t]*(?=([.,;:!?])?)`, "g"), (_m, punct?: string) => (punct ? "" : ", "))
+  );
+}

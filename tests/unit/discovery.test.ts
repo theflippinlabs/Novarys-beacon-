@@ -133,7 +133,7 @@ function plan(overrides: Partial<PagePlan> = {}): PagePlan {
   return {
     type: "FEATURE",
     path: "/acme/features/keyword-filters",
-    title: "Keyword filters — Acme",
+    title: "Keyword filters | Acme",
     facts: [
       { ref: "facet:1", text: "Keyword filters. Hide live comments that contain blocked keywords or phrases in real time during streams.", verification: "VERIFIED", sourceUrl: "https://acme.example/docs" },
       { ref: "product:short_description", text: "Acme is real-time moderation for TikTok live streams, built for agencies and creators.", verification: "VERIFIED", sourceUrl: "https://acme.example" },
@@ -180,7 +180,7 @@ describe("assessPage", () => {
 
   it("detects near-identical plans as duplicates and ignores its own path", () => {
     const a = plan();
-    const b = plan({ path: "/acme/features/keyword-filter", title: "Keyword filter — Acme" });
+    const b = plan({ path: "/acme/features/keyword-filter", title: "Keyword filter | Acme" });
     const r = assessPage(a, [{ path: b.path, fingerprint: planFingerprint(b) }, { path: a.path, fingerprint: planFingerprint(a) }]);
     expect(r.duplicateSimilarity).toBeGreaterThan(QUALITY_THRESHOLDS.maxDuplicateSimilarity);
     expect(r.duplicateOf).toBe(b.path);

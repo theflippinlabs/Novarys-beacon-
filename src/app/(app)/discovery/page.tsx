@@ -50,7 +50,7 @@ export default async function DiscoveryPage({ searchParams }: { searchParams: Pr
       ) : (
         <>
           <FilterBar action="/discovery">
-            <SelectFilter name="product" label={t("Product")} value={product.slug} all="—" options={data.prods.map((p) => ({ value: p.slug, label: p.name }))} />
+            <SelectFilter name="product" label={t("Product")} value={product.slug} all={t("Default")} options={data.prods.map((p) => ({ value: p.slug, label: p.name }))} />
             <SelectFilter name="type" label={t("Page type")} value={type} all={t("All")} options={["PRODUCT", "FEATURE", "USE_CASE", "INDUSTRY", "AUDIENCE", "INTEGRATION", "COMPARISON", "ALTERNATIVE", "GUIDE", "ANSWER", "DOCS", "CHANGELOG"].map((v) => ({ value: v, label: lbl(v) }))} />
             <SelectFilter name="status" label={t("Status")} value={status} all={t("All")} options={["PLANNED", "DRAFT", "IN_REVIEW", "APPROVED", "PUBLISHED", "ARCHIVED"].map((v) => ({ value: v, label: lbl(v) }))} />
           </FilterBar>
@@ -99,11 +99,11 @@ export default async function DiscoveryPage({ searchParams }: { searchParams: Pr
                           </Td>
                           <Td className="min-w-56 text-[11px]">
                             <div className="flex flex-wrap gap-x-3 gap-y-0.5 num">
-                              <span title={t("Information completeness")}>{t("IC")} {String(q.informationCompleteness ?? "—")}</span>
-                              <span title={t("Factual confidence")}>{t("FC")} {String(q.factualConfidence ?? "—")}</span>
-                              <span title={t("Uniqueness")}>{t("UQ")} {String(q.uniqueness ?? "—")}</span>
-                              <span title={t("Intent match")}>{t("IM")} {String(q.intentMatch ?? "—")}</span>
-                              <span title={t("Usefulness")}>{t("US")} {String(q.usefulness ?? "—")}</span>
+                              <span title={t("Information completeness")}>{t("IC")} {String(q.informationCompleteness ?? t("n/a"))}</span>
+                              <span title={t("Factual confidence")}>{t("FC")} {String(q.factualConfidence ?? t("n/a"))}</span>
+                              <span title={t("Uniqueness")}>{t("UQ")} {String(q.uniqueness ?? t("n/a"))}</span>
+                              <span title={t("Intent match")}>{t("IM")} {String(q.intentMatch ?? t("n/a"))}</span>
+                              <span title={t("Usefulness")}>{t("US")} {String(q.usefulness ?? t("n/a"))}</span>
                             </div>
                             {q.publishable === true ? <span className="text-ok">{t("✓ passes gate")}</span> : <span className="text-warn" title={blockers.map((b) => t(b)).join(" | ")}>◐ {t(blockers[0])}</span>}
                           </Td>

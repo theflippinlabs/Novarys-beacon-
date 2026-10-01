@@ -26,7 +26,7 @@ function firstIndex(text: string, names: string[]): number {
 /**
  * Objective parsing of one AI answer: which known entities appear, in what
  * order, and which URLs were cited. Position is only the order of first
- * appearance in the text — a measurable fact, not a claimed "ranking".
+ * appearance in the text: a measurable fact, not a claimed "ranking".
  */
 export function analyzeAiResponse(response: string, citations: string[], products: EntityRef[], competitors: EntityRef[], orgNames: string[] = []): ResponseAnalysis {
   const text = normalizeQuery(response);

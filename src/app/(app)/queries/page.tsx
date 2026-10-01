@@ -52,7 +52,7 @@ export default async function QueriesPage({ searchParams }: { searchParams: Prom
   const back = `/queries?${new URLSearchParams(Object.entries(f).filter(([, v]) => v) as [string, string][]).toString()}`;
   return (
     <>
-      <PageHeader eyebrow={t("04 / Queries")} title={t("Query intelligence")} description={t("The discovery query universe: intent, funnel stage, importance and coverage per market and language. Generated queries arrive as candidates — long-tail variations are tracked, never mass-produced into pages.")} />
+      <PageHeader eyebrow={t("04 / Queries")} title={t("Query intelligence")} description={t("The discovery query universe: intent, funnel stage, importance and coverage per market and language. Generated queries arrive as candidates; long-tail variations are tracked, never mass-produced into pages.")} />
       <Flash searchParams={sp} />
       <div className="mb-6 grid grid-cols-3 gap-3 md:max-w-xl">
         {["ACTIVE", "CANDIDATE", "ARCHIVED"].map((s) => (
@@ -118,7 +118,7 @@ export default async function QueriesPage({ searchParams }: { searchParams: Prom
                         {q.status !== "ACTIVE" && <div className="mt-1"><StatusBadge status={q.status} /></div>}
                       </Td>
                       <Td className="text-xs">
-                        {productName ?? "—"}
+                        {productName ?? t("n/a")}
                         <div className="text-muted">{cluster ? t(cluster) : ""}</div>
                       </Td>
                       <Td className="num text-xs">

@@ -23,7 +23,7 @@ export async function BarList({ rows, format, color = "var(--color-blue)", empty
   );
 }
 
-/** Funnel as ordered bars with step-to-step conversion. Null rates render as "—" (no denominator). */
+/** Funnel as ordered bars with step-to-step conversion. Null rates render as "n/a" (no denominator). */
 export async function FunnelBars({ steps }: { steps: { step: string; visitors: number; conversionFromPrev: number | null }[] }) {
   const { t, intl } = await getI18n();
   const max = Math.max(...steps.map((s) => s.visitors), 1);
@@ -36,7 +36,7 @@ export async function FunnelBars({ steps }: { steps: { step: string; visitors: n
             <span className="h-4 rounded-r-[4px] bg-blue" style={{ width: `${Math.max(0.5, (s.visitors / max) * 100)}%`, maxWidth: "calc(100% - 3.5rem)" }} title={t("{n} unique", { n: s.visitors })} />
             <span className="num text-xs text-platinum">{s.visitors.toLocaleString(intl)}</span>
           </span>
-          <span className="num text-right text-xs text-muted">{s.conversionFromPrev === null ? "—" : t("{pct}%", { pct: (s.conversionFromPrev * 100).toLocaleString(intl, { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false }) })}</span>
+          <span className="num text-right text-xs text-muted">{s.conversionFromPrev === null ? t("n/a") : t("{pct}%", { pct: (s.conversionFromPrev * 100).toLocaleString(intl, { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false }) })}</span>
         </li>
       ))}
     </ol>

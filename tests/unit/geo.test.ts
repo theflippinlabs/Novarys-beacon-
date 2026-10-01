@@ -48,10 +48,10 @@ describe("buildAnswerBlocks", () => {
     const { answers, gaps } = buildAnswerBlocks(makeGraph());
     expect(answers).toEqual([]);
     expect(gaps).toEqual([
-      "What is Acme? — needs a short description",
-      "Who is Acme for? — needs target audiences",
-      "What does Acme do? — needs features or problems solved",
-      "How much does Acme cost? — no public prices recorded",
+      "What is Acme? (needs a short description)",
+      "Who is Acme for? (needs target audiences)",
+      "What does Acme do? (needs features or problems solved)",
+      "How much does Acme cost? (no public prices recorded)",
     ]);
   });
 
@@ -77,8 +77,8 @@ describe("buildAnswerBlocks", () => {
     const alts = answers.filter((a) => a.id.startsWith("alternative-"));
     expect(alts.map((a) => a.id)).toEqual(["alternative-two"]);
     expect(alts[0].sources).toEqual(["https://rival.example/pricing#1", "https://rival.example/pricing#2"]);
-    expect(gaps).toContain("Alternatives to One? — needs ≥ 2 sourced comparison facts");
-    expect(gaps).toContain("Alternatives to Unsourced? — needs ≥ 2 sourced comparison facts");
+    expect(gaps).toContain("Alternatives to One? (needs ≥ 2 sourced comparison facts)");
+    expect(gaps).toContain("Alternatives to Unsourced? (needs ≥ 2 sourced comparison facts)");
   });
 
   it("builds audience, capability and integration answers with confidence from verification", () => {

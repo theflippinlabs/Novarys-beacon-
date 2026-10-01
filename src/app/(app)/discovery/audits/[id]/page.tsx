@@ -123,7 +123,7 @@ export default async function AuditPage({ params, searchParams }: { params: Prom
                 <Td>{c.indexable ? "✓" : <span className="text-warn">✕</span>}</Td>
                 <Td className="num">{c.wordCount}</Td>
                 <Td className="num">{c.inlinks}</Td>
-                <Td className="text-xs">{c.structuredDataTypes.join(", ") || "—"}</Td>
+                <Td className="text-xs">{c.structuredDataTypes.join(", ") || t("None")}</Td>
                 <Td className="num">{c.loadMs}</Td>
               </tr>
             ))}

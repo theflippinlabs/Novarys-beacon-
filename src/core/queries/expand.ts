@@ -7,7 +7,7 @@ export type QueryCandidate = { query: string; intent: Intent; clusterName: strin
 /**
  * Builds a structured query universe from the knowledge graph. Every
  * candidate is derived from a fact in the graph (category, audience, problem,
- * feature, integration, competitor) — never from invented claims — and
+ * feature, integration, competitor), never from invented claims, and
  * candidates are de-duplicated on their token sets so long-tail variations
  * do not collapse into spam.
  */

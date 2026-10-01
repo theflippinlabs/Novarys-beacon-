@@ -5,6 +5,8 @@
  * French agrees in gender and number.
  */
 export const fr: Record<string, string> = {
+  "Type the product name exactly to confirm the deletion.": "Saisissez exactement le nom du produit pour confirmer la suppression.",
+  "Product “{name}” deleted.": "Produit « {name} » supprimé.",
   // ── Sign-in & first-run setup ─────────────────────────────────────────
   "Enter a valid email and password.": "Saisissez une adresse e-mail et un mot de passe valides.",
   "Too many attempts. Try again in 15 minutes.": "Trop de tentatives. Réessayez dans 15 minutes.",
@@ -35,7 +37,7 @@ export const fr: Record<string, string> = {
   // ── Content ───────────────────────────────────────────────────────────
   "Draft generation queued.": "Génération du brouillon mise en file.",
   "Idea saved.": "Idée enregistrée.",
-  "Generation queued — the draft appears when the worker completes it.": "Génération mise en file — le brouillon apparaîtra une fois traité par le worker.",
+  "Generation queued. The draft appears when the worker completes it.": "Génération mise en file. Le brouillon apparaîtra une fois traité par le worker.",
   "Saved v{version}. Checks re-run: fact check.": "Version v{version} enregistrée. Contrôles relancés : étape « Vérification des faits ».",
   "Saved v{version}. Checks re-run: seo check.": "Version v{version} enregistrée. Contrôles relancés : étape « Contrôle SEO ».",
   "Saved v{version}. Checks re-run: human approval.": "Version v{version} enregistrée. Contrôles relancés : étape « Validation humaine ».",
@@ -74,7 +76,7 @@ export const fr: Record<string, string> = {
   "Updated {n} query.": "{n} requête mise à jour.",
   "Updated {n} queries.": "{n} requêtes mises à jour.",
   "Query updated.": "Requête mise à jour.",
-  "Query must be 1–200 characters": "La requête doit comporter de 1 à 200 caractères",
+  "Query must be 1 to 200 characters": "La requête doit comporter de 1 à 200 caractères",
   "Set the product domain (or a start URL) before running an audit": "Définissez le domaine du produit (ou une URL de départ) avant de lancer un audit",
   "Audit not found": "Audit introuvable",
 
@@ -139,11 +141,11 @@ export const fr: Record<string, string> = {
   "Rule paused.": "Règle mise en pause.",
 
   // ── Products & knowledge ──────────────────────────────────────────────
-  "{name} created — describe it once, Beacon does the rest.": "{name} créé — décrivez-le une fois, Beacon s’occupe du reste.",
+  "{name} created. Describe it once, Beacon does the rest.": "{name} créé. Décrivez-le une fois, Beacon s’occupe du reste.",
   "Invalid product name": "Nom de produit invalide",
   'A product with the slug "{slug}" already exists': "Un produit avec le slug « {slug} » existe déjà",
   "Enter a valid domain, e.g. example.com": "Saisissez un domaine valide, par exemple example.com",
-  "Onboarding complete — product analysis queued.": "Intégration guidée terminée — analyse du produit mise en file.",
+  "Onboarding complete, product analysis queued.": "Intégration guidée terminée, analyse du produit mise en file.",
   "Product analysis queued. Results appear as the worker completes each step.": "Analyse du produit mise en file. Les résultats apparaissent au fur et à mesure que le worker termine chaque étape.",
   "Marked unverified.": "Marqué comme non vérifié.",
   "Marked needs review.": "Marqué comme à revoir.",
@@ -158,9 +160,9 @@ export const fr: Record<string, string> = {
   "Comparison fact added.": "Fait comparatif ajouté.",
   "Comparison fact removed.": "Fait comparatif supprimé.",
   "Core product description marked as human-verified.": "Description principale du produit marquée comme vérifiée par un humain.",
-  "Key created. Copy it now — it will not be shown again.": "Clé créée. Copiez-la maintenant — elle ne sera plus affichée.",
+  "Key created. Copy it now: it will not be shown again.": "Clé créée. Copiez-la maintenant : elle ne sera plus affichée.",
   "Key revoked.": "Clé révoquée.",
-  "Updated — marked for review.": "Mis à jour — marqué pour relecture.",
+  "Updated and marked for review.": "Mis à jour et marqué pour relecture.",
 
   // ── Settings, members & integrations ──────────────────────────────────
   "Organisation not found": "Organisation introuvable",

@@ -33,7 +33,7 @@ describe("computeBeaconScore", () => {
     expect(Object.fromEntries(s.components.map((c) => [c.key, c.max]))).toMatchObject({ technical: 20, content: 20, entity: 15, authority: 15, queries: 15, conversion: 10, measurement: 5 });
   });
 
-  // BUG: documented as a 0–100 score, but the component maxima are
+  // BUG: documented as a 0 to 100 score, but the component maxima are
   // 20+20+20+15+15+10+5 = 105, so a perfect input scores 105.
   it("component maxima sum to 100", () => {
     const s = computeBeaconScore(PERFECT);
@@ -59,7 +59,7 @@ describe("computeBeaconScore", () => {
     expect(s.total).toBe(3);
     const reasons = allLines(s).map((l) => l.reason);
     expect(reasons).toContain("No technical audit has been run.");
-    expect(reasons).toContain("Backlink data not connected — cannot be scored.");
+    expect(reasons).toContain("Backlink data not connected: cannot be scored.");
     expect(reasons).toContain("No AI visibility tests run.");
     expect(reasons.filter((r) => r === "Not connected.")).toHaveLength(2);
     for (const l of allLines(s)) {
@@ -139,7 +139,7 @@ describe("generateOpportunities", () => {
     expect(out.some((o) => o.type === "AI_VISIBILITY_GAP")).toBe(false);
   });
 
-  it("detects striking distance (position 8–20, ≥50 impressions) and low CTR on page one", () => {
+  it("detects striking distance (position 8 to 20, ≥50 impressions) and low CTR on page one", () => {
     const out = generateOpportunities({
       ...SIG,
       queries: [

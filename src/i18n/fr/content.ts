@@ -44,9 +44,9 @@ export const fr: Record<string, string> = {
   Reason: "Motif",
   "Rejection reason": "Motif du rejet",
   Reject: "Rejeter",
-  "◐ Blocked at fact check — fix or remove unsupported claims (or add the missing facts to the knowledge graph), then save a new version.":
-    "◐ Bloqué à la vérification des faits — corrigez ou supprimez les affirmations non étayées (ou ajoutez les faits manquants au graphe de connaissances), puis enregistrez une nouvelle version.",
-  "◐ Blocked at SEO/GEO check — see failing rules below.": "◐ Bloqué au contrôle SEO/GEO — consultez les règles en échec ci-dessous.",
+  "◐ Blocked at fact check: fix or remove unsupported claims (or add the missing facts to the knowledge graph), then save a new version.":
+    "◐ Bloqué à la vérification des faits : corrigez ou supprimez les affirmations non étayées (ou ajoutez les faits manquants au graphe de connaissances), puis enregistrez une nouvelle version.",
+  "◐ Blocked at SEO/GEO check: see failing rules below.": "◐ Bloqué au contrôle SEO/GEO : consultez les règles en échec ci-dessous.",
   "✓ Published {date}.": "✓ Publié le {date}.",
   "✓ All claims supported": "✓ Toutes les affirmations sont étayées",
   "{n} claim(s) need attention": "{n} affirmation(s) à examiner",
@@ -76,10 +76,10 @@ export const fr: Record<string, string> = {
   // Fact-check claim statuses and reasons (src/core/content/fact-check.ts)
   SUPPORTED: "ÉTAYÉE",
   UNSUPPORTED: "NON ÉTAYÉE",
-  "Superlative or guarantee — needs evidence or rewording": "Superlatif ou garantie — à justifier ou à reformuler",
-  "Customer claim — requires a verified, publishable proof": "Affirmation sur des clients — nécessite une preuve vérifiée et publiable",
-  "Award / certification claim — requires a verified source": "Affirmation de distinction / certification — nécessite une source vérifiée",
-  "Rating / review claim — requires a verified source": "Affirmation de note / d’avis — nécessite une source vérifiée",
+  "Superlative or guarantee: needs evidence or rewording": "Superlatif ou garantie : à justifier ou à reformuler",
+  "Customer claim: requires a verified, publishable proof": "Affirmation sur des clients : nécessite une preuve vérifiée et publiable",
+  "Award / certification claim: requires a verified source": "Affirmation de distinction / certification : nécessite une source vérifiée",
+  "Rating / review claim: requires a verified source": "Affirmation de note / d’avis : nécessite une source vérifiée",
   "Number not found in any recorded fact": "Chiffre introuvable dans les faits enregistrés",
 
   // SEO/GEO check findings (src/core/content/seo-check.ts)
@@ -88,9 +88,9 @@ export const fr: Record<string, string> = {
   "{n}/280 characters.": "{n}/280 caractères.",
   "{n} H1 heading(s).": "{n} titre(s) H1.",
   "At least two H2 sections structure the page for readers and answer engines.": "Au moins deux sections H2 structurent la page pour les lecteurs et les moteurs de réponse.",
-  "Meta title {n} chars (15–65).": "Méta-titre de {n} caractères (15–65).",
+  "Meta title {n} chars (15 to 65).": "Méta-titre de {n} caractères (15 à 65).",
   "Missing meta title.": "Méta-titre manquant.",
-  "Meta description {n} chars (50–160).": "Méta-description de {n} caractères (50–160).",
+  "Meta description {n} chars (50 to 160).": "Méta-description de {n} caractères (50 à 160).",
   "Missing meta description.": "Méta-description manquante.",
   "{words} words (minimum {min} for this format).": "{words} mots (minimum {min} pour ce format).",
   "{n} JSON-LD block(s).": "{n} bloc(s) JSON-LD.",

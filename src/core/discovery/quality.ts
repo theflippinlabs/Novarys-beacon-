@@ -80,7 +80,7 @@ export function assessPage(
   const usefulness = 0.35 * informationCompleteness + 0.25 * factualConfidence + 0.15 * intentMatch + 0.15 * uniqueness + 0.1 * depth;
 
   if (informationCompleteness < QUALITY_THRESHOLDS.informationCompleteness) blockers.push("Information completeness below threshold");
-  if (factualConfidence < QUALITY_THRESHOLDS.factualConfidence) blockers.push("Factual confidence below threshold — verify the underlying facts");
+  if (factualConfidence < QUALITY_THRESHOLDS.factualConfidence) blockers.push("Factual confidence below threshold: verify the underlying facts");
   if (duplicateSimilarity > QUALITY_THRESHOLDS.maxDuplicateSimilarity) blockers.push(`Too similar to ${duplicateOf}`);
   if (usefulness < QUALITY_THRESHOLDS.usefulness) blockers.push("Usefulness score below threshold");
 

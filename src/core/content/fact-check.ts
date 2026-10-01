@@ -34,10 +34,10 @@ export function graphFacts(g: ProductGraph): Fact[] {
 }
 
 const RISKY = [
-  { re: /\b(best|#1|number one|leading|world'?s first|only solution|unmatched|guaranteed?|revolutionary)\b/i, why: "Superlative or guarantee — needs evidence or rewording" },
-  { re: /\b(trusted by|used by|customers? (include|like)|clients include)\b/i, why: "Customer claim — requires a verified, publishable proof" },
-  { re: /\b(award|awarded|winner|certified|compliant|iso ?\d+|soc ?2|gdpr[- ]compliant|hipaa)\b/i, why: "Award / certification claim — requires a verified source" },
-  { re: /\b(rated|ratings?|\d(\.\d)?\s*(stars?|\/\s*5)|reviews? (on|from)|star reviews?)\b/i, why: "Rating / review claim — requires a verified source" },
+  { re: /\b(best|#1|number one|leading|world'?s first|only solution|unmatched|guaranteed?|revolutionary)\b/i, why: "Superlative or guarantee: needs evidence or rewording" },
+  { re: /\b(trusted by|used by|customers? (include|like)|clients include)\b/i, why: "Customer claim: requires a verified, publishable proof" },
+  { re: /\b(award|awarded|winner|certified|compliant|iso ?\d+|soc ?2|gdpr[- ]compliant|hipaa)\b/i, why: "Award / certification claim: requires a verified source" },
+  { re: /\b(rated|ratings?|\d(\.\d)?\s*(stars?|\/\s*5)|reviews? (on|from)|star reviews?)\b/i, why: "Rating / review claim: requires a verified source" },
 ];
 
 

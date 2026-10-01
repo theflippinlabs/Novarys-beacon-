@@ -44,7 +44,7 @@ async function main() {
 
   let org = await asSystem((tx) => tx.query.organizations.findFirst({ where: eq(organizations.slug, orgSlug) }));
   if (!org) {
-    if (await hasAnyUser()) throw new Error(`Organisation "${orgSlug}" not found and users already exist — create it from the app instead.`);
+    if (await hasAnyUser()) throw new Error(`Organisation "${orgSlug}" not found and users already exist. Create it from the app instead.`);
     if (!email || !password) throw new Error("Set BEACON_BOOTSTRAP_ADMIN_EMAIL and BEACON_BOOTSTRAP_ADMIN_PASSWORD (or use the /setup page).");
     org = (await createOrganizationWithOwner({ orgName, orgSlug, email, name: "Owner", password })).org;
     console.log(`created organisation ${orgSlug} with owner ${email}`);
@@ -56,9 +56,9 @@ async function main() {
       const slug = slugify(name);
       const exists = await tx.query.products.findFirst({ where: and(eq(products.organizationId, orgId), eq(products.slug, slug)) });
       const product = exists ?? (await tx.insert(products).values({ organizationId: orgId, name, slug, status: "UNKNOWN", onboardingStep: 1 }).returning())[0];
-      if (!exists) console.log(`seeded product ${name} (name only — complete onboarding in the app)`);
+      if (!exists) console.log(`seeded product ${name} (name only; complete onboarding in the app)`);
       for (const q of BRIEF_QUERIES[name] ?? [])
-        await addQuery(tx, orgId, { query: q, productId: product.id, status: "CANDIDATE", source: "IMPORTED", clusterName: "Brief examples", notes: "From the Beacon specification brief — validate relevance before activating.", brandTerms: [name] });
+        await addQuery(tx, orgId, { query: q, productId: product.id, status: "CANDIDATE", source: "IMPORTED", clusterName: "Brief examples", notes: "From the Beacon specification brief. Validate relevance before activating.", brandTerms: [name] });
     }
     for (const prompt of BRIEF_PROMPTS) {
       const exists = await tx.query.aiVisibilityPrompts.findFirst({ where: and(eq(aiVisibilityPrompts.organizationId, orgId), eq(aiVisibilityPrompts.prompt, prompt)) });

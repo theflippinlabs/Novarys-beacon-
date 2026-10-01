@@ -1,5 +1,5 @@
 /**
- * Novarys Beacon — canonical database schema.
+ * Novarys Beacon: canonical database schema.
  *
  * Conventions
  * - Every tenant-owned table carries `organization_id` and is protected by
@@ -1281,7 +1281,7 @@ export const productCompetitorsRelations = relations(productCompetitors, ({ one 
   competitor: one(competitors, { fields: [productCompetitors.competitorId], references: [competitors.id] }),
 }));
 
-/** Tables protected by RLS — kept in sync with migrations/0001_rls.sql by a test. */
+/** Tables protected by RLS, kept in sync with migrations/0001_rls.sql by a test. */
 /** Raw bytes column (Postgres bytea). */
 const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" });
 

@@ -28,6 +28,19 @@ export async function updateProduct(tx: Tx, actor: Actor, productId: string, pat
 }
 
 /**
+ * Permanently delete a product and everything that belongs to it (knowledge
+ * graph, queries, pages, content, audits, opportunities, scores…: cascading
+ * foreign keys). Uploaded photos and revenue history are kept, detached.
+ */
+export async function deleteProduct(tx: Tx, actor: Actor, productId: string) {
+  const p = await tx.query.products.findFirst({ where: and(eq(products.id, productId), eq(products.organizationId, actor.organizationId)) });
+  if (!p) throw new Error("Product not found");
+  await tx.delete(products).where(and(eq(products.id, p.id), eq(products.organizationId, actor.organizationId)));
+  await audit(tx, actor, "product.delete", "product", p.id, { name: p.name, slug: p.slug });
+  return p;
+}
+
+/**
  * Sync a facet list from the wizard: upsert by slug (preserving verification
  * and source links of unchanged items) and remove items no longer listed.
  */

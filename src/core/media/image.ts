@@ -18,7 +18,7 @@ const HEIF_BRANDS = new Set(["heic", "heix", "hevc", "hevx", "heim", "heis", "mi
 
 /**
  * Identifies a raster image from its magic bytes. Returns null for anything
- * else — including SVG (XML that can carry script), PDF and HTML — so those
+ * else (including SVG, which is XML that can carry script, PDF and HTML), so those
  * never reach the decoder.
  */
 export function sniffImage(buf: Uint8Array): RasterKind | null {
@@ -39,8 +39,8 @@ export function buildMediaUrl(id: string, base?: string | null): string {
 }
 
 /**
- * Returns the media id when `src` points at this site's media endpoint —
- * either site-relative or absolute on one of `origins` — else null.
+ * Returns the media id when `src` points at this site's media endpoint
+ * (either site-relative or absolute on one of `origins`), else null.
  */
 export function mediaIdFromUrl(src: string, origins: readonly string[] = []): string | null {
   let path: string;

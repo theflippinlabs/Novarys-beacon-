@@ -11,7 +11,7 @@ const WORDS = Array.from({ length: 220 }, (_, i) => `word${i}`).join(" ");
 function page(opts: { head?: string; body?: string; lang?: boolean } = {}) {
   const head =
     opts.head ??
-    `<title>Acme — live moderation for TikTok</title>
+    `<title>Acme | live moderation for TikTok</title>
      <meta name="description" content="Acme hides spam and abusive comments in TikTok live chats in real time.">
      <link rel="canonical" href="${URL0}">
      <meta name="viewport" content="width=device-width">
@@ -49,7 +49,7 @@ describe("analyzeHtml", () => {
     const r = run(page());
     expect(r.issues).toEqual([]);
     expect(r.facts).toMatchObject({
-      title: "Acme — live moderation for TikTok",
+      title: "Acme | live moderation for TikTok",
       canonical: URL0,
       indexable: true,
       robotsMeta: null,
@@ -88,10 +88,10 @@ describe("analyzeHtml", () => {
   });
 
   it("flags cross-domain and relative canonicals", () => {
-    const cross = run(page({ head: '<title>Acme — live moderation for TikTok</title><link rel="canonical" href="https://other.example/p">' }));
+    const cross = run(page({ head: '<title>Acme | live moderation for TikTok</title><link rel="canonical" href="https://other.example/p">' }));
     expect(rules(cross)).toContain("canonical.cross_domain");
     expect(cross.facts.indexable).toBe(false);
-    const rel = run(page({ head: '<title>Acme — live moderation for TikTok</title><link rel="canonical" href="/product">' }));
+    const rel = run(page({ head: '<title>Acme | live moderation for TikTok</title><link rel="canonical" href="/product">' }));
     expect(rules(rel)).toContain("canonical.relative");
     expect(rules(rel)).not.toContain("canonical.cross_domain");
     expect(rel.facts.canonical).toBe(URL0);
@@ -107,7 +107,7 @@ describe("analyzeHtml", () => {
   });
 
   it("flags unparseable JSON-LD", () => {
-    const r = run(page({ head: '<title>Acme — live moderation for TikTok</title><script type="application/ld+json">{not json</script>' }));
+    const r = run(page({ head: '<title>Acme | live moderation for TikTok</title><script type="application/ld+json">{not json</script>' }));
     expect(rules(r)).toContain("schema.invalid_json");
     expect(r.facts.structuredDataTypes).toEqual([]);
   });
@@ -115,14 +115,14 @@ describe("analyzeHtml", () => {
   it("validates hreflang values and self reference", () => {
     const r = run(
       page({
-        head: `<title>Acme — live moderation for TikTok</title><link rel="alternate" hreflang="english" href="https://acme.example/en"><link rel="alternate" hreflang="de-DE" href="https://acme.example/de">`,
+        head: `<title>Acme | live moderation for TikTok</title><link rel="alternate" hreflang="english" href="https://acme.example/en"><link rel="alternate" hreflang="de-DE" href="https://acme.example/de">`,
       }),
     );
     const invalid = r.issues.find((i) => i.rule === "hreflang.invalid");
     expect(invalid?.message).toContain("english");
     expect(invalid?.message).not.toContain("de-DE");
     expect(rules(r)).toContain("hreflang.self");
-    const ok = run(page({ head: `<title>Acme — live moderation for TikTok</title><link rel="alternate" hreflang="x-default" href="${URL0}"><link rel="alternate" hreflang="zh-Hant" href="https://acme.example/zh">` }));
+    const ok = run(page({ head: `<title>Acme | live moderation for TikTok</title><link rel="alternate" hreflang="x-default" href="${URL0}"><link rel="alternate" hreflang="zh-Hant" href="https://acme.example/zh">` }));
     expect(rules(ok)).not.toContain("hreflang.invalid");
     expect(rules(ok)).not.toContain("hreflang.self");
   });

@@ -148,8 +148,8 @@ export default async function ContentDetail({ params, searchParams }: { params: 
                   <Button variant="danger">{t("Reject")}</Button>
                 </form>
               )}
-              {asset.status === "FACT_CHECK" && <p className="text-xs text-warn">{t("◐ Blocked at fact check — fix or remove unsupported claims (or add the missing facts to the knowledge graph), then save a new version.")}</p>}
-              {asset.status === "SEO_CHECK" && <p className="text-xs text-warn">{t("◐ Blocked at SEO/GEO check — see failing rules below.")}</p>}
+              {asset.status === "FACT_CHECK" && <p className="text-xs text-warn">{t("◐ Blocked at fact check: fix or remove unsupported claims (or add the missing facts to the knowledge graph), then save a new version.")}</p>}
+              {asset.status === "SEO_CHECK" && <p className="text-xs text-warn">{t("◐ Blocked at SEO/GEO check: see failing rules below.")}</p>}
               {asset.status === "PUBLISHED" && <p className="text-xs text-ok">{t("✓ Published {date}.", { date: asset.publishedAt?.toISOString().slice(0, 10) ?? "" })}</p>}
             </div>
           </Panel>
@@ -231,8 +231,8 @@ export default async function ContentDetail({ params, searchParams }: { params: 
                   <tr key={x.id}>
                     <Td className="num">{x.version}</Td>
                     <Td className="num text-xs">{x.createdAt.toISOString().slice(0, 16).replace("T", " ")}</Td>
-                    <Td>{x.factCheck ? (x.factCheck.passed ? "✓" : "✕") : "—"}</Td>
-                    <Td>{x.seoCheck ? (x.seoCheck.passed ? "✓" : "✕") : "—"}</Td>
+                    <Td>{x.factCheck ? (x.factCheck.passed ? "✓" : "✕") : t("n/a")}</Td>
+                    <Td>{x.seoCheck ? (x.seoCheck.passed ? "✓" : "✕") : t("n/a")}</Td>
                   </tr>
                 ))}
               </tbody>

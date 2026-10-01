@@ -31,8 +31,8 @@ function channelLabel(t: T, locale: Locale, c: string) {
   return c === "PAID" && locale !== "en" ? t("PAID ADS") : enumLabel(t, c);
 }
 
-function MoneyList({ items, intl }: { items?: Money[]; intl: string }) {
-  if (!items?.length) return <span className="text-muted">—</span>;
+function MoneyList({ items, intl, t }: { items?: Money[]; intl: string; t: T }) {
+  if (!items?.length) return <span className="text-muted">{t("None")}</span>;
   return (
     <span className="flex flex-col">
       {items.map((x) => (
@@ -150,7 +150,7 @@ export default async function ReferralsPage({ searchParams }: { searchParams: Pr
     { label: t("Signup"), value: num(data.pipe.signups) },
     { label: t("Activation"), value: num(data.pipe.activations) },
     { label: t("Purchase"), value: num(data.pipe.purchases) },
-    { label: t("Recurring revenue"), value: <MoneyList items={data.pipe.recurring} intl={intl} /> },
+    { label: t("Recurring revenue"), value: <MoneyList items={data.pipe.recurring} intl={intl} t={t} /> },
   ];
 
   return (
@@ -158,7 +158,7 @@ export default async function ReferralsPage({ searchParams }: { searchParams: Pr
       <PageHeader
         eyebrow={t("10 / Referrals")}
         title={t("Referral & affiliate engine")}
-        description={t("Tracked referral links, affiliates and their commissions. Commissions flagged by fraud heuristics are held for human review — never auto-voided, never paid before the hold period ends.")}
+        description={t("Tracked referral links, affiliates and their commissions. Commissions flagged by fraud heuristics are held for human review: never auto-voided, never paid before the hold period ends.")}
       />
       <Flash searchParams={sp} />
 
@@ -207,7 +207,7 @@ export default async function ReferralsPage({ searchParams }: { searchParams: Pr
                       {campaignName && <div className="text-[11px] text-muted">{t("campaign · {name}", { name: campaignName })}</div>}
                     </Td>
                     <Td className="text-xs">
-                      {productName ?? "—"}
+                      {productName ?? t("n/a")}
                       <div className="text-muted">{affiliateName ?? t("Direct referral")}</div>
                     </Td>
                     <Td className="num max-w-56 truncate text-xs">
@@ -217,7 +217,7 @@ export default async function ReferralsPage({ searchParams }: { searchParams: Pr
                     <Td className="num text-right">{num(data.signups.get(rc.id) ?? 0)}</Td>
                     <Td className="num text-right">{num(data.purchases.get(rc.id) ?? 0)}</Td>
                     <Td className="num text-right text-xs">
-                      <MoneyList items={data.recurring.get(rc.id)} intl={intl} />
+                      <MoneyList items={data.recurring.get(rc.id)} intl={intl} t={t} />
                     </Td>
                     <Td>
                       <div className="flex flex-col items-start gap-1.5">
@@ -255,7 +255,7 @@ export default async function ReferralsPage({ searchParams }: { searchParams: Pr
                     ))}
                   </select>
                 </Field>
-                <Field label={t("Code")} hint={t("Optional. 3–40 letters, digits, - or _. Generated when empty.")}>
+                <Field label={t("Code")} hint={t("Optional. 3 to 40 letters, digits, - or _. Generated when empty.")}>
                   <input name="code" pattern="[A-Za-z0-9_\-]{3,40}" maxLength={40} placeholder={t("SPRING-PARTNER")} />
                 </Field>
                 <Field label={t("Affiliate")} hint={t("Links owned by an affiliate are classified AFFILIATE and earn commission.")}>
@@ -286,7 +286,7 @@ export default async function ReferralsPage({ searchParams }: { searchParams: Pr
                 </div>
               </form>
             ) : (
-              <p className="text-sm text-muted">{t("Set a domain on at least one product first — referral destinations must be on the product’s own domain.")}</p>
+              <p className="text-sm text-muted">{t("Set a domain on at least one product first: referral destinations must be on the product’s own domain.")}</p>
             )}
           </Panel>
         )}
@@ -318,10 +318,10 @@ export default async function ReferralsPage({ searchParams }: { searchParams: Pr
                     <Td className="num text-right">{a.commissionMonths}</Td>
                     <Td className="num text-right">{t("{n}d", { n: a.holdDays })}</Td>
                     <Td className="num text-right text-xs">
-                      <MoneyList items={data.affRevenue.get(a.id)} intl={intl} />
+                      <MoneyList items={data.affRevenue.get(a.id)} intl={intl} t={t} />
                     </Td>
                     <Td className="num text-right text-xs">
-                      <MoneyList items={data.affCommissions.get(a.id)} intl={intl} />
+                      <MoneyList items={data.affCommissions.get(a.id)} intl={intl} t={t} />
                     </Td>
                   </tr>
                 ))}
@@ -394,7 +394,7 @@ export default async function ReferralsPage({ searchParams }: { searchParams: Pr
                     <Td className="num text-xs">{day(c.createdAt)}</Td>
                     <Td className="text-platinum">{affiliateName}</Td>
                     <Td className="text-xs">
-                      {revenueType ? evType(revenueType) : "—"}
+                      {revenueType ? evType(revenueType) : t("n/a")}
                       <div className="text-muted">{productName ?? ""}</div>
                     </Td>
                     <Td className="num text-right text-platinum">{formatValue(c.amountCents, "money", c.currency, intl)}</Td>
@@ -429,7 +429,7 @@ export default async function ReferralsPage({ searchParams }: { searchParams: Pr
                             ))}
                           </form>
                         ) : (
-                          <span className="text-xs text-muted">—</span>
+                          <span className="text-xs text-muted">{t("n/a")}</span>
                         )}
                       </Td>
                     )}

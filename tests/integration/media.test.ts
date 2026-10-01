@@ -16,7 +16,7 @@ let productA: string;
 let productB: string;
 let assetA: string;
 
-/** A 300×100 JPEG with camera EXIF, GPS and "rotate 90°" orientation — like a phone photo. */
+/** A 300×100 JPEG with camera EXIF, GPS and "rotate 90°" orientation, like a phone photo. */
 const phonePhoto = () =>
   sharp({ create: { width: 300, height: 100, channels: 3, background: "#204080" } })
     .withExif({ IFD0: { Make: "Apple", Model: "iPhone 16", Copyright: "secret-owner" }, IFD3: { GPSLatitudeRef: "N", GPSLatitude: "48/1 51/1 2400/100" } })

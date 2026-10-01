@@ -3,8 +3,8 @@ export const fr: Record<string, string> = {
   "AI visibility": "Visibilité IA",
   "07 / AI visibility": "07 / Visibilité IA",
   "Observable AI visibility": "Visibilité IA observable",
-  "Sampled observations: Beacon sends tracked questions to AI providers through their official APIs and records which products, competitors and sources appear. API answers can differ from consumer apps and between users — these are samples, not totals, and no placement can be guaranteed.":
-    "Observations échantillonnées : Beacon envoie les questions suivies aux fournisseurs d’IA via leurs API officielles et enregistre les produits, concurrents et sources qui apparaissent. Les réponses des API peuvent différer de celles des applications grand public et d’un utilisateur à l’autre — il s’agit d’échantillons, non de totaux, et aucun positionnement ne peut être garanti.",
+  "Sampled observations: Beacon sends tracked questions to AI providers through their official APIs and records which products, competitors and sources appear. API answers can differ from consumer apps and between users: these are samples, not totals, and no placement can be guaranteed.":
+    "Observations échantillonnées : Beacon envoie les questions suivies aux fournisseurs d’IA via leurs API officielles et enregistre les produits, concurrents et sources qui apparaissent. Les réponses des API peuvent différer de celles des applications grand public et d’un utilisateur à l’autre : il s’agit d’échantillons, non de totaux, et aucun positionnement ne peut être garanti.",
   "Run all active prompts": "Lancer tous les prompts actifs",
   "No AI provider configured": "Aucun fournisseur d’IA configuré",
   "Configure providers": "Configurer les fournisseurs",

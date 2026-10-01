@@ -7,7 +7,7 @@ import { agentActor, idRef, productRef, requirePermission, resolveProduct } from
 const DRAFT_NOTE = "Saved as UNVERIFIED: a human must review and verify it in the app before it is used publicly.";
 const FACET_KINDS = z.enum(["FEATURE", "USE_CASE", "AUDIENCE", "INDUSTRY", "PROBLEM", "INTEGRATION", "DIFFERENTIATOR"]);
 const sourceIdInput = idRef("Id of one of the product's canonical sources backing this fact (see get_product → sources). Strongly recommended.").optional();
-const FACT_RULE = "Only add facts the user stated or that appear on a source you can cite — never invent features, prices, numbers, customers or awards.";
+const FACT_RULE = "Only add facts the user stated or that appear on a source you can cite; never invent features, prices, numbers, customers or awards.";
 
 export const addProductFacet = defineTool({
   name: "add_product_facet",
@@ -33,7 +33,7 @@ export const addProductFacet = defineTool({
 export const addPricingPlanTool = defineTool({
   name: "add_pricing_plan",
   label: "Adding a pricing plan",
-  description: `Add a pricing plan to a product. Leave priceMinorUnits out when the price is not public — never guess it. ${FACT_RULE} ${DRAFT_NOTE}`,
+  description: `Add a pricing plan to a product. Leave priceMinorUnits out when the price is not public; never guess it. ${FACT_RULE} ${DRAFT_NOTE}`,
   permission: "product:write",
   kind: "write",
   input: z.object({

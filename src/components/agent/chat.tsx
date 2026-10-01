@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { renderMarkdown } from "@/core/content/markdown";
+import { stripLongDashes } from "@/core/util/text";
 import { useI18n } from "@/i18n/client";
 
 export type ChatItem =
@@ -76,8 +77,9 @@ async function downscale(file: File, max = 2048): Promise<Blob> {
   }
 }
 
+/** Assistant reply. Long dashes are stripped on the whole text, so a dash split across streamed deltas is handled too. */
 function Markdown({ text }: { text: string }) {
-  return <div className="prose-beacon text-[0.95rem] [&_p]:my-1.5" dangerouslySetInnerHTML={{ __html: renderMarkdown(text) }} />;
+  return <div className="prose-beacon text-[0.95rem] [&_p]:my-1.5" dangerouslySetInnerHTML={{ __html: renderMarkdown(stripLongDashes(text)) }} />;
 }
 
 export function AgentChat({ conversationId: initialId, initialItems }: { conversationId: string | null; initialItems: ChatItem[] }) {
@@ -276,7 +278,7 @@ export function AgentChat({ conversationId: initialId, initialItems }: { convers
                   <path d="M12 2.5l2.2 7.3L21.5 12l-7.3 2.2L12 21.5l-2.2-7.3L2.5 12l7.3-2.2z" />
                 </svg>
               </span>
-              <p className="text-sm text-chrome">{t("Ask me anything about your products, or tell me what to do — I read your Beacon data and do the work. Publishing and approvals stay with you.")}</p>
+              <p className="text-sm text-chrome">{t("Ask me anything about your products, or tell me what to do: I read your Beacon data and do the work. Publishing and approvals stay with you.")}</p>
             </div>
             <div className="grid gap-2 sm:grid-cols-2">
               {SUGGESTIONS.map((s) => (

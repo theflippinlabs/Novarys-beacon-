@@ -5,7 +5,7 @@ export const fr: Record<string, string> = {
   History: "Historique",
   Delete: "Supprimer",
   New: "Nouveau",
-  "Ask me anything about your products, or tell me what to do — I read your Beacon data and do the work. Publishing and approvals stay with you.":
+  "Ask me anything about your products, or tell me what to do: I read your Beacon data and do the work. Publishing and approvals stay with you.":
     "Posez-moi vos questions sur vos produits ou dites-moi quoi faire : je consulte vos données Beacon et je fais le travail. La publication et les validations restent entre vos mains.",
   "What needs my attention today?": "Qu’est-ce qui demande mon attention aujourd’hui ?",
   "Generate opportunities for my product and tell me the top three.": "Génère les opportunités de mon produit et donne-moi les trois meilleures.",

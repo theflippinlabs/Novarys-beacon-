@@ -36,7 +36,7 @@ function VerifyControls({ kind, id, back, current, sources, sourceId, editable, 
           </button>
         )}
         {current !== "REJECTED" && (
-          <button name="verification" value="REJECTED" className="eyebrow text-crit hover:underline" title={t("Reject — never used in generated content")}>
+          <button name="verification" value="REJECTED" className="eyebrow text-crit hover:underline" title={t("Reject (never used in generated content)")}>
             {t("reject")}
           </button>
         )}
@@ -104,7 +104,7 @@ export default async function KnowledgePage({ params, searchParams }: { params: 
               [t("Short description"), p.shortDescription],
               [t("Documentation"), p.documentationUrl],
               [t("Conversion URLs"), p.conversionUrls.map((c) => c.label).join(", ") || null],
-              [t("Last verified"), p.lastVerifiedAt?.toISOString().slice(0, 10) ?? t("Never — descriptions carry reduced confidence")],
+              [t("Last verified"), p.lastVerifiedAt?.toISOString().slice(0, 10) ?? t("Never (descriptions carry reduced confidence)")],
             ]}
           />
           {can("content:approve") && (
@@ -119,7 +119,7 @@ export default async function KnowledgePage({ params, searchParams }: { params: 
           <ul className="flex flex-col gap-2">
             {completeness.missing.slice(0, 10).map((m) => (
               <li key={m.key} className="text-xs">
-                <span className={m.status === "missing" ? "text-crit" : "text-warn"}>{m.status === "missing" ? "✕" : "◐"}</span> <span className="text-platinum">{t(m.label)}</span> <span className="text-muted">— {t(m.hint)}</span>
+                <span className={m.status === "missing" ? "text-crit" : "text-warn"}>{m.status === "missing" ? "✕" : "◐"}</span> <span className="text-platinum">{t("{label}:", { label: t(m.label) })}</span> <span className="text-muted">{t(m.hint)}</span>
               </li>
             ))}
             {!completeness.missing.length && <li className="text-sm text-ok">{t("✓ All tracked entity facts present.")}</li>}
@@ -170,7 +170,7 @@ export default async function KnowledgePage({ params, searchParams }: { params: 
                 </tbody>
               </Table>
             ) : (
-              <p className="p-4 text-sm text-muted">{t("Unknown — none recorded.")}</p>
+              <p className="p-4 text-sm text-muted">{t("Unknown: none recorded.")}</p>
             )}
           </Panel>
         );
@@ -192,7 +192,7 @@ export default async function KnowledgePage({ params, searchParams }: { params: 
                 <tr key={x.id}>
                   <Td className="text-platinum">{x.planName}</Td>
                   <Td className="num">{x.priceCents === null ? <span className="text-muted">{t("not public")}</span> : `${formatMoney(x.priceCents, x.currency, intl)} / ${lbl(x.interval).toLocaleLowerCase(intl)}`}</Td>
-                  <Td className="num">{x.trialDays ? t("{n} days", { n: x.trialDays }) : "—"}</Td>
+                  <Td className="num">{x.trialDays ? t("{n} days", { n: x.trialDays }) : t("n/a")}</Td>
                   <Td>
                     <VerifyControls kind="pricing" id={x.id} back={back} current={x.verification} sources={g.sources} sourceId={x.sourceId} editable={editable} t={t} />
                   </Td>
@@ -255,7 +255,7 @@ export default async function KnowledgePage({ params, searchParams }: { params: 
                   {pr.publishable ? <Badge tone="ok">{t("publishable")}</Badge> : <Badge tone="muted">{t("internal only")}</Badge>}
                 </div>
                 <div className="mt-1 text-xs text-chrome">{pr.content}</div>
-                {pr.attribution && <div className="text-xs text-muted">— {pr.attribution}</div>}
+                {pr.attribution && <div className="text-xs text-muted">{t("Attribution: {name}", { name: pr.attribution })}</div>}
                 <div className="mt-2">
                   <VerifyControls kind="proof" id={pr.id} back={back} current={pr.verification} sources={g.sources} sourceId={pr.sourceId} editable={editable} t={t} />
                 </div>

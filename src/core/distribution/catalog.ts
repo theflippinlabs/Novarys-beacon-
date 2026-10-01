@@ -1,6 +1,6 @@
 /**
  * Well-known distribution venues suggested during onboarding. These are
- * suggestions only (status DISCOVERED) — a human qualifies relevance, and
+ * suggestions only (status DISCOVERED); a human qualifies relevance, and
  * nothing is ever submitted without approval.
  */
 export const DISTRIBUTION_CATALOG: { kind: "DIRECTORY" | "LAUNCH_PLATFORM" | "COMMUNITY"; name: string; url: string; fit: "b2b" | "any" | "dev" }[] = [

@@ -2,7 +2,7 @@ import type { LlmProvider, ProviderCredentials, ProviderId } from "../types";
 
 /**
  * Minimal adapter for OpenAI-compatible chat-completions APIs (OpenAI,
- * Perplexity). Used only for sampled AI-visibility observations — answers
+ * Perplexity). Used only for sampled AI-visibility observations: answers
  * obtained through an API can differ from what a consumer app shows.
  */
 export class OpenAICompatibleProvider implements LlmProvider {

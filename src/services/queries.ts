@@ -34,7 +34,7 @@ export type NewQuery = {
 /** Insert a query (idempotent on normalized text + language + market). Returns null when it already existed. */
 export async function addQuery(tx: Tx, organizationId: string, q: NewQuery) {
   const normalized = normalizeQuery(q.query);
-  if (!normalized || normalized.length > 200) throw new Error("Query must be 1–200 characters");
+  if (!normalized || normalized.length > 200) throw new Error("Query must be 1 to 200 characters");
   const cls = classifyQuery(normalized, q.brandTerms ?? []);
   const intent = q.intent ?? cls.intent;
   const cluster = q.clusterName ? await ensureCluster(tx, organizationId, q.productId, q.clusterName) : null;

@@ -10,7 +10,7 @@ export const fr: Record<string, string> = {
   // Verification controls
   "Mark as verified by a human": "Marquer comme vérifié par un humain",
   verify: "vérifier",
-  "Reject — never used in generated content": "Rejeter — jamais utilisé dans les contenus générés",
+  "Reject (never used in generated content)": "Rejeter (jamais utilisé dans les contenus générés)",
   reject: "rejeter",
   Source: "Source",
   "No source": "Aucune source",
@@ -35,7 +35,7 @@ export const fr: Record<string, string> = {
   Documentation: "Documentation",
   "Conversion URLs": "URL de conversion",
   "Last verified": "Dernière vérification",
-  "Never — descriptions carry reduced confidence": "Jamais — les descriptions ont un niveau de confiance réduit",
+  "Never (descriptions carry reduced confidence)": "Jamais (les descriptions ont un niveau de confiance réduit)",
   "I verified the core descriptions": "J’ai vérifié les descriptions principales",
 
   // Entity completeness
@@ -48,7 +48,7 @@ export const fr: Record<string, string> = {
   "Full description": "Description complète",
   "At least a paragraph describing the product.": "Au moins un paragraphe décrivant le produit.",
   "How it works": "Fonctionnement",
-  "Explain the mechanism — this powers GEO 'HOW' answers.": "Expliquez le mécanisme — cela alimente les réponses GEO de type « COMMENT ».",
+  "Explain the mechanism: this powers GEO 'HOW' answers.": "Expliquez le mécanisme : cela alimente les réponses GEO de type « COMMENT ».",
   "Product status & release": "Statut et sortie du produit",
   "Set lifecycle status and release date.": "Définissez le statut du cycle de vie et la date de lancement.",
   "Target audiences": "Audiences cibles",
@@ -88,7 +88,8 @@ export const fr: Record<string, string> = {
   Description: "Description",
   "Verification & source": "Vérification et source",
   "No description": "Aucune description",
-  "Unknown — none recorded.": "Inconnu — rien n’est enregistré.",
+  "Attribution: {name}": "Attribution : {name}",
+  "Unknown: none recorded.": "Inconnu : rien n’est enregistré.",
 
   // Pricing
   Pricing: "Tarifs",
