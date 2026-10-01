@@ -1,6 +1,7 @@
 "use client";
 
 import { useId, useMemo, useState } from "react";
+import { useI18n } from "@/i18n/client";
 
 export type Series = { key: string; label: string; color: string; points: { x: string; y: number }[] };
 
@@ -8,7 +9,9 @@ export type Series = { key: string; label: string; color: string; points: { x: s
  * Minimal SVG line chart: 2px lines, hairline grid, single y-axis, crosshair +
  * tooltip on hover, legend for ≥2 series, and a data table for screen readers.
  */
-export function LineChart({ series, height = 180, format = (v: number) => v.toLocaleString("en-GB"), title }: { series: Series[]; height?: number; format?: (v: number) => string; title: string }) {
+export function LineChart({ series, height = 180, format: formatProp, title }: { series: Series[]; height?: number; format?: (v: number) => string; title: string }) {
+  const { t, intl } = useI18n();
+  const format = formatProp ?? ((v: number) => v.toLocaleString(intl));
   const id = useId();
   const [hover, setHover] = useState<number | null>(null);
   const W = 640;
@@ -24,7 +27,7 @@ export function LineChart({ series, height = 180, format = (v: number) => v.toLo
   const y = (v: number) => pad.t + (1 - v / max) * (height - pad.t - pad.b);
   const ticks = [0, max / 2, max];
 
-  if (!xs.length) return <div className="text-sm text-muted">No data points yet.</div>;
+  if (!xs.length) return <div className="text-sm text-muted">{t("No data points yet.")}</div>;
 
   return (
     <figure className="w-full">
@@ -96,7 +99,7 @@ export function LineChart({ series, height = 180, format = (v: number) => v.toLo
         <caption>{title}</caption>
         <thead>
           <tr>
-            <th>Date</th>
+            <th>{t("Date")}</th>
             {series.map((s) => (
               <th key={s.key}>{s.label}</th>
             ))}

@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { desc, eq, sql } from "drizzle-orm";
 import { addAffiliateAction, addCampaignAction, createReferralCodeAction, setCommissionStatusAction, toggleReferralCodeAction } from "@/app/actions/growth";
@@ -5,8 +6,13 @@ import { Badge, Button, EmptyState, Field, Flash, HiddenBack, PageHeader, Panel,
 import { affiliates, campaigns, channelEnum, commissions, products, referralCodes, revenueEvents } from "@/db/schema";
 import { env } from "@/lib/env";
 import { pageData, type SP } from "@/lib/page";
+import { enumLabel, type Locale, type T } from "@/i18n/core";
+import { getI18n, getT } from "@/i18n/server";
 
-export const metadata = { title: "Referrals" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT();
+  return { title: t("Referrals") };
+}
 
 const BACK = "/referrals";
 const PIPELINE_DAYS = 90;
@@ -20,12 +26,17 @@ function byKey(rows: { key: string; currency: string; cents: number | string }[]
   return m;
 }
 
-function MoneyList({ items }: { items?: Money[] }) {
+/** Acquisition channel label; PAID is the paid-ads channel here, not the commission status. */
+function channelLabel(t: T, locale: Locale, c: string) {
+  return c === "PAID" && locale !== "en" ? t("PAID ADS") : enumLabel(t, c);
+}
+
+function MoneyList({ items, intl }: { items?: Money[]; intl: string }) {
   if (!items?.length) return <span className="text-muted">—</span>;
   return (
     <span className="flex flex-col">
       {items.map((x) => (
-        <span key={x.currency}>{formatValue(x.cents, "money", x.currency)}</span>
+        <span key={x.currency}>{formatValue(x.cents, "money", x.currency, intl)}</span>
       ))}
     </span>
   );
@@ -35,6 +46,10 @@ const day = (d: Date) => d.toISOString().slice(0, 10);
 
 export default async function ReferralsPage({ searchParams }: { searchParams: Promise<SP> }) {
   const sp = await searchParams;
+  const { t, intl, locale } = await getI18n();
+  const num = (v: number) => formatValue(v, "count", undefined, intl);
+  /** Revenue event type, shown with its raw enum value in English. */
+  const evType = (v: string) => (locale === "en" ? v : enumLabel(t, v));
   const { data, can } = await pageData(async (tx, ctx) => {
     const org = ctx.org.id;
     const now = new Date();
@@ -131,23 +146,23 @@ export default async function ReferralsPage({ searchParams }: { searchParams: Pr
   const prodsWithDomain = data.prods.filter((p) => p.domain);
 
   const pipeline: { label: string; value: ReactNode }[] = [
-    { label: "Visit", value: formatValue(data.pipe.visits) },
-    { label: "Signup", value: formatValue(data.pipe.signups) },
-    { label: "Activation", value: formatValue(data.pipe.activations) },
-    { label: "Purchase", value: formatValue(data.pipe.purchases) },
-    { label: "Recurring revenue", value: <MoneyList items={data.pipe.recurring} /> },
+    { label: t("Visit"), value: num(data.pipe.visits) },
+    { label: t("Signup"), value: num(data.pipe.signups) },
+    { label: t("Activation"), value: num(data.pipe.activations) },
+    { label: t("Purchase"), value: num(data.pipe.purchases) },
+    { label: t("Recurring revenue"), value: <MoneyList items={data.pipe.recurring} intl={intl} /> },
   ];
 
   return (
     <>
       <PageHeader
-        eyebrow="10 / Referrals"
-        title="Referral & affiliate engine"
-        description="Tracked referral links, affiliates and their commissions. Commissions flagged by fraud heuristics are held for human review — never auto-voided, never paid before the hold period ends."
+        eyebrow={t("10 / Referrals")}
+        title={t("Referral & affiliate engine")}
+        description={t("Tracked referral links, affiliates and their commissions. Commissions flagged by fraud heuristics are held for human review — never auto-voided, never paid before the hold period ends.")}
       />
       <Flash searchParams={sp} />
 
-      <Panel eyebrow={`Pipeline · last ${PIPELINE_DAYS} days`} title="Referral & affiliate links → recurring revenue" className="mb-6">
+      <Panel eyebrow={t("Pipeline · last {days} days", { days: PIPELINE_DAYS })} title={t("Referral & affiliate links → recurring revenue")} className="mb-6">
         {data.codes.length ? (
           <>
             <ol className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
@@ -161,27 +176,27 @@ export default async function ReferralsPage({ searchParams }: { searchParams: Pr
                 </li>
               ))}
             </ol>
-            <p className="mt-3 text-[11px] text-muted">Visits = tracked /r/ link hits. Signups and purchases carry the referral code. Activation counts people whose signup came through a code. Recurring revenue = renewals + upgrades on referred subscriptions, per currency.</p>
+            <p className="mt-3 text-[11px] text-muted">{t("Visits = tracked /r/ link hits. Signups and purchases carry the referral code. Activation counts people whose signup came through a code. Recurring revenue = renewals + upgrades on referred subscriptions, per currency.")}</p>
           </>
         ) : (
-          <EmptyState title="No referral links yet">Create a referral link below. Visits are recorded when someone opens {base}/r/CODE; signups, purchases and renewals are credited once your product sends lifecycle and revenue events.</EmptyState>
+          <EmptyState title={t("No referral links yet")}>{t("Create a referral link below. Visits are recorded when someone opens {url}; signups, purchases and renewals are credited once your product sends lifecycle and revenue events.", { url: `${base}/r/CODE` })}</EmptyState>
         )}
       </Panel>
 
       <div className="grid gap-6 xl:grid-cols-[1fr_22rem]">
-        <Panel eyebrow="Referral links" title={`${data.codes.length} code${data.codes.length === 1 ? "" : "s"}`} pad={false}>
+        <Panel eyebrow={t("Referral links")} title={data.codes.length === 1 ? t("{n} code", { n: 1 }) : t("{n} codes", { n: data.codes.length })} pad={false}>
           {data.codes.length ? (
             <Table>
               <thead>
                 <tr>
-                  <Th>Link</Th>
-                  <Th>Product / affiliate</Th>
-                  <Th>Destination</Th>
-                  <Th className="text-right">Visits</Th>
-                  <Th className="text-right">Signups</Th>
-                  <Th className="text-right">Purchases</Th>
-                  <Th className="text-right">Recurring</Th>
-                  <Th>Status</Th>
+                  <Th>{t("Link")}</Th>
+                  <Th>{t("Product / affiliate")}</Th>
+                  <Th>{t("Destination")}</Th>
+                  <Th className="text-right">{t("Visits")}</Th>
+                  <Th className="text-right">{t("Signups")}</Th>
+                  <Th className="text-right">{t("Purchases")}</Th>
+                  <Th className="text-right">{t("Recurring")}</Th>
+                  <Th>{t("Status")}</Th>
                 </tr>
               </thead>
               <tbody>
@@ -189,20 +204,20 @@ export default async function ReferralsPage({ searchParams }: { searchParams: Pr
                   <tr key={rc.id}>
                     <Td>
                       <div className="num text-xs text-platinum">{`${base}/r/${rc.code}`}</div>
-                      {campaignName && <div className="text-[11px] text-muted">campaign · {campaignName}</div>}
+                      {campaignName && <div className="text-[11px] text-muted">{t("campaign · {name}", { name: campaignName })}</div>}
                     </Td>
                     <Td className="text-xs">
                       {productName ?? "—"}
-                      <div className="text-muted">{affiliateName ?? "Direct referral"}</div>
+                      <div className="text-muted">{affiliateName ?? t("Direct referral")}</div>
                     </Td>
                     <Td className="num max-w-56 truncate text-xs">
                       <span title={rc.destinationUrl}>{rc.destinationUrl}</span>
                     </Td>
-                    <Td className="num text-right">{formatValue(data.visits.get(rc.id) ?? 0)}</Td>
-                    <Td className="num text-right">{formatValue(data.signups.get(rc.id) ?? 0)}</Td>
-                    <Td className="num text-right">{formatValue(data.purchases.get(rc.id) ?? 0)}</Td>
+                    <Td className="num text-right">{num(data.visits.get(rc.id) ?? 0)}</Td>
+                    <Td className="num text-right">{num(data.signups.get(rc.id) ?? 0)}</Td>
+                    <Td className="num text-right">{num(data.purchases.get(rc.id) ?? 0)}</Td>
                     <Td className="num text-right text-xs">
-                      <MoneyList items={data.recurring.get(rc.id)} />
+                      <MoneyList items={data.recurring.get(rc.id)} intl={intl} />
                     </Td>
                     <Td>
                       <div className="flex flex-col items-start gap-1.5">
@@ -212,7 +227,7 @@ export default async function ReferralsPage({ searchParams }: { searchParams: Pr
                             <HiddenBack path={BACK} />
                             <input type="hidden" name="id" value={rc.id} />
                             <input type="hidden" name="active" value={rc.active ? "false" : "true"} />
-                            <Button>{rc.active ? "Deactivate" : "Activate"}</Button>
+                            <Button>{rc.active ? t("Deactivate") : t("Activate")}</Button>
                           </form>
                         )}
                       </div>
@@ -222,16 +237,16 @@ export default async function ReferralsPage({ searchParams }: { searchParams: Pr
               </tbody>
             </Table>
           ) : (
-            <p className="p-4 text-sm text-muted">No referral codes yet. Counts are all-time per code.</p>
+            <p className="p-4 text-sm text-muted">{t("No referral codes yet. Counts are all-time per code.")}</p>
           )}
         </Panel>
 
         {canGrowth && (
-          <Panel eyebrow="Referral links" title="Create referral link">
+          <Panel eyebrow={t("Referral links")} title={t("Create referral link")}>
             {prodsWithDomain.length ? (
               <form action={createReferralCodeAction} className="flex flex-col gap-3">
                 <HiddenBack path={BACK} />
-                <Field label="Product">
+                <Field label={t("Product")}>
                   <select name="productId" required defaultValue={prodsWithDomain[0].id}>
                     {prodsWithDomain.map((p) => (
                       <option key={p.id} value={p.id}>
@@ -240,12 +255,12 @@ export default async function ReferralsPage({ searchParams }: { searchParams: Pr
                     ))}
                   </select>
                 </Field>
-                <Field label="Code" hint="Optional. 3–40 letters, digits, - or _. Generated when empty.">
-                  <input name="code" pattern="[A-Za-z0-9_\-]{3,40}" maxLength={40} placeholder="SPRING-PARTNER" />
+                <Field label={t("Code")} hint={t("Optional. 3–40 letters, digits, - or _. Generated when empty.")}>
+                  <input name="code" pattern="[A-Za-z0-9_\-]{3,40}" maxLength={40} placeholder={t("SPRING-PARTNER")} />
                 </Field>
-                <Field label="Affiliate" hint="Links owned by an affiliate are classified AFFILIATE and earn commission.">
+                <Field label={t("Affiliate")} hint={t("Links owned by an affiliate are classified AFFILIATE and earn commission.")}>
                   <select name="affiliateId" defaultValue="">
-                    <option value="">None (referral)</option>
+                    <option value="">{t("None (referral)")}</option>
                     {data.affs.map((a) => (
                       <option key={a.id} value={a.id}>
                         {a.name}
@@ -253,12 +268,12 @@ export default async function ReferralsPage({ searchParams }: { searchParams: Pr
                     ))}
                   </select>
                 </Field>
-                <Field label="Destination URL" hint="Must be https on the selected product’s domain.">
+                <Field label={t("Destination URL")} hint={t("Must be https on the selected product’s domain.")}>
                   <input name="destinationUrl" type="url" required pattern="https://.*" placeholder="https://example.com/signup" />
                 </Field>
-                <Field label="Campaign">
+                <Field label={t("Campaign")}>
                   <select name="campaignId" defaultValue="">
-                    <option value="">None</option>
+                    <option value="">{t("None")}</option>
                     {data.camps.map(({ c }) => (
                       <option key={c.id} value={c.id}>
                         {c.name}
@@ -267,29 +282,29 @@ export default async function ReferralsPage({ searchParams }: { searchParams: Pr
                   </select>
                 </Field>
                 <div>
-                  <Button variant="gold">Create link</Button>
+                  <Button variant="gold">{t("Create link")}</Button>
                 </div>
               </form>
             ) : (
-              <p className="text-sm text-muted">Set a domain on at least one product first — referral destinations must be on the product’s own domain.</p>
+              <p className="text-sm text-muted">{t("Set a domain on at least one product first — referral destinations must be on the product’s own domain.")}</p>
             )}
           </Panel>
         )}
       </div>
 
       <div className="mt-6 grid gap-6 xl:grid-cols-[1fr_22rem]">
-        <Panel eyebrow="Affiliates" title={`${data.affs.length} affiliate${data.affs.length === 1 ? "" : "s"}`} pad={false}>
+        <Panel eyebrow={t("Affiliates")} title={data.affs.length === 1 ? t("{n} affiliate", { n: 1 }) : t("{n} affiliates", { n: data.affs.length })} pad={false}>
           {data.affs.length ? (
             <Table>
               <thead>
                 <tr>
-                  <Th>Name</Th>
-                  <Th>Status</Th>
-                  <Th className="text-right">Commission</Th>
-                  <Th className="text-right">Months</Th>
-                  <Th className="text-right">Hold</Th>
-                  <Th className="text-right">Attributed revenue</Th>
-                  <Th className="text-right">Commissions</Th>
+                  <Th>{t("Name")}</Th>
+                  <Th>{t("Status")}</Th>
+                  <Th className="text-right">{t("Commission")}</Th>
+                  <Th className="text-right">{t("Months")}</Th>
+                  <Th className="text-right">{locale === "en" ? "Hold" : t("Hold days")}</Th>
+                  <Th className="text-right">{t("Attributed revenue")}</Th>
+                  <Th className="text-right">{t("Commissions")}</Th>
                 </tr>
               </thead>
               <tbody>
@@ -299,14 +314,14 @@ export default async function ReferralsPage({ searchParams }: { searchParams: Pr
                     <Td>
                       <StatusBadge status={a.status} />
                     </Td>
-                    <Td className="num text-right">{(a.commissionBps / 100).toLocaleString("en-GB", { maximumFractionDigits: 2 })}%</Td>
+                    <Td className="num text-right">{t("{pct}%", { pct: (a.commissionBps / 100).toLocaleString(intl, { maximumFractionDigits: 2 }) })}</Td>
                     <Td className="num text-right">{a.commissionMonths}</Td>
-                    <Td className="num text-right">{a.holdDays}d</Td>
+                    <Td className="num text-right">{t("{n}d", { n: a.holdDays })}</Td>
                     <Td className="num text-right text-xs">
-                      <MoneyList items={data.affRevenue.get(a.id)} />
+                      <MoneyList items={data.affRevenue.get(a.id)} intl={intl} />
                     </Td>
                     <Td className="num text-right text-xs">
-                      <MoneyList items={data.affCommissions.get(a.id)} />
+                      <MoneyList items={data.affCommissions.get(a.id)} intl={intl} />
                     </Td>
                   </tr>
                 ))}
@@ -314,54 +329,54 @@ export default async function ReferralsPage({ searchParams }: { searchParams: Pr
             </Table>
           ) : (
             <div className="p-4">
-              <EmptyState title="No affiliates">Add an affiliate, then create a referral link owned by them. Revenue arriving through their links earns commission per their terms.</EmptyState>
+              <EmptyState title={t("No affiliates")}>{t("Add an affiliate, then create a referral link owned by them. Revenue arriving through their links earns commission per their terms.")}</EmptyState>
             </div>
           )}
-          <p className="border-t border-line px-4 py-2 text-[11px] text-muted">Attributed revenue: all revenue events carrying one of the affiliate’s codes. Commissions exclude VOID. Totals are per currency.</p>
+          <p className="border-t border-line px-4 py-2 text-[11px] text-muted">{t("Attributed revenue: all revenue events carrying one of the affiliate’s codes. Commissions exclude VOID. Totals are per currency.")}</p>
         </Panel>
 
         {canRevenue && (
-          <Panel eyebrow="Affiliates" title="Add affiliate">
+          <Panel eyebrow={t("Affiliates")} title={t("Add affiliate")}>
             <form action={addAffiliateAction} className="flex flex-col gap-3">
               <HiddenBack path={BACK} />
-              <Field label="Name">
+              <Field label={t("Name")}>
                 <input name="name" required minLength={2} maxLength={120} />
               </Field>
-              <Field label="Contact email" hint="Stored only as a keyed hash (used for self-referral detection).">
+              <Field label={t("Contact email")} hint={t("Stored only as a keyed hash (used for self-referral detection).")}>
                 <input name="email" type="email" />
               </Field>
               <div className="grid grid-cols-3 gap-3">
-                <Field label="Commission %">
+                <Field label={t("Commission %")}>
                   <input name="commissionPct" type="number" min={0} max={90} step="0.01" defaultValue={20} required />
                 </Field>
-                <Field label="Months">
+                <Field label={t("Months")}>
                   <input name="commissionMonths" type="number" min={1} max={120} defaultValue={12} required />
                 </Field>
-                <Field label="Hold days">
+                <Field label={t("Hold days")}>
                   <input name="holdDays" type="number" min={0} max={180} defaultValue={30} required />
                 </Field>
               </div>
               <div>
-                <Button variant="gold">Add affiliate</Button>
+                <Button variant="gold">{t("Add affiliate")}</Button>
               </div>
             </form>
           </Panel>
         )}
       </div>
 
-      <Panel eyebrow="Commissions" title="Latest 100 commissions" className="mt-6" pad={false}>
+      <Panel eyebrow={t("Commissions")} title={t("Latest 100 commissions")} className="mt-6" pad={false}>
         {data.comms.length ? (
           <Table>
             <thead>
               <tr>
-                <Th>Created</Th>
-                <Th>Affiliate</Th>
-                <Th>Revenue event</Th>
-                <Th className="text-right">Amount</Th>
-                <Th>Status</Th>
-                <Th>Fraud flags</Th>
-                <Th>Payable after</Th>
-                {canRevenue && <Th>Actions</Th>}
+                <Th>{t("Created")}</Th>
+                <Th>{t("Affiliate")}</Th>
+                <Th>{t("Revenue event")}</Th>
+                <Th className="text-right">{t("Amount")}</Th>
+                <Th>{t("Status")}</Th>
+                <Th>{t("Fraud flags")}</Th>
+                <Th>{t("Payable after")}</Th>
+                {canRevenue && <Th>{t("Actions")}</Th>}
               </tr>
             </thead>
             <tbody>
@@ -369,35 +384,35 @@ export default async function ReferralsPage({ searchParams }: { searchParams: Pr
                 const inHold = c.payableAfter > data.now;
                 const actions: { status: string; label: string; variant?: "gold" | "danger"; disabled?: boolean; title?: string }[] = [];
                 if (c.status === "PENDING" || c.status === "ON_HOLD")
-                  actions.push({ status: "APPROVED", label: "Approve", variant: "gold", disabled: inHold, title: inHold ? `Hold period ends ${day(c.payableAfter)}` : undefined });
-                if (c.status === "PENDING" || c.status === "APPROVED") actions.push({ status: "ON_HOLD", label: "Hold" });
-                if (c.status === "ON_HOLD") actions.push({ status: "PENDING", label: "Release" });
-                if (c.status === "APPROVED") actions.push({ status: "PAID", label: "Mark paid", variant: "gold" });
-                if (c.status !== "PAID" && c.status !== "VOID") actions.push({ status: "VOID", label: "Void", variant: "danger" });
+                  actions.push({ status: "APPROVED", label: t("Approve"), variant: "gold", disabled: inHold, title: inHold ? t("Hold period ends {date}", { date: day(c.payableAfter) }) : undefined });
+                if (c.status === "PENDING" || c.status === "APPROVED") actions.push({ status: "ON_HOLD", label: t("Hold") });
+                if (c.status === "ON_HOLD") actions.push({ status: "PENDING", label: t("Release") });
+                if (c.status === "APPROVED") actions.push({ status: "PAID", label: t("Mark paid"), variant: "gold" });
+                if (c.status !== "PAID" && c.status !== "VOID") actions.push({ status: "VOID", label: t("Void"), variant: "danger" });
                 return (
                   <tr key={c.id}>
                     <Td className="num text-xs">{day(c.createdAt)}</Td>
                     <Td className="text-platinum">{affiliateName}</Td>
                     <Td className="text-xs">
-                      {revenueType ?? "—"}
+                      {revenueType ? evType(revenueType) : "—"}
                       <div className="text-muted">{productName ?? ""}</div>
                     </Td>
-                    <Td className="num text-right text-platinum">{formatValue(c.amountCents, "money", c.currency)}</Td>
+                    <Td className="num text-right text-platinum">{formatValue(c.amountCents, "money", c.currency, intl)}</Td>
                     <Td>
                       <StatusBadge status={c.status} />
-                      {c.paidAt && <div className="num mt-1 text-[11px] text-muted">paid {day(c.paidAt)}</div>}
+                      {c.paidAt && <div className="num mt-1 text-[11px] text-muted">{t("paid {date}", { date: day(c.paidAt) })}</div>}
                     </Td>
                     <Td>
                       {c.fraudFlags.length ? (
                         <div className="flex flex-wrap gap-1">
                           {c.fraudFlags.map((fl) => (
                             <Badge key={fl} tone="warn">
-                              {fl.replace(/_/g, " ")}
+                              {enumLabel(t, fl)}
                             </Badge>
                           ))}
                         </div>
                       ) : (
-                        <span className="text-xs text-muted">none</span>
+                        <span className="text-xs text-muted">{t("none")}</span>
                       )}
                     </Td>
                     <Td className={`num text-xs ${inHold ? "text-warn" : ""}`}>{day(c.payableAfter)}</Td>
@@ -425,22 +440,22 @@ export default async function ReferralsPage({ searchParams }: { searchParams: Pr
           </Table>
         ) : (
           <div className="p-4">
-            <EmptyState title="No commissions yet">Commissions are created automatically when revenue events (Stripe webhook or /api/v1/revenue) arrive for a subscription acquired through an affiliate’s link.</EmptyState>
+            <EmptyState title={t("No commissions yet")}>{t("Commissions are created automatically when revenue events (Stripe webhook or /api/v1/revenue) arrive for a subscription acquired through an affiliate’s link.")}</EmptyState>
           </div>
         )}
       </Panel>
 
       <div className="mt-6 grid gap-6 xl:grid-cols-[1fr_22rem]">
-        <Panel eyebrow="Campaigns" title={`${data.camps.length} UTM campaign${data.camps.length === 1 ? "" : "s"}`} pad={false}>
+        <Panel eyebrow={t("Campaigns")} title={data.camps.length === 1 ? t("{n} UTM campaign", { n: 1 }) : t("{n} UTM campaigns", { n: data.camps.length })} pad={false}>
           {data.camps.length ? (
             <Table>
               <thead>
                 <tr>
-                  <Th>Name</Th>
-                  <Th>Channel</Th>
+                  <Th>{t("Name")}</Th>
+                  <Th>{t("Channel")}</Th>
                   <Th>utm_source / medium / campaign</Th>
-                  <Th>Product</Th>
-                  <Th>Status</Th>
+                  <Th>{t("Product")}</Th>
+                  <Th>{t("Status")}</Th>
                 </tr>
               </thead>
               <tbody>
@@ -448,12 +463,12 @@ export default async function ReferralsPage({ searchParams }: { searchParams: Pr
                   <tr key={c.id}>
                     <Td className="text-platinum">{c.name}</Td>
                     <Td>
-                      <Badge>{c.channel.replace(/_/g, " ")}</Badge>
+                      <Badge>{channelLabel(t, locale, c.channel)}</Badge>
                     </Td>
                     <Td className="num text-xs">
                       {c.utmSource} / {c.utmMedium} / {c.utmCampaign}
                     </Td>
-                    <Td className="text-xs">{productName ?? "Ecosystem"}</Td>
+                    <Td className="text-xs">{productName ?? t("Ecosystem")}</Td>
                     <Td>
                       <StatusBadge status={c.status} />
                     </Td>
@@ -462,38 +477,38 @@ export default async function ReferralsPage({ searchParams }: { searchParams: Pr
               </tbody>
             </Table>
           ) : (
-            <p className="p-4 text-sm text-muted">No campaigns. Register UTM combinations so visits and conversions carrying them are linked to a named campaign.</p>
+            <p className="p-4 text-sm text-muted">{t("No campaigns. Register UTM combinations so visits and conversions carrying them are linked to a named campaign.")}</p>
           )}
         </Panel>
 
         {canGrowth && (
-          <Panel eyebrow="Campaigns" title="Add campaign">
+          <Panel eyebrow={t("Campaigns")} title={t("Add campaign")}>
             <form action={addCampaignAction} className="flex flex-col gap-3">
               <HiddenBack path={BACK} />
-              <Field label="Name">
+              <Field label={t("Name")}>
                 <input name="name" required minLength={2} maxLength={120} />
               </Field>
-              <Field label="Channel">
+              <Field label={t("Channel")}>
                 <select name="channel" defaultValue="REFERRAL">
                   {channelEnum.enumValues.map((ch) => (
                     <option key={ch} value={ch}>
-                      {ch.replace(/_/g, " ")}
+                      {channelLabel(t, locale, ch)}
                     </option>
                   ))}
                 </select>
               </Field>
               <Field label="utm_source">
-                <input name="utmSource" required maxLength={80} placeholder="partner-newsletter" />
+                <input name="utmSource" required maxLength={80} placeholder={t("partner-newsletter")} />
               </Field>
               <Field label="utm_medium">
                 <input name="utmMedium" required maxLength={80} placeholder="email" />
               </Field>
               <Field label="utm_campaign">
-                <input name="utmCampaign" required maxLength={120} placeholder="spring-launch" />
+                <input name="utmCampaign" required maxLength={120} placeholder={t("spring-launch")} />
               </Field>
-              <Field label="Product">
+              <Field label={t("Product")}>
                 <select name="productId" defaultValue="">
-                  <option value="">Ecosystem (no product)</option>
+                  <option value="">{t("Ecosystem (no product)")}</option>
                   {data.prods.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.name}
@@ -501,9 +516,9 @@ export default async function ReferralsPage({ searchParams }: { searchParams: Pr
                   ))}
                 </select>
               </Field>
-              <p className="text-[11px] text-muted">UTM values are stored lower-case.</p>
+              <p className="text-[11px] text-muted">{t("UTM values are stored lower-case.")}</p>
               <div>
-                <Button variant="gold">Add campaign</Button>
+                <Button variant="gold">{t("Add campaign")}</Button>
               </div>
             </form>
           </Panel>

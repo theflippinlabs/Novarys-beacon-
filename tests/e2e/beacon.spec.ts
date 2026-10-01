@@ -244,3 +244,15 @@ test("RBAC: a viewer cannot mutate", async () => {
   await page.goto("/queries");
   await expect(page.locator('input[name="query"]')).toHaveCount(0);
 });
+
+test("language toggle switches the interface to French and back", async ({ page }) => {
+  await login(page);
+  const nav = page.getByRole("navigation", { name: "Primary" });
+  await expect(nav.getByRole("link", { name: "Overview" })).toBeVisible();
+  await page.getByRole("button", { name: "fr", exact: true }).first().click();
+  await expect(page.locator("html")).toHaveAttribute("lang", "fr");
+  await expect(page.getByRole("navigation", { name: "Navigation principale" }).getByRole("link", { name: "Vue d’ensemble" })).toBeVisible();
+  await page.getByRole("button", { name: "en", exact: true }).first().click();
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
+  await expect(nav.getByRole("link", { name: "Overview" })).toBeVisible();
+});

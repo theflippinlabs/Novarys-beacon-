@@ -10,12 +10,19 @@ import { canonicalUrl } from "@/core/discovery/urls";
 import { serializeJsonLd } from "@/core/seo/schema-org";
 import { pageData, type SP } from "@/lib/page";
 import { db } from "@/db";
+import { enumLabel } from "@/i18n/core";
+import { getI18n, getT } from "@/i18n/server";
+import type { Metadata } from "next";
 
-export const metadata = { title: "Content" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT();
+  return { title: t("Content") };
+}
 
 export default async function ContentDetail({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<SP> }) {
   const { id } = await params;
   const sp = await searchParams;
+  const { t } = await getI18n();
   if (!/^[0-9a-f-]{36}$/.test(id)) notFound();
   const { data, can } = await pageData(async (tx, ctx) => {
     const asset = await tx.query.contentAssets.findFirst({ where: and(eq(contentAssets.id, id), eq(contentAssets.organizationId, ctx.org.id)) });
@@ -44,57 +51,57 @@ export default async function ContentDetail({ params, searchParams }: { params: 
   return (
     <>
       <PageHeader
-        eyebrow={`Content · ${asset.type.replace(/_/g, " ")} · ${product?.name ?? ""}`}
+        eyebrow={t("Content · {type} · {product}", { type: enumLabel(t, asset.type), product: product?.name ?? "" })}
         title={asset.title}
         description={
           <>
-            {page && <span className="num">{url ?? page.path}</span>} {data.target && <span className="ml-2">· target query “{data.target.query}”</span>}
+            {page && <span className="num">{url ?? page.path}</span>} {data.target && <span className="ml-2">{t("· target query “{query}”", { query: data.target.query })}</span>}
           </>
         }
-        actions={<Link href="/content" className="eyebrow hover:text-chrome">← Studio</Link>}
+        actions={<Link href="/content" className="eyebrow hover:text-chrome">{t("← Studio")}</Link>}
       />
       <Flash searchParams={sp} />
       <ol className="mb-6 flex flex-wrap gap-1">
         {PIPELINE.map((s, i) => (
           <li key={s} className={cx("border px-2 py-1 font-mono text-[10px] uppercase tracking-wider", asset.status === s ? "border-blue-bright text-platinum" : i < stageIdx ? "border-line-strong text-chrome" : "border-line text-muted")}>
-            {s.replace(/_/g, " ")}
+            {enumLabel(t, s)}
           </li>
         ))}
-        {asset.status === "REJECTED" && <li className="border border-crit/50 px-2 py-1 font-mono text-[10px] uppercase text-crit">Rejected: {asset.rejectionReason}</li>}
+        {asset.status === "REJECTED" && <li className="border border-crit/50 px-2 py-1 font-mono text-[10px] uppercase text-crit">{t("Rejected: {reason}", { reason: asset.rejectionReason ?? "" })}</li>}
       </ol>
       {data.pending && (
         <div className="mb-6 border border-gold-dim px-4 py-3 text-sm text-chrome">
-          <StatusBadge status={data.pending.status} /> Draft generation is in the queue. Refresh in a moment.
+          <StatusBadge status={data.pending.status} /> {t("Draft generation is in the queue. Refresh in a moment.")}
         </div>
       )}
 
       <div className="grid gap-6 xl:grid-cols-[1fr_26rem]">
         <div className="flex flex-col gap-6">
-          <Panel title={v ? `Version ${v.version}` : "No draft yet"} eyebrow="Preview">
+          <Panel title={v ? t("Version {n}", { n: v.version }) : t("No draft yet")} eyebrow={t("Preview")}>
             {v ? (
               <article className="prose-beacon" dangerouslySetInnerHTML={{ __html: renderMarkdown(v.body) }} />
             ) : (
-              <p className="text-sm text-muted">Generate a draft to start. Drafts are composed only from knowledge-graph facts.</p>
+              <p className="text-sm text-muted">{t("Generate a draft to start. Drafts are composed only from knowledge-graph facts.")}</p>
             )}
           </Panel>
           {v && can("content:write") && (
-            <Panel title="Edit" eyebrow="Creates a new version and re-runs checks">
+            <Panel title={t("Edit")} eyebrow={t("Creates a new version and re-runs checks")}>
               <form action={saveVersionAction} className="flex flex-col gap-3">
                 <HiddenBack path={back} />
                 <input type="hidden" name="assetId" value={asset.id} />
                 <div className="grid gap-3 md:grid-cols-2">
-                  <Field label="Meta title">
+                  <Field label={t("Meta title")}>
                     <input name="metaTitle" defaultValue={v.metaTitle ?? ""} maxLength={120} />
                   </Field>
-                  <Field label="Meta description">
+                  <Field label={t("Meta description")}>
                     <input name="metaDescription" defaultValue={v.metaDescription ?? ""} maxLength={300} />
                   </Field>
                 </div>
-                <Field label="Body (Markdown)">
+                <Field label={t("Body (Markdown)")}>
                   <textarea name="body" defaultValue={v.body} className="min-h-[28rem] font-mono text-[12.5px] leading-relaxed" />
                 </Field>
                 <div>
-                  <Button>Save new version</Button>
+                  <Button>{t("Save new version")}</Button>
                 </div>
               </form>
             </Panel>
@@ -102,15 +109,15 @@ export default async function ContentDetail({ params, searchParams }: { params: 
         </div>
 
         <div className="flex flex-col gap-6">
-          <Panel title="Decision" eyebrow="Workflow">
+          <Panel title={t("Decision")} eyebrow={t("Workflow")}>
             <div className="flex flex-col gap-3">
               {can("content:write") && (
                 <form action={generateContentAction} className="flex flex-wrap items-center gap-2">
                   <HiddenBack path={back} />
                   <input type="hidden" name="assetId" value={asset.id} />
-                  <Button variant={v ? "ghost" : "gold"}>{v ? "Regenerate" : "Generate draft"}</Button>
+                  <Button variant={v ? "ghost" : "gold"}>{v ? t("Regenerate") : t("Generate draft")}</Button>
                   <label className="flex items-center gap-1.5 text-xs text-chrome">
-                    <input type="checkbox" name="useLlm" /> LLM polish
+                    <input type="checkbox" name="useLlm" /> {t("LLM polish")}
                   </label>
                 </form>
               )}
@@ -118,32 +125,32 @@ export default async function ContentDetail({ params, searchParams }: { params: 
                 <form action={approveContentAction}>
                   <HiddenBack path={back} />
                   <input type="hidden" name="assetId" value={asset.id} />
-                  <Button variant="gold">Approve</Button>
+                  <Button variant="gold">{t("Approve")}</Button>
                 </form>
               )}
               {can("content:approve") && asset.status === "APPROVED" && (
                 <form action={publishContentAction}>
                   <HiddenBack path={back} />
                   <input type="hidden" name="assetId" value={asset.id} />
-                  <Button variant="gold">Publish</Button>
+                  <Button variant="gold">{t("Publish")}</Button>
                 </form>
               )}
               {can("content:approve") && !["REJECTED", "IDEA"].includes(asset.status) && (
                 <form action={rejectContentAction} className="flex gap-2">
                   <HiddenBack path={back} />
                   <input type="hidden" name="assetId" value={asset.id} />
-                  <input name="reason" placeholder="Reason" required minLength={3} aria-label="Rejection reason" />
-                  <Button variant="danger">Reject</Button>
+                  <input name="reason" placeholder={t("Reason")} required minLength={3} aria-label={t("Rejection reason")} />
+                  <Button variant="danger">{t("Reject")}</Button>
                 </form>
               )}
-              {asset.status === "FACT_CHECK" && <p className="text-xs text-warn">◐ Blocked at fact check — fix or remove unsupported claims (or add the missing facts to the knowledge graph), then save a new version.</p>}
-              {asset.status === "SEO_CHECK" && <p className="text-xs text-warn">◐ Blocked at SEO/GEO check — see failing rules below.</p>}
-              {asset.status === "PUBLISHED" && <p className="text-xs text-ok">✓ Published {asset.publishedAt?.toISOString().slice(0, 10)}.</p>}
+              {asset.status === "FACT_CHECK" && <p className="text-xs text-warn">{t("◐ Blocked at fact check — fix or remove unsupported claims (or add the missing facts to the knowledge graph), then save a new version.")}</p>}
+              {asset.status === "SEO_CHECK" && <p className="text-xs text-warn">{t("◐ Blocked at SEO/GEO check — see failing rules below.")}</p>}
+              {asset.status === "PUBLISHED" && <p className="text-xs text-ok">{t("✓ Published {date}.", { date: asset.publishedAt?.toISOString().slice(0, 10) ?? "" })}</p>}
             </div>
           </Panel>
 
           {v?.factCheck && (
-            <Panel title={v.factCheck.passed ? "✓ All claims supported" : `${v.factCheck.claims.filter((c) => c.status !== "SUPPORTED").length} claim(s) need attention`} eyebrow="Fact check" pad={false}>
+            <Panel title={v.factCheck.passed ? t("✓ All claims supported") : t("{n} claim(s) need attention", { n: v.factCheck.claims.filter((c) => c.status !== "SUPPORTED").length })} eyebrow={t("Fact check")} pad={false}>
               <Table>
                 <tbody>
                   {[...v.factCheck.claims]
@@ -152,11 +159,11 @@ export default async function ContentDetail({ params, searchParams }: { params: 
                     .map((c, i) => (
                       <tr key={i}>
                         <Td className="w-28">
-                          <Badge tone={c.status === "SUPPORTED" ? "ok" : c.status === "NEEDS_REVIEW" ? "warn" : "crit"}>{c.status.replace("_", " ")}</Badge>
+                          <Badge tone={c.status === "SUPPORTED" ? "ok" : c.status === "NEEDS_REVIEW" ? "warn" : "crit"}>{enumLabel(t, c.status)}</Badge>
                         </Td>
                         <Td className="text-xs">
                           {c.claim}
-                          {c.sourceUrl && <div className="num mt-0.5 truncate text-[10px] text-muted">{c.sourceUrl}</div>}
+                          {c.sourceUrl && <div className="num mt-0.5 truncate text-[10px] text-muted">{t(c.sourceUrl)}</div>}
                         </Td>
                       </tr>
                     ))}
@@ -166,14 +173,14 @@ export default async function ContentDetail({ params, searchParams }: { params: 
           )}
 
           {v?.seoCheck && (
-            <Panel title={v.seoCheck.passed ? "✓ SEO/GEO checks pass" : "SEO/GEO checks"} eyebrow="On-page" pad={false}>
+            <Panel title={v.seoCheck.passed ? t("✓ SEO/GEO checks pass") : t("SEO/GEO checks")} eyebrow={t("On-page")} pad={false}>
               <Table>
                 <tbody>
                   {v.seoCheck.checks.map((c) => (
                     <tr key={c.rule}>
                       <Td className={c.ok ? "text-ok" : "text-crit"}>{c.ok ? "✓" : "✕"}</Td>
                       <Td className="num text-xs">{c.rule}</Td>
-                      <Td className="text-xs">{c.message}</Td>
+                      <Td className="text-xs">{t(c.message)}</Td>
                     </tr>
                   ))}
                 </tbody>
@@ -181,36 +188,36 @@ export default async function ContentDetail({ params, searchParams }: { params: 
             </Panel>
           )}
 
-          <Panel title="Provenance" eyebrow="AI / engine output">
+          <Panel title={t("Provenance")} eyebrow={t("AI / engine output")}>
             <KV
               items={[
-                ["Generated by", data.run ? `${data.run.provider}:${data.run.model}` : v ? "Human edit" : null],
-                ["Prompt / rules version", data.run?.promptVersion ?? null],
-                ["Timestamp", v?.createdAt.toISOString().slice(0, 19).replace("T", " ") ?? null],
-                ["Fact references", v ? String(v.factRefs.length) : null],
+                [t("Generated by"), data.run ? `${data.run.provider}:${data.run.model}` : v ? t("Human edit") : null],
+                [t("Prompt / rules version"), data.run?.promptVersion ?? null],
+                [t("Timestamp"), v?.createdAt.toISOString().slice(0, 19).replace("T", " ") ?? null],
+                [t("Fact references"), v ? String(v.factRefs.length) : null],
               ]}
             />
           </Panel>
 
           {page && asset.status === "PUBLISHED" && data.perf && (
-            <Panel title="Performance · 28 days" eyebrow="Measurement">
-              <KV items={[["Views", data.perf.views], ["CTA clicks", data.perf.cta], ["Signups", data.perf.signups]]} />
+            <Panel title={t("Performance · 28 days")} eyebrow={t("Measurement")}>
+              <KV items={[[t("Views"), data.perf.views], [t("CTA clicks"), data.perf.cta], [t("Signups"), data.perf.signups]]} />
             </Panel>
           )}
 
           {v && v.structuredData.length > 0 && (
-            <Panel title={`${v.structuredData.length} JSON-LD block(s)`} eyebrow="Structured data">
+            <Panel title={t("{n} JSON-LD block(s)", { n: v.structuredData.length })} eyebrow={t("Structured data")}>
               <pre className="max-h-72 overflow-auto text-[10.5px] text-chrome">{v.structuredData.map((d) => serializeJsonLd(d)).join("\n\n")}</pre>
             </Panel>
           )}
 
-          <Panel title="Versions" eyebrow="History" pad={false}>
+          <Panel title={t("Versions")} eyebrow={t("History")} pad={false}>
             <Table>
               <thead>
                 <tr>
                   <Th>v</Th>
-                  <Th>Created</Th>
-                  <Th>Fact</Th>
+                  <Th>{t("Created")}</Th>
+                  <Th>{t("Fact")}</Th>
                   <Th>SEO</Th>
                 </tr>
               </thead>

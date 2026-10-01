@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { getI18n, getT } from "@/i18n/server";
 
 export function cx(...xs: (string | false | null | undefined)[]) {
   return xs.filter(Boolean).join(" ");
@@ -10,7 +11,7 @@ export function PageHeader({ eyebrow, title, description, actions }: { eyebrow?:
     <header className="mb-8 flex flex-col gap-4 border-b border-line pb-6 md:flex-row md:items-end md:justify-between">
       <div className="min-w-0">
         {eyebrow && <div className="eyebrow mb-2">{eyebrow}</div>}
-        <h1 className="text-2xl font-semibold tracking-tight text-platinum md:text-[1.7rem]">{title}</h1>
+        <h1 className="text-gradient-gold text-2xl font-semibold tracking-tight md:text-[1.7rem]">{title}</h1>
         {description && <p className="mt-2 max-w-3xl text-sm text-chrome">{description}</p>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
@@ -25,7 +26,7 @@ export function Panel({ title, eyebrow, actions, children, className, pad = true
         <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
           <div className="min-w-0">
             {eyebrow && <div className="eyebrow">{eyebrow}</div>}
-            {title && <h2 className="truncate text-sm font-medium text-platinum">{title}</h2>}
+            {title && <h2 className="truncate text-sm font-medium text-gold-bright">{title}</h2>}
           </div>
           {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
         </div>
@@ -37,37 +38,42 @@ export function Panel({ title, eyebrow, actions, children, className, pad = true
 
 type Fmt = "count" | "money" | "percent";
 
-export function formatValue(v: number, fmt: Fmt = "count", currency = "EUR") {
-  if (fmt === "money") return new Intl.NumberFormat("en-GB", { style: "currency", currency, maximumFractionDigits: 0 }).format(v / 100);
-  if (fmt === "percent") return `${(v * 100).toFixed(v < 0.1 ? 2 : 1)}%`;
-  return new Intl.NumberFormat("en-GB", { maximumFractionDigits: v < 10 && v % 1 ? 1 : 0 }).format(v);
+/** Locale-aware number formatting; pass `intl` from `getI18n()` (defaults to en-GB). */
+export function formatValue(v: number, fmt: Fmt = "count", currency = "EUR", intl = "en-GB") {
+  if (fmt === "money") return new Intl.NumberFormat(intl, { style: "currency", currency, maximumFractionDigits: 0 }).format(v / 100);
+  if (fmt === "percent") return new Intl.NumberFormat(intl, { style: "percent", minimumFractionDigits: v < 0.1 ? 2 : 1, maximumFractionDigits: v < 0.1 ? 2 : 1 }).format(v);
+  return new Intl.NumberFormat(intl, { maximumFractionDigits: v < 10 && v % 1 ? 1 : 0 }).format(v);
 }
 
-export function Delta({ now, prev }: { now: number | null; prev: number | null }) {
+export async function Delta({ now, prev }: { now: number | null; prev: number | null }) {
   if (now === null || prev === null) return null;
-  if (prev === 0) return <span className="num text-[11px] text-muted">{now === 0 ? "no change" : "new"}</span>;
+  const { t, intl } = await getI18n();
+  if (prev === 0) return <span className="num text-[11px] text-muted">{now === 0 ? t("no change") : t("new")}</span>;
   const d = (now - prev) / prev;
   const flat = Math.abs(d) < 0.005;
   return (
-    <span className={cx("num text-[11px]", flat ? "text-muted" : d > 0 ? "text-ok" : "text-crit")} title={`Previous period: ${prev}`}>
-      {flat ? "±0%" : `${d > 0 ? "▲" : "▼"} ${Math.abs(d * 100).toFixed(1)}%`}
+    <span className={cx("num text-[11px]", flat ? "text-muted" : d > 0 ? "text-ok" : "text-crit")} title={t("Previous period: {value}", { value: formatValue(prev, "count", undefined, intl) })}>
+      {flat ? "±0%" : `${d > 0 ? "▲" : "▼"} ${formatValue(Math.abs(d), "percent", undefined, intl)}`}
     </span>
   );
 }
 
 /** KPI tile. `value === null` renders an explicit "not connected" state — never a fake zero. */
-export function Stat({ label, value, prev, fmt = "count", currency, source, href }: { label: string; value: number | null; prev?: number | null; fmt?: Fmt; currency?: string; source?: string; href?: string }) {
+export async function Stat({ label, value, prev, fmt = "count", currency, source, href }: { label: string; value: number | null; prev?: number | null; fmt?: Fmt; currency?: string; source?: string; href?: string }) {
+  const { t, intl } = await getI18n();
   const body = (
     <div className="flex h-full min-w-0 flex-col justify-between gap-3 border border-line bg-panel p-4 transition-colors hover:border-line-strong">
       <div className="eyebrow">{label}</div>
       {value === null ? (
         <div>
           <div className="num text-lg text-muted">—</div>
-          <div className="mt-1 text-[11px] text-muted">Not connected · {source}</div>
+          <div className="mt-1 text-[11px] text-muted">
+            {t("Not connected")} · {source}
+          </div>
         </div>
       ) : (
         <div>
-          <div className="num text-2xl font-medium tracking-tight text-platinum">{formatValue(value, fmt, currency)}</div>
+          <div className="num text-2xl font-medium tracking-tight text-platinum">{formatValue(value, fmt, currency, intl)}</div>
           <div className="mt-1 flex flex-col gap-0.5">
             <Delta now={value} prev={prev ?? null} />
             {source && <span className="line-clamp-2 text-[11px] text-muted">{source}</span>}
@@ -151,18 +157,20 @@ const STATUS_TONE: Record<string, keyof typeof TONES> = {
   ABANDONED: "muted",
 };
 
-export function StatusBadge({ status }: { status: string }) {
+export async function StatusBadge({ status }: { status: string }) {
+  const t = await getT();
   const icon = ["CRITICAL", "HIGH", "ERROR", "FAILED", "DEAD", "REJECTED"].includes(status) ? "✕ " : ["PUBLISHED", "APPROVED", "CONNECTED", "SUCCEEDED", "VERIFIED", "COVERED", "DONE"].includes(status) ? "✓ " : "";
   return (
     <Badge tone={STATUS_TONE[status] ?? "neutral"}>
       {icon}
-      {status.replace(/_/g, " ")}
+      {t(status.replace(/_/g, " "))}
     </Badge>
   );
 }
 
-export function PotentialBadge({ potential }: { potential: string }) {
-  return <Badge tone={potential === "HIGH" ? "gold" : potential === "MEDIUM" ? "neutral" : "muted"}>{potential} potential</Badge>;
+export async function PotentialBadge({ potential }: { potential: string }) {
+  const t = await getT();
+  return <Badge tone={potential === "HIGH" ? "gold" : potential === "MEDIUM" ? "neutral" : "muted"}>{t("{level} potential", { level: t(potential) })}</Badge>;
 }
 
 export function EmptyState({ title, children, action }: { title: string; children?: ReactNode; action?: ReactNode }) {
@@ -216,13 +224,15 @@ export function Field({ label, hint, children, className }: { label: string; hin
   );
 }
 
-export function Flash({ searchParams }: { searchParams: Record<string, string | string[] | undefined> }) {
+/** Flash messages from server actions; runtime strings are translated through the dictionary templates. */
+export async function Flash({ searchParams }: { searchParams: Record<string, string | string[] | undefined> }) {
+  const t = await getT();
   const ok = typeof searchParams.ok === "string" ? searchParams.ok : null;
   const error = typeof searchParams.error === "string" ? searchParams.error : null;
   if (!ok && !error) return null;
   return (
     <div role="status" className={cx("mb-6 border px-4 py-3 text-sm", error ? "border-crit/50 text-crit" : "border-ok/40 text-ok")}>
-      {error ? `✕ ${error}` : `✓ ${ok}`}
+      {error ? `✕ ${t(error)}` : `✓ ${t(ok!)}`}
     </div>
   );
 }
@@ -275,13 +285,14 @@ export function Meter({ value, max, label }: { value: number; max: number; label
   );
 }
 
-export function KV({ items }: { items: [string, ReactNode][] }) {
+export async function KV({ items }: { items: [string, ReactNode][] }) {
+  const t = await getT();
   return (
     <dl className="grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
       {items.map(([k, v]) => (
         <div key={k} className="min-w-0">
           <dt className="eyebrow">{k}</dt>
-          <dd className="mt-0.5 break-words text-chrome">{v ?? <span className="text-muted">Unknown</span>}</dd>
+          <dd className="mt-0.5 break-words text-chrome">{v ?? <span className="text-muted">{t("Unknown")}</span>}</dd>
         </div>
       ))}
     </dl>

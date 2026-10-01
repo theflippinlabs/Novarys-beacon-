@@ -1,28 +1,34 @@
 import { desc, eq } from "drizzle-orm";
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { PageHeader, Panel, Table, Td, Th, Badge } from "@/components/ui";
 import { SettingsTabs } from "@/components/shell/settings-tabs";
 import { auditLogs } from "@/db/schema";
 import { pageData } from "@/lib/page";
+import { getI18n, getT } from "@/i18n/server";
 
-export const metadata = { title: "Audit log" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT();
+  return { title: t("Audit log") };
+}
 
 export default async function AuditLogPage() {
   const { data, can } = await pageData(async (tx, ctx) => tx.select().from(auditLogs).where(eq(auditLogs.organizationId, ctx.org.id)).orderBy(desc(auditLogs.createdAt)).limit(300));
   if (!can("audit:read")) redirect("/settings");
+  const { t } = await getI18n();
   return (
     <>
-      <PageHeader eyebrow="13 / Settings" title="Audit log" description="Append-only record of security- and content-relevant actions. Metadata is redacted; credentials are never logged." />
+      <PageHeader eyebrow={t("13 / Settings")} title={t("Audit log")} description={t("Append-only record of security- and content-relevant actions. Metadata is redacted; credentials are never logged.")} />
       <SettingsTabs active="audit" />
-      <Panel title={`Latest ${data.length} events`} pad={false}>
+      <Panel title={t("Latest {n} events", { n: data.length })} pad={false}>
         <Table>
           <thead>
             <tr>
-              <Th>Time</Th>
-              <Th>Action</Th>
-              <Th>Entity</Th>
-              <Th>Actor</Th>
-              <Th>Metadata</Th>
+              <Th>{t("Time")}</Th>
+              <Th>{t("Action")}</Th>
+              <Th>{t("Entity")}</Th>
+              <Th>{t("Actor")}</Th>
+              <Th>{t("Metadata")}</Th>
             </tr>
           </thead>
           <tbody>

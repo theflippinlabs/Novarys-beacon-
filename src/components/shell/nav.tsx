@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { logoutAction } from "@/app/actions/auth";
+import { useI18n } from "@/i18n/client";
 
 type Section = { href: string; label: string; short?: string; icon: ReactNode };
 
@@ -40,8 +41,9 @@ function isActive(path: string, href: string) {
 /** Desktop sidebar navigation (lg and up). */
 export function Nav() {
   const path = usePathname();
+  const { t } = useI18n();
   return (
-    <nav className="flex flex-col gap-0.5" aria-label="Primary">
+    <nav className="flex flex-col gap-0.5" aria-label={t("Primary")}>
       {SECTIONS.map(({ href, label }, i) => {
         const active = isActive(path, href);
         return (
@@ -52,7 +54,7 @@ export function Nav() {
             className={`group flex items-center gap-3 whitespace-nowrap border-l-2 px-3 py-2 font-mono text-[11px] uppercase tracking-[0.16em] transition-colors ${active ? "border-blue-bright bg-gradient-to-r from-blue/15 to-transparent text-platinum" : "border-transparent text-muted hover:text-chrome"}`}
           >
             <span className={`w-5 text-[9px] ${active ? "text-blue-bright" : "text-line-strong group-hover:text-muted"}`}>{String(i + 1).padStart(2, "0")}</span>
-            {label}
+            {t(label)}
           </Link>
         );
       })}
@@ -63,6 +65,7 @@ export function Nav() {
 /** Mobile bottom tab bar (below lg) with a "More" sheet for the remaining sections. */
 export function MobileTabBar({ userName, role }: { userName: string; role: string }) {
   const path = usePathname();
+  const { t } = useI18n();
   // The sheet remembers the path it was opened on, so navigating closes it.
   const [openOn, setOpenOn] = useState<string | null>(null);
   const open = openOn === path;
@@ -80,8 +83,8 @@ export function MobileTabBar({ userName, role }: { userName: string; role: strin
   return (
     <>
       {open && (
-        <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true" aria-label="All sections">
-          <button type="button" aria-label="Close menu" className="absolute inset-0 bg-obsidian/70 backdrop-blur-sm" onClick={() => setOpen(false)} />
+        <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true" aria-label={t("All sections")}>
+          <button type="button" aria-label={t("Close menu")} className="absolute inset-0 bg-obsidian/70 backdrop-blur-sm" onClick={() => setOpen(false)} />
           <div className="pb-safe absolute inset-x-0 bottom-0 max-h-[85vh] overflow-y-auto rounded-t-2xl border-t border-line-strong bg-panel shadow-[0_-12px_40px_-12px_rgb(13_122_236/0.35)]">
             <div className="mx-auto mt-2 h-1 w-10 rounded-full bg-line-strong" />
             <div className="flex items-center justify-between px-5 pb-2 pt-4">
@@ -90,10 +93,10 @@ export function MobileTabBar({ userName, role }: { userName: string; role: strin
                 <div className="eyebrow mt-0.5">{role}</div>
               </div>
               <form action={logoutAction}>
-                <button className="rounded-full border border-line-strong px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-chrome">Sign out</button>
+                <button className="rounded-full border border-line-strong px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-chrome">{t("Sign out")}</button>
               </form>
             </div>
-            <nav aria-label="All sections" className="grid grid-cols-3 gap-2 p-4 pb-6">
+            <nav aria-label={t("All sections")} className="grid grid-cols-3 gap-2 p-4 pb-6">
               {SECTIONS.map((s) => {
                 const active = isActive(path, s.href);
                 return (
@@ -104,7 +107,7 @@ export function MobileTabBar({ userName, role }: { userName: string; role: strin
                     className={`flex flex-col items-center gap-2 rounded-xl border px-2 py-3 text-center text-[11px] ${active ? "glow-blue border-blue bg-blue/10 text-platinum" : "border-line bg-panel-2 text-chrome"}`}
                   >
                     <span className={active ? "text-blue-bright" : "text-chrome"}>{s.icon}</span>
-                    {s.label}
+                    {t(s.label)}
                   </Link>
                 );
               })}
@@ -112,7 +115,7 @@ export function MobileTabBar({ userName, role }: { userName: string; role: strin
           </div>
         </div>
       )}
-      <nav aria-label="Tabs" className="pb-safe fixed inset-x-0 bottom-0 z-30 border-t border-line bg-obsidian/90 backdrop-blur-xl lg:hidden">
+      <nav aria-label={t("Tabs")} className="pb-safe fixed inset-x-0 bottom-0 z-30 border-t border-line bg-obsidian/90 backdrop-blur-xl lg:hidden">
         <div className="mx-auto grid max-w-xl grid-cols-5">
           {tabs.map((s) => {
             const active = isActive(path, s.href);
@@ -120,7 +123,7 @@ export function MobileTabBar({ userName, role }: { userName: string; role: strin
               <Link key={s.href} href={s.href} aria-current={active ? "page" : undefined} className={`relative flex flex-col items-center gap-1 pb-2 pt-2.5 text-[10px] ${active ? "text-platinum" : "text-muted"}`}>
                 {active && <span className="absolute inset-x-5 top-0 h-0.5 rounded-full bg-blue-bright shadow-[0_0_10px_rgb(26_189_245)]" />}
                 <span className={active ? "text-blue-bright" : ""}>{s.icon}</span>
-                {s.short ?? s.label}
+                {t(s.short ?? s.label)}
               </Link>
             );
           })}
@@ -135,17 +138,10 @@ export function MobileTabBar({ userName, role }: { userName: string; role: strin
                 </>,
               )}
             </span>
-            More
+            {t("More")}
           </button>
         </div>
       </nav>
     </>
   );
-}
-
-/** Title of the current section, for the mobile header. */
-export function CurrentSection() {
-  const path = usePathname();
-  const s = SECTIONS.find((x) => isActive(path, x.href));
-  return <span className="truncate font-mono text-[10px] uppercase tracking-[0.2em] text-chrome">{s?.label ?? ""}</span>;
 }

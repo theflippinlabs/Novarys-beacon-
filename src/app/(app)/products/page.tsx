@@ -7,8 +7,13 @@ import { loadProductGraph } from "@/core/knowledge/load";
 import { computeCompleteness } from "@/core/knowledge/completeness";
 import { latestScores } from "@/services/score";
 import { pageData, type SP } from "@/lib/page";
+import { getI18n, getT } from "@/i18n/server";
+import type { Metadata } from "next";
 
-export const metadata = { title: "Products" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT();
+  return { title: t("Products") };
+}
 
 export default async function ProductsPage({ searchParams }: { searchParams: Promise<SP> }) {
   const sp = await searchParams;
@@ -22,25 +27,26 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
     }
     return rows;
   });
+  const { t } = await getI18n();
   return (
     <>
-      <PageHeader eyebrow="02 / Products" title="Product knowledge graph" description="The single source of truth for every Novarys product. Everything Beacon generates is derived from these facts — unknown facts stay unknown until a human provides them." />
+      <PageHeader eyebrow={t("02 / Products")} title={t("Product knowledge graph")} description={t("The single source of truth for every Novarys product. Everything Beacon generates is derived from these facts — unknown facts stay unknown until a human provides them.")} />
       <Flash searchParams={sp} />
       <div className="grid gap-6 xl:grid-cols-[1fr_22rem]">
-        <Panel title="Ecosystem" pad={false}>
+        <Panel title={t("Ecosystem")} pad={false}>
           {data.length === 0 ? (
             <div className="p-4">
-              <EmptyState title="No products yet">Add the first Novarys product. The onboarding takes a few minutes and drives the entire discovery engine.</EmptyState>
+              <EmptyState title={t("No products yet")}>{t("Add the first Novarys product. The onboarding takes a few minutes and drives the entire discovery engine.")}</EmptyState>
             </div>
           ) : (
             <Table>
               <thead>
                 <tr>
-                  <Th>Product</Th>
-                  <Th>Status</Th>
-                  <Th>Domain</Th>
-                  <Th>Knowledge</Th>
-                  <Th>Beacon score</Th>
+                  <Th>{t("Product")}</Th>
+                  <Th>{t("Status")}</Th>
+                  <Th>{t("Domain")}</Th>
+                  <Th>{t("Knowledge")}</Th>
+                  <Th>{t("Beacon score")}</Th>
                   <Th />
                 </tr>
               </thead>
@@ -51,21 +57,21 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
                       <Link href={`/products/${p.slug}`} className="font-medium text-platinum hover:text-blue-bright">
                         {p.name}
                       </Link>
-                      <div className="text-xs text-muted">{p.category ?? "Category unknown"}</div>
+                      <div className="text-xs text-muted">{p.category ?? t("Category unknown")}</div>
                     </Td>
                     <Td>
                       <StatusBadge status={p.status} />
                     </Td>
-                    <Td className="num text-xs">{p.domain ?? <span className="text-muted">unknown</span>}</Td>
+                    <Td className="num text-xs">{p.domain ?? <span className="text-muted">{t("unknown")}</span>}</Td>
                     <Td className="num">{Math.round(completeness * 100)}%</Td>
-                    <Td className="num">{score === null ? <span className="text-muted">not computed</span> : <span className="text-platinum">{Math.round(score)}</span>}</Td>
+                    <Td className="num">{score === null ? <span className="text-muted">{t("not computed")}</span> : <span className="text-platinum">{Math.round(score)}</span>}</Td>
                     <Td className="text-right">
                       {!p.onboardingCompletedAt ? (
                         <Link className="eyebrow text-blue-bright hover:text-cyan" href={`/products/${p.slug}/onboarding?step=${Math.max(1, p.onboardingStep)}`}>
-                          Continue onboarding →
+                          {t("Continue onboarding →")}
                         </Link>
                       ) : (
-                        <Badge tone="ok">Onboarded</Badge>
+                        <Badge tone="ok">{t("Onboarded")}</Badge>
                       )}
                     </Td>
                   </tr>
@@ -75,17 +81,17 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
           )}
         </Panel>
         {can("product:write") && (
-          <Panel eyebrow="Onboard an application" title="Add product">
+          <Panel eyebrow={t("Onboard an application")} title={t("Add product")}>
             <form action={createProductAction} className="flex flex-col gap-4">
               <HiddenBack path="/products" />
-              <Field label="Product name">
-                <input name="name" required minLength={2} maxLength={80} placeholder="e.g. Novus Live" />
+              <Field label={t("Product name")}>
+                <input name="name" required minLength={2} maxLength={80} placeholder={t("e.g. Novus Live")} />
               </Field>
-              <Field label="Slug (optional)" hint="Used in URLs such as /{slug}/features/…">
+              <Field label={t("Slug (optional)")} hint={t("Used in URLs such as {path}", { path: "/{slug}/features/…" })}>
                 <input name="slug" maxLength={80} placeholder="novus-live" />
               </Field>
               <div>
-                <Button variant="gold">Add product →</Button>
+                <Button variant="gold">{t("Add product →")}</Button>
               </div>
             </form>
           </Panel>

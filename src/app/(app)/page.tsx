@@ -7,8 +7,14 @@ import { prioritizeAttention, type AttentionItem } from "@/core/command/attentio
 import { dailySeries, kpis, BEACON_CHANNELS } from "@/services/metrics";
 import { latestScores } from "@/services/score";
 import { daysParam, pageData, type SP } from "@/lib/page";
+import { enumLabel } from "@/i18n/core";
+import { getI18n, getT } from "@/i18n/server";
+import type { Metadata } from "next";
 
-export const metadata = { title: "Command center" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT();
+  return { title: t("Command center") };
+}
 
 type Row = Record<string, number | string | null>;
 
@@ -52,40 +58,43 @@ export default async function CommandCenter({ searchParams }: { searchParams: Pr
     const series = await dailySeries(tx, org, days);
     return { counts, losing, failedJobs: Number(failedJobs?.n ?? 0), products, scores, k, series };
   });
+  const { t, intl, locale } = await getI18n();
   const c = data.counts;
   const n = (v: unknown) => Number(v ?? 0);
   const k = data.k;
 
+  const pl = (count: number, one: string, many: string) => t(count === 1 ? one : many, { n: count });
   const items: AttentionItem[] = [
-    { key: "crit", title: `${n(c.critical_issues)} critical SEO problem${n(c.critical_issues) === 1 ? "" : "s"}`, detail: "Open critical issues in the latest technical audits.", href: "/discovery", count: n(c.critical_issues), impact: 5, confidence: 5, effort: 2, urgency: 5 },
-    { key: "losing", title: `${data.losing.length} product${data.losing.length === 1 ? "" : "s"} losing organic visibility`, detail: data.losing.map((l) => `${l.name} (${Math.round((1 - l.now / l.prev) * 100)}% fewer clicks)`).join(", "), href: "/opportunities", count: data.losing.length, impact: 5, confidence: 4, effort: 3, urgency: 5 },
-    { key: "opps", title: `${n(c.high_opps)} high-potential opportunit${n(c.high_opps) === 1 ? "y" : "ies"}`, detail: "Prioritised by impact × confidence × urgency ÷ effort.", href: "/opportunities?potential=HIGH", count: n(c.high_opps), impact: 4, confidence: 3, effort: 3, urgency: 3 },
-    { key: "drafts", title: `${n(c.drafts_ready)} content draft${n(c.drafts_ready) === 1 ? "" : "s"} ready for approval`, detail: "Passed fact and SEO/GEO checks — awaiting a human decision.", href: "/content?status=HUMAN_APPROVAL", count: n(c.drafts_ready), impact: 3, confidence: 5, effort: 1, urgency: 3 },
-    { key: "blocked", title: `${n(c.drafts_blocked)} draft${n(c.drafts_blocked) === 1 ? "" : "s"} blocked by checks`, detail: "Unsupported claims or SEO issues need an editor.", href: "/content", count: n(c.drafts_blocked), impact: 2, confidence: 5, effort: 2, urgency: 2 },
-    { key: "dist", title: `${n(c.dist_pending)} external submission${n(c.dist_pending) === 1 ? "" : "s"} awaiting approval`, detail: "Prepared distribution targets — nothing is submitted without approval.", href: "/distribution", count: n(c.dist_pending), impact: 3, confidence: 3, effort: 1, urgency: 2 },
-    { key: "recs", title: `${n(c.recs)} autopilot recommendation${n(c.recs) === 1 ? "" : "s"} to review`, detail: "Proposed by the growth analyst.", href: "/autopilot", count: n(c.recs), impact: 3, confidence: 3, effort: 1, urgency: 2 },
-    { key: "exp", title: `${n(c.experiments_ready)} experiment${n(c.experiments_ready) === 1 ? "" : "s"} ready for review`, detail: "Conclude and record results.", href: "/autopilot#experiments", count: n(c.experiments_ready), impact: 3, confidence: 4, effort: 1, urgency: 3 },
-    { key: "ref", title: `${n(c.referral_conv)} new referral conversion${n(c.referral_conv) === 1 ? "" : "s"} (7d)`, detail: "New subscriptions attributed to referral/affiliate links.", href: "/referrals", count: n(c.referral_conv), impact: 2, confidence: 5, effort: 1, urgency: 1 },
-    { key: "hold", title: `${n(c.commissions_hold)} commission${n(c.commissions_hold) === 1 ? "" : "s"} on hold (fraud flags)`, detail: "Review before payout.", href: "/referrals", count: n(c.commissions_hold), impact: 2, confidence: 4, effort: 1, urgency: 3 },
-    { key: "integ", title: `${n(c.integ_errors)} integration${n(c.integ_errors) === 1 ? "" : "s"} failing`, detail: "Data is going stale.", href: "/settings/integrations", count: n(c.integ_errors), impact: 4, confidence: 5, effort: 1, urgency: 4 },
-    { key: "jobs", title: `${data.failedJobs} background job${data.failedJobs === 1 ? "" : "s"} failed (24h)`, detail: "Exhausted retries.", href: "/settings/health", count: data.failedJobs, impact: 3, confidence: 5, effort: 1, urgency: 3 },
-    { key: "onb", title: `${n(c.onboarding_open)} product${n(c.onboarding_open) === 1 ? "" : "s"} with incomplete onboarding`, detail: "Finish onboarding to start analysis.", href: "/products", count: n(c.onboarding_open), impact: 4, confidence: 5, effort: 2, urgency: 2 },
+    { key: "crit", title: pl(n(c.critical_issues), "{n} critical SEO problem", "{n} critical SEO problems"), detail: t("Open critical issues in the latest technical audits."), href: "/discovery", count: n(c.critical_issues), impact: 5, confidence: 5, effort: 2, urgency: 5 },
+    { key: "losing", title: pl(data.losing.length, "{n} product losing organic visibility", "{n} products losing organic visibility"), detail: data.losing.map((l) => t("{name} ({pct}% fewer clicks)", { name: l.name, pct: Math.round((1 - l.now / l.prev) * 100) })).join(", "), href: "/opportunities", count: data.losing.length, impact: 5, confidence: 4, effort: 3, urgency: 5 },
+    { key: "opps", title: pl(n(c.high_opps), "{n} high-potential opportunity", "{n} high-potential opportunities"), detail: t("Prioritised by impact × confidence × urgency ÷ effort."), href: "/opportunities?potential=HIGH", count: n(c.high_opps), impact: 4, confidence: 3, effort: 3, urgency: 3 },
+    { key: "drafts", title: pl(n(c.drafts_ready), "{n} content draft ready for approval", "{n} content drafts ready for approval"), detail: t("Passed fact and SEO/GEO checks — awaiting a human decision."), href: "/content?status=HUMAN_APPROVAL", count: n(c.drafts_ready), impact: 3, confidence: 5, effort: 1, urgency: 3 },
+    { key: "blocked", title: pl(n(c.drafts_blocked), "{n} draft blocked by checks", "{n} drafts blocked by checks"), detail: t("Unsupported claims or SEO issues need an editor."), href: "/content", count: n(c.drafts_blocked), impact: 2, confidence: 5, effort: 2, urgency: 2 },
+    { key: "dist", title: pl(n(c.dist_pending), "{n} external submission awaiting approval", "{n} external submissions awaiting approval"), detail: t("Prepared distribution targets — nothing is submitted without approval."), href: "/distribution", count: n(c.dist_pending), impact: 3, confidence: 3, effort: 1, urgency: 2 },
+    { key: "recs", title: pl(n(c.recs), "{n} autopilot recommendation to review", "{n} autopilot recommendations to review"), detail: t("Proposed by the growth analyst."), href: "/autopilot", count: n(c.recs), impact: 3, confidence: 3, effort: 1, urgency: 2 },
+    { key: "exp", title: pl(n(c.experiments_ready), "{n} experiment ready for review", "{n} experiments ready for review"), detail: t("Conclude and record results."), href: "/autopilot#experiments", count: n(c.experiments_ready), impact: 3, confidence: 4, effort: 1, urgency: 3 },
+    { key: "ref", title: pl(n(c.referral_conv), "{n} new referral conversion (7d)", "{n} new referral conversions (7d)"), detail: t("New subscriptions attributed to referral/affiliate links."), href: "/referrals", count: n(c.referral_conv), impact: 2, confidence: 5, effort: 1, urgency: 1 },
+    { key: "hold", title: pl(n(c.commissions_hold), "{n} commission on hold (fraud flags)", "{n} commissions on hold (fraud flags)"), detail: t("Review before payout."), href: "/referrals", count: n(c.commissions_hold), impact: 2, confidence: 4, effort: 1, urgency: 3 },
+    { key: "integ", title: pl(n(c.integ_errors), "{n} integration failing", "{n} integrations failing"), detail: t("Data is going stale."), href: "/settings/integrations", count: n(c.integ_errors), impact: 4, confidence: 5, effort: 1, urgency: 4 },
+    { key: "jobs", title: pl(data.failedJobs, "{n} background job failed (24h)", "{n} background jobs failed (24h)"), detail: t("Exhausted retries."), href: "/settings/health", count: data.failedJobs, impact: 3, confidence: 5, effort: 1, urgency: 3 },
+    { key: "onb", title: pl(n(c.onboarding_open), "{n} product with incomplete onboarding", "{n} products with incomplete onboarding"), detail: t("Finish onboarding to start analysis."), href: "/products", count: n(c.onboarding_open), impact: 4, confidence: 5, effort: 2, urgency: 2 },
   ];
   const attention = prioritizeAttention(items);
   const mrr7 = n(c.beacon_mrr_7d);
-  const today = new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
+  const channelLabel = (v: string) => (locale === "fr" ? enumLabel(t, v) : v).toLocaleLowerCase(intl);
+  const today = new Date().toLocaleDateString(intl, { weekday: "long", day: "numeric", month: "long" });
 
   return (
     <>
-      <PageHeader eyebrow={`01 / Overview · ${today}`} title="What needs my attention today?" description={`${ctx.org.branding.displayName ?? ctx.org.name} ecosystem — ${n(c.products)} product(s). Everything below is measured; unconnected sources are shown as such, never estimated.`} actions={<RangePicker base="/" days={days} />} />
+      <PageHeader eyebrow={t("01 / Overview · {date}", { date: today })} title={t("What needs my attention today?")} description={t("{org} ecosystem — {n} product(s). Everything below is measured; unconnected sources are shown as such, never estimated.", { org: ctx.org.branding.displayName ?? ctx.org.name, n: n(c.products) })} actions={<RangePicker base="/" days={days} />} />
 
       {n(c.products) === 0 ? (
-        <EmptyState title="Start here" action={<LinkButton variant="gold" href="/products">Add your first product →</LinkButton>}>
-          Beacon has no products yet. Onboard a Novarys application: describe it once, connect its data sources, and Beacon builds its query universe, discovery plan, audits and opportunities.
+        <EmptyState title={t("Start here")} action={<LinkButton variant="gold" href="/products">{t("Add your first product →")}</LinkButton>}>
+          {t("Beacon has no products yet. Onboard a Novarys application: describe it once, connect its data sources, and Beacon builds its query universe, discovery plan, audits and opportunities.")}
         </EmptyState>
       ) : (
         <div className="grid gap-6 xl:grid-cols-[1fr_24rem]">
-          <Panel eyebrow="Priority queue" title={attention.length ? `${attention.length} item(s), ranked by impact · confidence · effort · urgency` : "Nothing needs attention"} pad={false}>
+          <Panel eyebrow={t("Priority queue")} title={attention.length ? t("{n} item(s), ranked by impact · confidence · effort · urgency", { n: attention.length }) : t("Nothing needs attention")} pad={false}>
             {attention.length ? (
               <ol>
                 {attention.map((a, i) => (
@@ -96,7 +105,7 @@ export default async function CommandCenter({ searchParams }: { searchParams: Pr
                         <span className="block text-sm text-platinum">{a.title}</span>
                         <span className="block truncate text-xs text-muted">{a.detail}</span>
                       </span>
-                      <span className="num hidden text-[10px] text-muted sm:block" title="impact · confidence · effort · urgency">
+                      <span className="num hidden text-[10px] text-muted sm:block" title={t("impact · confidence · effort · urgency")}>
                         I{a.impact} C{a.confidence} E{a.effort} U{a.urgency}
                       </span>
                       <span className="num w-10 text-right text-xs text-gold">{a.priority}</span>
@@ -105,13 +114,13 @@ export default async function CommandCenter({ searchParams }: { searchParams: Pr
                 ))}
               </ol>
             ) : (
-              <p className="p-4 text-sm text-muted">All clear. Run audits, sync data sources and generate opportunities to surface work.</p>
+              <p className="p-4 text-sm text-muted">{t("All clear. Run audits, sync data sources and generate opportunities to surface work.")}</p>
             )}
           </Panel>
           <div className="flex flex-col gap-3">
-            <Stat label="New attributed MRR · 7d" value={k.revenue.beaconNewMrr.now === null ? null : mrr7} fmt="money" currency={(c.currency as string) ?? "EUR"} source="Beacon channels" href="/revenue" />
-            <Stat label="MRR attributable to Beacon" value={k.revenue.beaconMrr.now} fmt="money" currency={k.currency} source={k.revenue.beaconMrr.source} href="/revenue" />
-            <Panel eyebrow="Products" title="Beacon scores" pad={false}>
+            <Stat label={t("New attributed MRR · 7d")} value={k.revenue.beaconNewMrr.now === null ? null : mrr7} fmt="money" currency={(c.currency as string) ?? "EUR"} source={t("Beacon channels")} href="/revenue" />
+            <Stat label={t("MRR attributable to Beacon")} value={k.revenue.beaconMrr.now} fmt="money" currency={k.currency} source={t(k.revenue.beaconMrr.source)} href="/revenue" />
+            <Panel eyebrow={t("Products")} title={t("Beacon scores")} pad={false}>
               <ul>
                 {data.products.map((p) => (
                   <li key={p.id} className="flex items-center justify-between border-b border-line/60 px-4 py-2.5 last:border-0">
@@ -128,87 +137,87 @@ export default async function CommandCenter({ searchParams }: { searchParams: Pr
       )}
 
       <section className="mt-10">
-        <div className="eyebrow mb-3">Discovery · last {days} days vs previous {days}</div>
+        <div className="eyebrow mb-3">{t("Discovery · last {days} days vs previous {days}", { days })}</div>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
-          <Stat label="Organic impressions" value={k.discovery.organicImpressions.now} prev={k.discovery.organicImpressions.prev} source={k.discovery.organicImpressions.source} />
-          <Stat label="Organic clicks" value={k.discovery.organicClicks.now} prev={k.discovery.organicClicks.prev} source={k.discovery.organicClicks.source} />
-          <Stat label="Indexable pages" value={k.discovery.indexedPages.now} source={k.discovery.indexedPages.source} />
-          <Stat label="Covered queries" value={k.discovery.coveredQueries.now} source={k.discovery.coveredQueries.source} href="/queries" />
-          <Stat label="Branded impressions" value={k.discovery.brandedImpressions.now} prev={k.discovery.brandedImpressions.prev} source={k.discovery.brandedImpressions.source} />
-          <Stat label="AI referrals" value={k.discovery.aiReferrals.now} prev={k.discovery.aiReferrals.prev} source={k.discovery.aiReferrals.source} />
-          <Stat label="Observed AI mentions" value={k.discovery.aiMentions.now} prev={k.discovery.aiMentions.prev} source={k.discovery.aiMentions.source} href="/ai-visibility" />
+          <Stat label={t("Organic impressions")} value={k.discovery.organicImpressions.now} prev={k.discovery.organicImpressions.prev} source={t(k.discovery.organicImpressions.source)} />
+          <Stat label={t("Organic clicks")} value={k.discovery.organicClicks.now} prev={k.discovery.organicClicks.prev} source={t(k.discovery.organicClicks.source)} />
+          <Stat label={t("Indexable pages")} value={k.discovery.indexedPages.now} source={t(k.discovery.indexedPages.source)} />
+          <Stat label={t("Covered queries")} value={k.discovery.coveredQueries.now} source={t(k.discovery.coveredQueries.source)} href="/queries" />
+          <Stat label={t("Branded impressions")} value={k.discovery.brandedImpressions.now} prev={k.discovery.brandedImpressions.prev} source={t(k.discovery.brandedImpressions.source)} />
+          <Stat label={t("AI referrals")} value={k.discovery.aiReferrals.now} prev={k.discovery.aiReferrals.prev} source={t(k.discovery.aiReferrals.source)} />
+          <Stat label={t("Observed AI mentions")} value={k.discovery.aiMentions.now} prev={k.discovery.aiMentions.prev} source={t(k.discovery.aiMentions.source)} href="/ai-visibility" />
         </div>
       </section>
 
       <section className="mt-8 grid gap-6 xl:grid-cols-2">
         <div>
-          <div className="eyebrow mb-3">Acquisition</div>
+          <div className="eyebrow mb-3">{t("Acquisition")}</div>
           <div className="grid grid-cols-2 gap-3">
-            <Stat label="Visitors" value={k.acquisition.visitors.now} prev={k.acquisition.visitors.prev} source={k.acquisition.visitors.source} href="/conversions" />
-            <Stat label="Signups" value={k.acquisition.signups.now} prev={k.acquisition.signups.prev} source={k.acquisition.signups.source} />
-            <Stat label="Trials" value={k.acquisition.trials.now} prev={k.acquisition.trials.prev} source={k.acquisition.trials.source} />
-            <Stat label="Activations" value={k.acquisition.activations.now} prev={k.acquisition.activations.prev} source={k.acquisition.activations.source} />
+            <Stat label={t("Visitors")} value={k.acquisition.visitors.now} prev={k.acquisition.visitors.prev} source={t(k.acquisition.visitors.source)} href="/conversions" />
+            <Stat label={t("Signups")} value={k.acquisition.signups.now} prev={k.acquisition.signups.prev} source={t(k.acquisition.signups.source)} />
+            <Stat label={t("Trials")} value={k.acquisition.trials.now} prev={k.acquisition.trials.prev} source={t(k.acquisition.trials.source)} />
+            <Stat label={t("Activations")} value={k.acquisition.activations.now} prev={k.acquisition.activations.prev} source={t(k.acquisition.activations.source)} />
           </div>
         </div>
         <div>
-          <div className="eyebrow mb-3">Revenue</div>
+          <div className="eyebrow mb-3">{t("Revenue")}</div>
           <div className="grid grid-cols-2 gap-3">
-            <Stat label="New subscriptions" value={k.revenue.newSubscriptions.now} prev={k.revenue.newSubscriptions.prev} source={k.revenue.newSubscriptions.source} href="/revenue" />
-            <Stat label="ARR" value={k.revenue.arr.now} fmt="money" currency={k.currency} source={k.revenue.arr.source} />
-            <Stat label="Conversion rate" value={k.revenue.conversionRate.now} prev={k.revenue.conversionRate.prev} fmt="percent" source={k.revenue.conversionRate.source} />
-            <Stat label="Revenue in period" value={k.revenue.revenue.now} prev={k.revenue.revenue.prev} fmt="money" currency={k.currency} source={k.revenue.revenue.source} />
+            <Stat label={t("New subscriptions")} value={k.revenue.newSubscriptions.now} prev={k.revenue.newSubscriptions.prev} source={t(k.revenue.newSubscriptions.source)} href="/revenue" />
+            <Stat label={t("ARR")} value={k.revenue.arr.now} fmt="money" currency={k.currency} source={t(k.revenue.arr.source)} />
+            <Stat label={t("Conversion rate")} value={k.revenue.conversionRate.now} prev={k.revenue.conversionRate.prev} fmt="percent" source={t(k.revenue.conversionRate.source)} />
+            <Stat label={t("Revenue in period")} value={k.revenue.revenue.now} prev={k.revenue.revenue.prev} fmt="money" currency={k.currency} source={t(k.revenue.revenue.source)} />
           </div>
         </div>
       </section>
 
       <section className="mt-8 grid gap-6 xl:grid-cols-2">
         <div>
-          <div className="eyebrow mb-3">Ecosystem</div>
+          <div className="eyebrow mb-3">{t("Ecosystem")}</div>
           <div className="grid grid-cols-2 gap-3">
-            <Stat label="Cross-sell conversion" value={k.ecosystem.crossSellRate.now} prev={k.ecosystem.crossSellRate.prev} fmt="percent" source={k.ecosystem.crossSellRate.source} href="/autopilot#cross-sell" />
-            <Stat label="Multi-product users" value={k.ecosystem.multiProductUsers.now} source={k.ecosystem.multiProductUsers.source} />
-            <Stat label="Referral conversions" value={k.ecosystem.referralConversions.now} prev={k.ecosystem.referralConversions.prev} source={k.ecosystem.referralConversions.source} href="/referrals" />
-            <Stat label="Affiliate revenue" value={k.ecosystem.affiliateRevenue.now} prev={k.ecosystem.affiliateRevenue.prev} fmt="money" currency={k.currency} source={k.ecosystem.affiliateRevenue.source} />
+            <Stat label={t("Cross-sell conversion")} value={k.ecosystem.crossSellRate.now} prev={k.ecosystem.crossSellRate.prev} fmt="percent" source={t(k.ecosystem.crossSellRate.source)} href="/autopilot#cross-sell" />
+            <Stat label={t("Multi-product users")} value={k.ecosystem.multiProductUsers.now} source={t(k.ecosystem.multiProductUsers.source)} />
+            <Stat label={t("Referral conversions")} value={k.ecosystem.referralConversions.now} prev={k.ecosystem.referralConversions.prev} source={t(k.ecosystem.referralConversions.source)} href="/referrals" />
+            <Stat label={t("Affiliate revenue")} value={k.ecosystem.affiliateRevenue.now} prev={k.ecosystem.affiliateRevenue.prev} fmt="money" currency={k.currency} source={t(k.ecosystem.affiliateRevenue.source)} />
           </div>
         </div>
         <div>
-          <div className="eyebrow mb-3">Content</div>
+          <div className="eyebrow mb-3">{t("Content")}</div>
           <div className="grid grid-cols-2 gap-3">
-            <Stat label="Published assets" value={k.content.published.now} source={k.content.published.source} href="/content" />
-            <Stat label="Published this period" value={k.content.publishedInPeriod.now} prev={k.content.publishedInPeriod.prev} source={k.content.publishedInPeriod.source} />
+            <Stat label={t("Published assets")} value={k.content.published.now} source={t(k.content.published.source)} href="/content" />
+            <Stat label={t("Published this period")} value={k.content.publishedInPeriod.now} prev={k.content.publishedInPeriod.prev} source={t(k.content.publishedInPeriod.source)} />
           </div>
         </div>
       </section>
 
-      <Panel eyebrow="Trend" title={`Visitors, signups & AI referrals · last ${days} days`} className="mt-8">
+      <Panel eyebrow={t("Trend")} title={t("Visitors, signups & AI referrals · last {days} days", { days })} className="mt-8">
         {k.acquisition.visitors.now === null ? (
-          <p className="text-sm text-muted">No first-party events yet — install the Beacon tracker from a product’s Tracking tab.</p>
+          <p className="text-sm text-muted">{t("No first-party events yet — install the Beacon tracker from a product’s Tracking tab.")}</p>
         ) : (
           <LineChart
-            title="Daily visitors, signups and AI referrals"
+            title={t("Daily visitors, signups and AI referrals")}
             series={[
-              { key: "v", label: "Visitors", color: "var(--color-s1)", points: data.series.map((d) => ({ x: d.day, y: d.visitors })) },
-              { key: "s", label: "Signups", color: "var(--color-s3)", points: data.series.map((d) => ({ x: d.day, y: d.signups })) },
-              { key: "a", label: "AI referrals", color: "var(--color-s2)", points: data.series.map((d) => ({ x: d.day, y: d.ai })) },
+              { key: "v", label: t("Visitors"), color: "var(--color-s1)", points: data.series.map((d) => ({ x: d.day, y: d.visitors })) },
+              { key: "s", label: t("Signups"), color: "var(--color-s3)", points: data.series.map((d) => ({ x: d.day, y: d.signups })) },
+              { key: "a", label: t("AI referrals"), color: "var(--color-s2)", points: data.series.map((d) => ({ x: d.day, y: d.ai })) },
             ]}
           />
         )}
       </Panel>
 
-      <Panel eyebrow="Definitions" title="How these numbers are defined" className="mt-8">
+      <Panel eyebrow={t("Definitions")} title={t("How these numbers are defined")} className="mt-8">
         <Table>
           <tbody>
             <tr>
-              <Th>Attributable to Beacon</Th>
-              <Td>Revenue whose acquisition channel is {BEACON_CHANNELS.join(", ").toLowerCase()} under the organisation’s attribution rules (default: last non-direct touch, 30-day lookback, referral precedence).</Td>
+              <Th>{t("Attributable to Beacon")}</Th>
+              <Td>{t("Revenue whose acquisition channel is {channels} under the organisation’s attribution rules (default: last non-direct touch, 30-day lookback, referral precedence).", { channels: BEACON_CHANNELS.map(channelLabel).join(", ") })}</Td>
             </tr>
             <tr>
-              <Th>AI mentions</Th>
-              <Td>Sampled observations from AI-visibility tests run through official APIs. They do not represent every user’s AI response.</Td>
+              <Th>{t("AI mentions")}</Th>
+              <Td>{t("Sampled observations from AI-visibility tests run through official APIs. They do not represent every user’s AI response.")}</Td>
             </tr>
             <tr>
-              <Th>Deltas</Th>
-              <Td>Current window vs the immediately preceding window of equal length. Example: {formatValue(1234)} vs previous shows ▲/▼ percentage.</Td>
+              <Th>{t("Deltas")}</Th>
+              <Td>{t("Current window vs the immediately preceding window of equal length. Example: {value} vs previous shows ▲/▼ percentage.", { value: formatValue(1234, "count", undefined, intl) })}</Td>
             </tr>
           </tbody>
         </Table>

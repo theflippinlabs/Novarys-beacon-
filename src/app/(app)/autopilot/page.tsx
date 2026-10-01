@@ -1,4 +1,5 @@
 import { and, desc, eq, sql } from "drizzle-orm";
+import type { Metadata } from "next";
 import { addCrossSellRuleAction, addExperimentAction, decideRecommendationAction, runReportAction, setExperimentStatusAction, toggleCrossSellRuleAction } from "@/app/actions/growth";
 import { Badge, Button, EmptyState, Field, Flash, HiddenBack, PageHeader, Panel, StatusBadge, Table, Td, Th, formatValue } from "@/components/ui";
 import { crossSellRules, experiments, growthReports, products, recommendations } from "@/db/schema";
@@ -6,11 +7,17 @@ import type { GrowthAnalysis } from "@/core/autopilot/analyst";
 import { loadProductGraph } from "@/core/knowledge/load";
 import { recommendProducts } from "@/core/sales/recommend";
 import { pageData, sp1, type SP } from "@/lib/page";
+import { enumLabel } from "@/i18n/core";
+import { getI18n, getT } from "@/i18n/server";
 
-export const metadata = { title: "Autopilot" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT();
+  return { title: t("Autopilot") };
+}
 
 export default async function AutopilotPage({ searchParams }: { searchParams: Promise<SP> }) {
   const sp = await searchParams;
+  const { t, intl, locale } = await getI18n();
   const need = sp1(sp, "need")?.slice(0, 500);
   const { data, can } = await pageData(async (tx, ctx) => {
     const org = ctx.org.id;
@@ -37,22 +44,29 @@ export default async function AutopilotPage({ searchParams }: { searchParams: Pr
   const back = "/autopilot";
   const s = data.report?.sections as GrowthAnalysis | undefined;
   const pname = (id: string) => data.prods.find((p) => p.id === id)?.name ?? "—";
+  /** Enum value in lower case (English output keeps the raw value when `raw` is set). */
+  const lower = (v: string, raw = false) => (locale === "en" && raw ? v : enumLabel(t, v).toLocaleLowerCase(intl));
+  const recBody = (body: string) => {
+    const m = /^From opportunity \((\w+), (\w+) potential\)\.$/.exec(body);
+    return m ? t("From opportunity ({type}, {potential} potential).", { type: lower(m[1], true), potential: lower(m[2], true) }) : t(body);
+  };
+  const matchLabel = (kind: string) => enumLabel(t, kind).toLocaleLowerCase(intl);
 
   return (
     <>
       <PageHeader
-        eyebrow="12 / Autopilot"
-        title="Growth autopilot"
-        description="A deterministic growth analyst: measured changes, coinciding events (correlation — not proven causation), prioritised actions, content to create, technical issues, experiments and signals to monitor. Anything touching production content, external accounts or paid campaigns needs approval."
+        eyebrow={t("12 / Autopilot")}
+        title={t("Growth autopilot")}
+        description={t("A deterministic growth analyst: measured changes, coinciding events (correlation — not proven causation), prioritised actions, content to create, technical issues, experiments and signals to monitor. Anything touching production content, external accounts or paid campaigns needs approval.")}
         actions={
           can("job:run") && (
             <form action={runReportAction} className="flex items-center gap-2">
               <HiddenBack path={back} />
-              <select name="days" defaultValue="7" aria-label="Period" className="!w-24">
-                <option value="7">7 days</option>
-                <option value="28">28 days</option>
+              <select name="days" defaultValue="7" aria-label={t("Period")} className="!w-24">
+                <option value="7">{t("7 days")}</option>
+                <option value="28">{t("28 days")}</option>
               </select>
-              <Button variant="gold">Analyse now</Button>
+              <Button variant="gold">{t("Analyse now")}</Button>
             </form>
           )
         }
@@ -60,88 +74,97 @@ export default async function AutopilotPage({ searchParams }: { searchParams: Pr
       <Flash searchParams={sp} />
 
       {!s ? (
-        <EmptyState title="No growth report yet">The analyst runs weekly via the scheduler, or on demand. It only reports on connected, measured data.</EmptyState>
+        <EmptyState title={t("No growth report yet")}>{t("The analyst runs weekly via the scheduler, or on demand. It only reports on connected, measured data.")}</EmptyState>
       ) : (
         <div className="grid gap-6 xl:grid-cols-2">
-          <Panel title={`${data.report!.periodStart} → ${data.report!.periodEnd}`} eyebrow="What happened">
+          <Panel title={`${data.report!.periodStart} → ${data.report!.periodEnd}`} eyebrow={t("What happened")}>
             {s.whatHappened.length ? (
               <Table>
                 <tbody>
                   {s.whatHappened.map((w) => (
                     <tr key={w.metric}>
-                      <Td className="text-platinum">{w.metric}</Td>
-                      <Td className="num">{w.unit === "cents" ? `${formatValue(w.prev, "money")} → ${formatValue(w.now, "money")}` : `${formatValue(w.prev)} → ${formatValue(w.now)}`}</Td>
-                      <Td className={`num ${w.direction === "up" ? "text-ok" : w.direction === "down" ? "text-crit" : "text-muted"}`}>{w.change === null ? "new" : `${w.change > 0 ? "▲" : w.change < 0 ? "▼" : "±"} ${Math.abs(Math.round(w.change * 100))}%`}</Td>
-                      <Td className="text-[11px] text-muted">{w.source}</Td>
+                      <Td className="text-platinum">{t(w.metric)}</Td>
+                      <Td className="num">{w.unit === "cents" ? `${formatValue(w.prev, "money", undefined, intl)} → ${formatValue(w.now, "money", undefined, intl)}` : `${formatValue(w.prev, "count", undefined, intl)} → ${formatValue(w.now, "count", undefined, intl)}`}</Td>
+                      <Td className={`num ${w.direction === "up" ? "text-ok" : w.direction === "down" ? "text-crit" : "text-muted"}`}>{w.change === null ? t("new") : t("{sign} {pct}%", { sign: w.change > 0 ? "▲" : w.change < 0 ? "▼" : "±", pct: Math.abs(Math.round(w.change * 100)) })}</Td>
+                      <Td className="text-[11px] text-muted">{t(w.source)}</Td>
                     </tr>
                   ))}
                 </tbody>
               </Table>
             ) : (
-              <p className="text-sm text-muted">No comparable measured metrics in this period.</p>
+              <p className="text-sm text-muted">{t("No comparable measured metrics in this period.")}</p>
             )}
-            <div className="eyebrow mb-2 mt-5">Why it may have happened</div>
+            <div className="eyebrow mb-2 mt-5">{t("Why it may have happened")}</div>
             <ul className="flex flex-col gap-2">
               {s.whyItMayHaveHappened.map((w, i) => (
                 <li key={i} className="text-sm">
-                  <Badge tone={w.evidence === "CORRELATION" ? "warn" : "muted"}>{w.evidence.replace("_", " ")}</Badge> <span className="text-chrome">{w.observation}</span>
-                  {w.relatedEvents.length > 0 && <div className="mt-1 text-xs text-muted">Coinciding: {w.relatedEvents.join("; ")}</div>}
+                  <Badge tone={w.evidence === "CORRELATION" ? "warn" : "muted"}>{enumLabel(t, w.evidence)}</Badge> <span className="text-chrome">{t(w.observation)}</span>
+                  {w.relatedEvents.length > 0 && <div className="mt-1 text-xs text-muted">{t("Coinciding: {events}", { events: w.relatedEvents.map((e) => t(e)).join("; ") })}</div>}
                 </li>
               ))}
-              {!s.whyItMayHaveHappened.length && <li className="text-sm text-muted">No significant changes to explain.</li>}
+              {!s.whyItMayHaveHappened.length && <li className="text-sm text-muted">{t("No significant changes to explain.")}</li>}
             </ul>
-            <p className="mt-4 text-[11px] text-muted">{s.disclaimer}</p>
+            <p className="mt-4 text-[11px] text-muted">{t(s.disclaimer)}</p>
           </Panel>
-          <Panel title="Actions & signals" eyebrow="Recommended">
-            <div className="eyebrow mb-2">Content to create</div>
-            <ul className="mb-4 flex flex-col gap-1 text-sm text-chrome">{s.contentToCreate.length ? s.contentToCreate.map((c) => <li key={c}>○ {c}</li>) : <li className="text-muted">—</li>}</ul>
-            <div className="eyebrow mb-2">Technical issues</div>
-            <ul className="mb-4 flex flex-col gap-1 text-sm text-chrome">{s.technicalIssues.length ? s.technicalIssues.map((c) => <li key={c}>✕ {c}</li>) : <li className="text-muted">No open critical issues.</li>}</ul>
-            <div className="eyebrow mb-2">Experiments proposed</div>
+          <Panel title={t("Actions & signals")} eyebrow={t("Recommended")}>
+            <div className="eyebrow mb-2">{t("Content to create")}</div>
+            <ul className="mb-4 flex flex-col gap-1 text-sm text-chrome">{s.contentToCreate.length ? s.contentToCreate.map((c) => <li key={c}>○ {t(c)}</li>) : <li className="text-muted">—</li>}</ul>
+            <div className="eyebrow mb-2">{t("Technical issues")}</div>
+            <ul className="mb-4 flex flex-col gap-1 text-sm text-chrome">{s.technicalIssues.length ? s.technicalIssues.map((c) => <li key={c}>✕ {c}</li>) : <li className="text-muted">{t("No open critical issues.")}</li>}</ul>
+            <div className="eyebrow mb-2">{t("Experiments proposed")}</div>
             <ul className="mb-4 flex flex-col gap-2 text-sm">
               {s.experiments.length ? (
                 s.experiments.map((e) => (
                   <li key={e.name}>
-                    <div className="text-platinum">{e.name}</div>
-                    <div className="text-xs text-muted">{e.hypothesis} · Monitor: {e.signalToMonitor}</div>
+                    <div className="text-platinum">{t(e.name)}</div>
+                    <div className="text-xs text-muted">
+                      {t(e.hypothesis)} · {t("Monitor: {signal}", { signal: t(e.signalToMonitor) })}
+                    </div>
                   </li>
                 ))
               ) : (
                 <li className="text-muted">—</li>
               )}
             </ul>
-            <div className="eyebrow mb-2">Expected signals to monitor</div>
-            <ul className="mb-4 flex flex-col gap-1 text-xs text-chrome">{s.signalsToMonitor.map((x) => <li key={x}>• {x}</li>)}</ul>
-            <div className="eyebrow mb-2">Data coverage</div>
+            <div className="eyebrow mb-2">{t("Expected signals to monitor")}</div>
+            <ul className="mb-4 flex flex-col gap-1 text-xs text-chrome">
+              {s.signalsToMonitor.map((x) => {
+                const w = s.whatHappened.find((m) => `${m.metric} (${m.source})` === x);
+                return <li key={x}>• {w ? `${t(w.metric)} (${t(w.source)})` : t(x)}</li>;
+              })}
+            </ul>
+            <div className="eyebrow mb-2">{t("Data coverage")}</div>
             <p className="text-xs text-chrome">
-              Connected: {s.dataCoverage.connected.join(", ") || "none"} · Missing: <span className="text-warn">{s.dataCoverage.missing.join(", ") || "none"}</span>
+              {t("Connected:")} {s.dataCoverage.connected.join(", ") || t("none")} · {t("Missing:")} <span className="text-warn">{s.dataCoverage.missing.join(", ") || t("none")}</span>
             </p>
           </Panel>
         </div>
       )}
 
-      <Panel title={`${data.recs.length} recommendation(s) awaiting a decision`} eyebrow="Approval queue" className="mt-6" pad={false}>
+      <Panel title={t("{n} recommendation(s) awaiting a decision", { n: data.recs.length })} eyebrow={t("Approval queue")} className="mt-6" pad={false}>
         {data.recs.length ? (
           <Table>
             <tbody>
               {data.recs.map((r) => (
                 <tr key={r.id}>
                   <Td>
-                    <Badge tone="muted">{r.kind.replace(/_/g, " ")}</Badge>
+                    <Badge tone="muted">{enumLabel(t, r.kind)}</Badge>
                   </Td>
                   <Td className="text-platinum">
-                    {r.title}
-                    <div className="text-xs text-muted">{r.body}</div>
+                    {t(r.title)}
+                    <div className="text-xs text-muted">{recBody(r.body)}</div>
                   </Td>
-                  <Td>{r.requiresApproval ? <Badge tone="gold">requires approval</Badge> : <Badge tone="muted">informational</Badge>}</Td>
+                  <Td>{r.requiresApproval ? <Badge tone="gold">{t("requires approval")}</Badge> : <Badge tone="muted">{t("informational")}</Badge>}</Td>
                   <Td>
                     {can("recommendation:decide") && (
                       <form action={decideRecommendationAction} className="flex gap-2">
                         <HiddenBack path={back} />
                         <input type="hidden" name="id" value={r.id} />
-                        <Button name="status" value="APPROVED">Approve</Button>
+                        <Button name="status" value="APPROVED">
+                          {t("Approve")}
+                        </Button>
                         <Button name="status" value="REJECTED" variant="danger">
-                          Reject
+                          {t("Reject")}
                         </Button>
                       </form>
                     )}
@@ -151,19 +174,19 @@ export default async function AutopilotPage({ searchParams }: { searchParams: Pr
             </tbody>
           </Table>
         ) : (
-          <p className="p-4 text-sm text-muted">Nothing to decide.</p>
+          <p className="p-4 text-sm text-muted">{t("Nothing to decide.")}</p>
         )}
       </Panel>
 
       <div id="experiments" className="mt-6 grid gap-6 xl:grid-cols-[1fr_22rem]">
-        <Panel title="Experiments" eyebrow="Hypothesis → signal → result" pad={false}>
+        <Panel title={t("Experiments")} eyebrow={t("Hypothesis → signal → result")} pad={false}>
           {data.exps.length ? (
             <Table>
               <thead>
                 <tr>
-                  <Th>Experiment</Th>
-                  <Th>Metric</Th>
-                  <Th>Status</Th>
+                  <Th>{t("Experiment")}</Th>
+                  <Th>{t("Metric")}</Th>
+                  <Th>{t("Status")}</Th>
                   <Th />
                 </tr>
               </thead>
@@ -173,7 +196,7 @@ export default async function AutopilotPage({ searchParams }: { searchParams: Pr
                     <Td>
                       <div className="text-platinum">{e.name}</div>
                       <div className="text-xs text-muted">{e.hypothesis}</div>
-                      {e.result && <div className="mt-1 text-xs text-chrome">Result: {e.result}</div>}
+                      {e.result && <div className="mt-1 text-xs text-chrome">{t("Result: {result}", { result: e.result })}</div>}
                     </Td>
                     <Td className="text-xs">
                       {e.primaryMetric}
@@ -190,16 +213,26 @@ export default async function AutopilotPage({ searchParams }: { searchParams: Pr
                         <form action={setExperimentStatusAction} className="flex flex-col gap-1">
                           <HiddenBack path={back} />
                           <input type="hidden" name="id" value={e.id} />
-                          {e.status === "DRAFT" && <Button name="status" value="RUNNING">Start</Button>}
-                          {e.status === "RUNNING" && <Button name="status" value="READY_FOR_REVIEW">Ready for review</Button>}
+                          {e.status === "DRAFT" && (
+                            <Button name="status" value="RUNNING">
+                              {t("Start")}
+                            </Button>
+                          )}
+                          {e.status === "RUNNING" && (
+                            <Button name="status" value="READY_FOR_REVIEW">
+                              {t("Ready for review")}
+                            </Button>
+                          )}
                           {e.status === "READY_FOR_REVIEW" && (
                             <>
-                              <input name="result" placeholder="Observed result" aria-label="Result" />
-                              <Button name="status" value="CONCLUDED">Conclude</Button>
+                              <input name="result" placeholder={t("Observed result")} aria-label={t("Result")} />
+                              <Button name="status" value="CONCLUDED">
+                                {t("Conclude")}
+                              </Button>
                             </>
                           )}
                           <button name="status" value="ABANDONED" className="eyebrow text-left hover:text-crit">
-                            abandon
+                            {t("abandon")}
                           </button>
                         </form>
                       )}
@@ -209,28 +242,28 @@ export default async function AutopilotPage({ searchParams }: { searchParams: Pr
               </tbody>
             </Table>
           ) : (
-            <p className="p-4 text-sm text-muted">No experiments yet.</p>
+            <p className="p-4 text-sm text-muted">{t("No experiments yet.")}</p>
           )}
         </Panel>
         {can("growth:write") && (
-          <Panel title="New experiment">
+          <Panel title={t("New experiment")}>
             <form action={addExperimentAction} className="flex flex-col gap-3">
               <HiddenBack path={back} />
-              <Field label="Name">
+              <Field label={t("Name")}>
                 <input name="name" required maxLength={160} />
               </Field>
-              <Field label="Hypothesis">
+              <Field label={t("Hypothesis")}>
                 <textarea name="hypothesis" required minLength={10} className="min-h-16" />
               </Field>
-              <Field label="Primary metric">
-                <input name="primaryMetric" required placeholder="CTA click rate" />
+              <Field label={t("Primary metric")}>
+                <input name="primaryMetric" required placeholder={t("CTA click rate")} />
               </Field>
-              <Field label="Signal to monitor">
-                <input name="signalToMonitor" placeholder="CTA_CLICK / PAGE_VIEW over 28 days" />
+              <Field label={t("Signal to monitor")}>
+                <input name="signalToMonitor" placeholder={t("CTA_CLICK / PAGE_VIEW over 28 days")} />
               </Field>
-              <Field label="Product">
+              <Field label={t("Product")}>
                 <select name="productId" defaultValue="">
-                  <option value="">Ecosystem</option>
+                  <option value="">{t("Ecosystem")}</option>
                   {data.prods.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.name}
@@ -239,7 +272,7 @@ export default async function AutopilotPage({ searchParams }: { searchParams: Pr
                 </select>
               </Field>
               <div>
-                <Button>Create</Button>
+                <Button>{t("Create")}</Button>
               </div>
             </form>
           </Panel>
@@ -247,18 +280,18 @@ export default async function AutopilotPage({ searchParams }: { searchParams: Pr
       </div>
 
       <div id="cross-sell" className="mt-6 grid gap-6 xl:grid-cols-[1fr_22rem]">
-        <Panel title="Cross-sell rules" eyebrow="Ecosystem recommendations · consent-gated · frequency-capped" pad={false}>
+        <Panel title={t("Cross-sell rules")} eyebrow={t("Ecosystem recommendations · consent-gated · frequency-capped")} pad={false}>
           {data.rules.length ? (
             <Table>
               <thead>
                 <tr>
-                  <Th>Rule</Th>
-                  <Th>From → to</Th>
-                  <Th>Conditions</Th>
-                  <Th>Impr.</Th>
-                  <Th>Clicks</Th>
-                  <Th>Conv.</Th>
-                  <Th>Revenue</Th>
+                  <Th>{t("Rule")}</Th>
+                  <Th>{t("From → to")}</Th>
+                  <Th>{t("Conditions")}</Th>
+                  <Th>{t("Impr.")}</Th>
+                  <Th>{t("Clicks")}</Th>
+                  <Th>{t("Conv.")}</Th>
+                  <Th>{t("Revenue")}</Th>
                   <Th />
                 </tr>
               </thead>
@@ -275,23 +308,21 @@ export default async function AutopilotPage({ searchParams }: { searchParams: Pr
                         {pname(r.sourceProductId)} → {pname(r.destinationProductId)}
                       </Td>
                       <Td className="text-[11px]">
-                        {r.conditions.requiredTraits?.length ? `traits: ${r.conditions.requiredTraits.join(", ")}` : "any"}
-                        {r.conditions.minDaysOnSource ? ` · ≥${r.conditions.minDaysOnSource}d` : ""}
-                        <div className="text-muted">
-                          cap 1/{r.frequencyCapDays}d · max {r.maxImpressions}
-                        </div>
+                        {r.conditions.requiredTraits?.length ? t("traits: {traits}", { traits: r.conditions.requiredTraits.join(", ") }) : t("any")}
+                        {r.conditions.minDaysOnSource ? ` · ≥${t("{n}d", { n: r.conditions.minDaysOnSource })}` : ""}
+                        <div className="text-muted">{t("cap 1/{days}d · max {max}", { days: r.frequencyCapDays, max: r.maxImpressions })}</div>
                       </Td>
                       <Td className="num">{Number(st?.imp ?? 0)}</Td>
                       <Td className="num">{Number(st?.clk ?? 0)}</Td>
                       <Td className="num">{Number(st?.conv ?? 0)}</Td>
-                      <Td className="num">{formatValue(Number(st?.rev ?? 0), "money")}</Td>
+                      <Td className="num">{formatValue(Number(st?.rev ?? 0), "money", undefined, intl)}</Td>
                       <Td>
                         {can("growth:write") && (
                           <form action={toggleCrossSellRuleAction}>
                             <HiddenBack path={back} />
                             <input type="hidden" name="id" value={r.id} />
                             {!r.active && <input type="hidden" name="active" value="on" />}
-                            <button className="eyebrow hover:text-chrome">{r.active ? "pause" : "activate"}</button>
+                            <button className="eyebrow hover:text-chrome">{r.active ? t("pause") : t("activate")}</button>
                           </form>
                         )}
                       </Td>
@@ -301,18 +332,18 @@ export default async function AutopilotPage({ searchParams }: { searchParams: Pr
               </tbody>
             </Table>
           ) : (
-            <p className="p-4 text-sm text-muted">No cross-sell rules. Recommendations are only shown to identities that consented to cross-product recommendations.</p>
+            <p className="p-4 text-sm text-muted">{t("No cross-sell rules. Recommendations are only shown to identities that consented to cross-product recommendations.")}</p>
           )}
         </Panel>
         {can("growth:write") && data.prods.length > 1 && (
-          <Panel title="New cross-sell rule">
+          <Panel title={t("New cross-sell rule")}>
             <form action={addCrossSellRuleAction} className="flex flex-col gap-3">
               <HiddenBack path={back} />
-              <Field label="Name">
+              <Field label={t("Name")}>
                 <input name="name" required maxLength={120} />
               </Field>
               <div className="grid grid-cols-2 gap-2">
-                <Field label="From">
+                <Field label={t("From")}>
                   <select name="sourceProductId">
                     {data.prods.map((p) => (
                       <option key={p.id} value={p.id}>
@@ -321,7 +352,7 @@ export default async function AutopilotPage({ searchParams }: { searchParams: Pr
                     ))}
                   </select>
                 </Field>
-                <Field label="To">
+                <Field label={t("To")}>
                   <select name="destinationProductId" defaultValue={data.prods[1]?.id}>
                     {data.prods.map((p) => (
                       <option key={p.id} value={p.id}>
@@ -331,66 +362,71 @@ export default async function AutopilotPage({ searchParams }: { searchParams: Pr
                   </select>
                 </Field>
               </div>
-              <Field label="Required shared traits" hint="Comma separated, e.g. agency, team_size:10-50">
+              <Field label={t("Required shared traits")} hint={t("Comma separated, e.g. agency, team_size:10-50")}>
                 <input name="requiredTraits" />
               </Field>
-              <Field label="Min. days on source product">
+              <Field label={t("Min. days on source product")}>
                 <input name="minDaysOnSource" type="number" min={0} defaultValue={7} />
               </Field>
-              <Field label="Message (contextual, factual)">
+              <Field label={t("Message (contextual, factual)")}>
                 <textarea name="message" required minLength={10} maxLength={280} className="min-h-16" />
               </Field>
               <div className="grid grid-cols-2 gap-2">
-                <Field label="CTA label">
+                <Field label={t("CTA label")}>
                   <input name="ctaLabel" required defaultValue="Learn more" />
                 </Field>
-                <Field label="Cap (days)">
+                <Field label={t("Cap (days)")}>
                   <input name="frequencyCapDays" type="number" min={1} defaultValue={14} />
                 </Field>
               </div>
-              <Field label="CTA URL (destination domain)">
+              <Field label={t("CTA URL (destination domain)")}>
                 <input name="ctaUrl" type="url" required />
               </Field>
-              <Field label="Max impressions">
+              <Field label={t("Max impressions")}>
                 <input name="maxImpressions" type="number" min={1} max={20} defaultValue={3} />
               </Field>
               <div>
-                <Button>Create rule</Button>
+                <Button>{t("Create rule")}</Button>
               </div>
             </form>
           </Panel>
         )}
       </div>
 
-      <Panel title="AI sales agent — test a visitor need" eyebrow="Explainable product recommendation" className="mt-6">
+      <Panel title={t("AI sales agent — test a visitor need")} eyebrow={t("Explainable product recommendation")} className="mt-6">
         <form method="get" action="/autopilot#sales" className="flex flex-col gap-3 md:flex-row" id="sales">
-          <input name="need" defaultValue={need ?? ""} placeholder="I run a TikTok agency with 30 creators." aria-label="Visitor need" />
-          <Button>Recommend</Button>
+          <input name="need" defaultValue={need ?? ""} placeholder={t("I run a TikTok agency with 30 creators.")} aria-label={t("Visitor need")} />
+          <Button>{t("Recommend")}</Button>
         </form>
         {data.recommendation && (
           <div className="mt-5">
             {data.recommendation.primary ? (
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="border border-gold-dim p-4">
-                  <div className="eyebrow text-gold">Primary recommendation · {data.recommendation.primary.fit} fit</div>
+                  <div className="eyebrow text-gold">{data.recommendation.primary.fit === "STRONG" ? t("Primary recommendation · STRONG fit") : t("Primary recommendation · PARTIAL fit")}</div>
                   <div className="mt-1 text-lg text-platinum">{data.recommendation.primary.productName}</div>
-                  <p className="mt-1 text-sm text-chrome">{data.recommendation.explanation}</p>
-                  <div className="eyebrow mb-1 mt-3">Why it matches</div>
+                  <p className="mt-1 text-sm text-chrome">
+                    {t("{product} matches on {matches}.", {
+                      product: data.recommendation.primary.productName,
+                      matches: data.recommendation.primary.why.map((w) => t('{kind} "{fact}"', { kind: matchLabel(w.kind), fact: w.fact })).join(", "),
+                    })}
+                  </p>
+                  <div className="eyebrow mb-1 mt-3">{t("Why it matches")}</div>
                   <ul className="text-xs text-chrome">
                     {data.recommendation.primary.why.map((w) => (
                       <li key={w.kind + w.fact}>
-                        • {w.kind.toLowerCase().replace("_", " ")}: {w.fact} <span className="text-muted">({w.matchedTerms.join(", ")})</span>
+                        {t("• {kind}: {fact}", { kind: matchLabel(w.kind), fact: w.fact })} <span className="text-muted">({w.matchedTerms.join(", ")})</span>
                       </li>
                     ))}
                   </ul>
-                  <div className="eyebrow mb-1 mt-3">Relevant features</div>
+                  <div className="eyebrow mb-1 mt-3">{t("Relevant features")}</div>
                   <p className="text-xs text-chrome">{data.recommendation.primary.relevantFeatures.join(", ") || "—"}</p>
-                  <div className="eyebrow mb-1 mt-3">Pricing (verified)</div>
-                  <p className="text-xs text-chrome">{data.recommendation.primary.pricing.join(" · ") || "No verified pricing recorded"}</p>
-                  {data.recommendation.primary.cta && <div className="mt-3 text-xs text-gold-bright">CTA: {data.recommendation.primary.cta.label} → {data.recommendation.primary.cta.url}</div>}
+                  <div className="eyebrow mb-1 mt-3">{t("Pricing (verified)")}</div>
+                  <p className="text-xs text-chrome">{data.recommendation.primary.pricing.map((x) => t(x)).join(" · ") || t("No verified pricing recorded")}</p>
+                  {data.recommendation.primary.cta && <div className="mt-3 text-xs text-gold-bright">{t("CTA: {label} → {url}", { label: data.recommendation.primary.cta.label, url: data.recommendation.primary.cta.url })}</div>}
                 </div>
                 <div className="border border-line p-4">
-                  <div className="eyebrow">Complementary products</div>
+                  <div className="eyebrow">{t("Complementary products")}</div>
                   {data.recommendation.complementary.length ? (
                     data.recommendation.complementary.map((c) => (
                       <div key={c.productId} className="mt-2 text-sm text-chrome">
@@ -398,13 +434,13 @@ export default async function AutopilotPage({ searchParams }: { searchParams: Pr
                       </div>
                     ))
                   ) : (
-                    <p className="mt-2 text-sm text-muted">None match this need.</p>
+                    <p className="mt-2 text-sm text-muted">{t("None match this need.")}</p>
                   )}
-                  <p className="mt-4 text-[11px] text-muted">Considered {data.recommendation.considered} product(s). Ownership never boosts a score; unmatched products are not recommended.</p>
+                  <p className="mt-4 text-[11px] text-muted">{t("Considered {n} product(s). Ownership never boosts a score; unmatched products are not recommended.", { n: data.recommendation.considered })}</p>
                 </div>
               </div>
             ) : (
-              <p className="text-sm text-chrome">{data.recommendation.explanation}</p>
+              <p className="text-sm text-chrome">{t(data.recommendation.explanation)}</p>
             )}
           </div>
         )}

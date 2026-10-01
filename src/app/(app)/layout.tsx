@@ -1,11 +1,14 @@
 import Image from "next/image";
 import Link from "next/link";
 import { logoutAction } from "@/app/actions/auth";
-import { CurrentSection, MobileTabBar, Nav } from "@/components/shell/nav";
+import { LocaleToggle } from "@/components/shell/locale-toggle";
+import { MobileTabBar, Nav } from "@/components/shell/nav";
+import { getT } from "@/i18n/server";
 import { requireAuth } from "@/lib/auth/session";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const ctx = await requireAuth();
+  const t = await getT();
   const orgName = ctx.org.branding.displayName ?? ctx.org.name;
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[15rem_1fr]">
@@ -19,7 +22,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               <div className="truncate text-[10px] text-muted">{orgName}</div>
             </div>
           </Link>
-          <CurrentSection />
+          <LocaleToggle />
         </div>
         <div className="h-px bg-gradient-to-r from-transparent via-blue/60 to-transparent" />
       </header>
@@ -39,10 +42,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </div>
           <div className="border-t border-line px-5 py-4">
             <div className="truncate text-xs text-chrome">{ctx.user.name}</div>
-            <div className="eyebrow mt-0.5">{ctx.role}</div>
-            <form action={logoutAction} className="mt-3">
-              <button className="eyebrow hover:text-chrome">Sign out →</button>
-            </form>
+            <div className="eyebrow mt-0.5">{t(ctx.role)}</div>
+            <div className="mt-3 flex items-center justify-between gap-2">
+              <form action={logoutAction}>
+                <button className="eyebrow hover:text-chrome">{t("Sign out →")}</button>
+              </form>
+              <LocaleToggle />
+            </div>
           </div>
         </div>
       </aside>
@@ -51,7 +57,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <div className="mx-auto max-w-[1400px]">{children}</div>
       </main>
 
-      <MobileTabBar userName={ctx.user.name} role={ctx.role} />
+      <MobileTabBar userName={ctx.user.name} role={t(ctx.role)} />
     </div>
   );
 }

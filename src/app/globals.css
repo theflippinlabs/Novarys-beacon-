@@ -118,6 +118,12 @@
     background-clip: text;
     color: transparent;
   }
+  .text-gradient-gold {
+    background: linear-gradient(180deg, #fbe7b0 0%, #f0b25a 55%, #b9822f 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
   .pb-safe {
     padding-bottom: env(safe-area-inset-bottom);
   }
@@ -129,6 +135,7 @@
     background-size: 48px 48px;
   }
   .prose-beacon h1 {
+    color: var(--color-gold);
     font-size: 1.5rem;
     font-weight: 600;
     margin: 0 0 1rem;
@@ -137,7 +144,7 @@
     font-size: 1.1rem;
     font-weight: 600;
     margin: 1.5rem 0 0.5rem;
-    color: var(--color-platinum);
+    color: var(--color-gold-bright);
   }
   .prose-beacon h3 {
     font-size: 0.95rem;

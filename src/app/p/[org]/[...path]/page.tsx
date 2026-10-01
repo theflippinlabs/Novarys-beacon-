@@ -6,6 +6,7 @@ import { canonicalUrl } from "@/core/discovery/urls";
 import { serializeJsonLd } from "@/core/seo/schema-org";
 import { env } from "@/lib/env";
 import { orgBySlug, publishedPages } from "@/services/public";
+import { getT } from "@/i18n/server";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +45,7 @@ export default async function PublicPage({ params }: { params: Promise<{ org: st
   const d = await load(org, path);
   if (!d) notFound();
   const v = d.row.version!;
+  const t = await getT();
   return (
     <div className="min-h-screen bg-obsidian">
       <header className="border-b border-line">
@@ -58,7 +60,9 @@ export default async function PublicPage({ params }: { params: Promise<{ org: st
       </header>
       <main className="mx-auto max-w-3xl px-4 py-12">
         <article className="prose-beacon" dangerouslySetInnerHTML={{ __html: renderMarkdown(v.body) }} />
-        <p className="mt-12 border-t border-line pt-4 text-xs text-muted">Last updated {(d.row.page.publishedAt ?? v.createdAt).toISOString().slice(0, 10)}. Facts on this page are sourced from the product’s canonical documentation.</p>
+        <p className="mt-12 border-t border-line pt-4 text-xs text-muted">
+          {t("Last updated {date}. Facts on this page are sourced from the product’s canonical documentation.", { date: (d.row.page.publishedAt ?? v.createdAt).toISOString().slice(0, 10) })}
+        </p>
       </main>
       {v.structuredData.map((s, i) => (
         <script key={i} type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(s) }} />

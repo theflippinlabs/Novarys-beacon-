@@ -55,7 +55,7 @@ export async function act<S extends z.ZodType>(fd: FormData, permission: Permiss
   const parsed = schema.safeParse(raw);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
-    target = withParam(back, "error", `${issue.path.join(".") || "input"}: ${issue.message}`);
+    target = withParam(back, "error", `Invalid value for “${issue.path.join(".") || "input"}”.`);
   } else {
     try {
       const actor: Actor = { organizationId: ctx.org.id, userId: ctx.user.id, actorType: "USER", ipHash: await clientIpHash() };

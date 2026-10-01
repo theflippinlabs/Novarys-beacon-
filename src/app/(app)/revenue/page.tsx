@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { inSequence } from "@/db";
 import Link from "next/link";
 import { desc, eq, sql } from "drizzle-orm";
@@ -7,14 +8,24 @@ import { RangePicker } from "@/components/shell/product-tabs";
 import { products, revenueEvents } from "@/db/schema";
 import { BEACON_CHANNELS, kpis, mrrByDimension, revenueByDimension } from "@/services/metrics";
 import { daysParam, pageData, type SP } from "@/lib/page";
+import { enumLabel, type T } from "@/i18n/core";
+import { getI18n, getT } from "@/i18n/server";
 
-export const metadata = { title: "Revenue" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT();
+  return { title: t("Revenue") };
+}
 
 const BEACON = new Set<string>(BEACON_CHANNELS);
 const label = (k: string) => k.replace(/_/g, " ");
 
 export default async function RevenuePage({ searchParams }: { searchParams: Promise<SP> }) {
   const sp = await searchParams;
+  const { t, intl, locale } = await getI18n();
+  /** Acquisition channel label; PAID is the paid-ads channel here, not the commission status. */
+  const ch = (c: string) => (c === "PAID" && locale !== "en" ? t("PAID ADS") : enumLabel(t, c));
+  /** Revenue event type, shown with its raw enum value in English. */
+  const evType = (v: string) => (locale === "en" ? v : enumLabel(t, v));
   const days = daysParam(sp);
   const { data } = await pageData(async (tx, ctx) => {
     const org = ctx.org.id;
@@ -44,7 +55,9 @@ export default async function RevenuePage({ searchParams }: { searchParams: Prom
 
   const { k } = data;
   const currency = k.currency;
-  const money = (v: number, c = currency) => formatValue(v, "money", c);
+  const money = (v: number, c = currency) => formatValue(v, "money", c, intl);
+  const subsHint = (amount: string, n: number, beacon = false) => [t("{amount} · {n} subscription(s)", { amount, n }), ...(beacon ? [t("Beacon channel")] : [])].join(" · ");
+  const eventsHint = (amount: string, n: number) => t("{amount} · {n} event(s)", { amount, n });
   const connected = k.revenue.revenue.now !== null;
   const mixed = data.currencies.length > 1;
   const trackingHref = data.firstSlug ? `/products/${data.firstSlug}/tracking` : "/products";
@@ -52,83 +65,84 @@ export default async function RevenuePage({ searchParams }: { searchParams: Prom
   return (
     <>
       <PageHeader
-        eyebrow="11 / Revenue"
-        title="Revenue attribution"
-        description="MRR, subscriptions and revenue by acquisition channel and product, from provider webhooks and the revenue API. Amounts are recorded in each event’s own currency."
+        eyebrow={t("11 / Revenue")}
+        title={t("Revenue attribution")}
+        description={t("MRR, subscriptions and revenue by acquisition channel and product, from provider webhooks and the revenue API. Amounts are recorded in each event’s own currency.")}
         actions={<RangePicker base="/revenue" days={days} />}
       />
 
       <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <Stat label="MRR" value={k.revenue.mrr.now} fmt="money" currency={currency} source={k.revenue.mrr.source} />
-        <Stat label="MRR attributable to Beacon" value={k.revenue.beaconMrr.now} fmt="money" currency={currency} source="Beacon channels" />
-        <Stat label="ARR" value={k.revenue.arr.now} fmt="money" currency={currency} source={k.revenue.arr.source} />
-        <Stat label="New subscriptions" value={k.revenue.newSubscriptions.now} prev={k.revenue.newSubscriptions.prev} source={`Last ${days} days`} />
-        <Stat label="Revenue in period" value={k.revenue.revenue.now} prev={k.revenue.revenue.prev} fmt="money" currency={currency} source={`Last ${days} days`} />
-        <Stat label="New MRR via Beacon" value={k.revenue.beaconNewMrr.now} prev={k.revenue.beaconNewMrr.prev} fmt="money" currency={currency} source={`Last ${days} days`} />
+        <Stat label={t("MRR")} value={k.revenue.mrr.now} fmt="money" currency={currency} source={t(k.revenue.mrr.source)} />
+        <Stat label={t("MRR attributable to Beacon")} value={k.revenue.beaconMrr.now} fmt="money" currency={currency} source={t("Beacon channels")} />
+        <Stat label={t("ARR")} value={k.revenue.arr.now} fmt="money" currency={currency} source={t(k.revenue.arr.source)} />
+        <Stat label={t("New subscriptions")} value={k.revenue.newSubscriptions.now} prev={k.revenue.newSubscriptions.prev} source={t("Last {days} days", { days })} />
+        <Stat label={t("Revenue in period")} value={k.revenue.revenue.now} prev={k.revenue.revenue.prev} fmt="money" currency={currency} source={t("Last {days} days", { days })} />
+        <Stat label={t("New MRR via Beacon")} value={k.revenue.beaconNewMrr.now} prev={k.revenue.beaconNewMrr.prev} fmt="money" currency={currency} source={t("Last {days} days", { days })} />
       </div>
 
       {mixed && (
         <div role="status" className="mb-6 border border-warn/40 px-4 py-3 text-sm text-warn">
-          Multiple currencies recorded ({data.currencies.join(", ")}). The tiles and per-channel/per-product totals above add amounts without conversion and label them in {currency}; use the per-event table below for exact per-currency figures.
+          {t("Multiple currencies recorded ({currencies}). The tiles and per-channel/per-product totals above add amounts without conversion and label them in {currency}; use the per-event table below for exact per-currency figures.", { currencies: data.currencies.join(", "), currency })}
         </div>
       )}
 
       {!connected ? (
         <EmptyState
-          title="No revenue data connected"
+          title={t("No revenue data connected")}
           action={
             <div className="flex flex-wrap gap-2">
               <LinkButton variant="gold" href="/settings/integrations">
-                Connect Stripe webhook →
+                {t("Connect Stripe webhook →")}
               </LinkButton>
-              <LinkButton href={trackingHref}>Revenue API on the Tracking tab</LinkButton>
+              <LinkButton href={trackingHref}>{t("Revenue API on the Tracking tab")}</LinkButton>
             </div>
           }
         >
-          Beacon has not received any revenue events. Connect a Stripe webhook in Settings → Integrations, or post invoices and subscription changes to <code className="text-platinum">/api/v1/revenue</code> with a secret key (documented on each product’s Tracking tab). Nothing on this page is estimated.
+          {t("Beacon has not received any revenue events. Connect a Stripe webhook in Settings → Integrations, or post invoices and subscription changes to")} <code className="text-platinum">/api/v1/revenue</code>{" "}
+          {t("with a secret key (documented on each product’s Tracking tab). Nothing on this page is estimated.")}
         </EmptyState>
       ) : (
         <>
           <div className="grid gap-6 xl:grid-cols-2">
-            <Panel eyebrow="Current MRR" title="MRR by acquisition channel">
+            <Panel eyebrow={t("Current MRR")} title={t("MRR by acquisition channel")}>
               <BarList
-                rows={data.mrrChannel.map((r) => ({ key: `${r.key}:${r.currency}`, label: label(r.key), value: r.mrr, hint: `${money(r.mrr, r.currency)} · ${r.subs} subscription(s)${BEACON.has(r.key) ? " · Beacon channel" : ""}` }))}
+                rows={data.mrrChannel.map((r) => ({ key: `${r.key}:${r.currency}`, label: ch(r.key), value: r.mrr, hint: subsHint(money(r.mrr, r.currency), r.subs, BEACON.has(r.key)) }))}
                 format={(v) => money(v)}
-                empty="No active subscriptions."
+                empty={t("No active subscriptions.")}
               />
-              <DimTable rows={data.mrrChannel.map((r) => ({ key: `${r.key}:${r.currency}`, name: label(r.key), a: money(r.mrr, r.currency), b: String(r.subs), beacon: BEACON.has(r.key) }))} head={["Channel", "MRR", "Subs"]} caption="MRR by channel (table view)" />
+              <DimTable t={t} rows={data.mrrChannel.map((r) => ({ key: `${r.key}:${r.currency}`, name: ch(r.key), a: money(r.mrr, r.currency), b: String(r.subs), beacon: BEACON.has(r.key) }))} head={[t("Channel"), t("MRR"), t("Subs")]} caption={t("MRR by channel (table view)")} />
             </Panel>
-            <Panel eyebrow="Current MRR" title="MRR by product">
-              <BarList rows={data.mrrProduct.map((r) => ({ key: `${r.key}:${r.currency}`, label: r.key, value: r.mrr, hint: `${money(r.mrr, r.currency)} · ${r.subs} subscription(s)` }))} format={(v) => money(v)} empty="No active subscriptions." />
-              <DimTable rows={data.mrrProduct.map((r) => ({ key: `${r.key}:${r.currency}`, name: r.key, a: money(r.mrr, r.currency), b: String(r.subs) }))} head={["Product", "MRR", "Subs"]} caption="MRR by product (table view)" />
+            <Panel eyebrow={t("Current MRR")} title={t("MRR by product")}>
+              <BarList rows={data.mrrProduct.map((r) => ({ key: `${r.key}:${r.currency}`, label: r.key, value: r.mrr, hint: subsHint(money(r.mrr, r.currency), r.subs) }))} format={(v) => money(v)} empty={t("No active subscriptions.")} />
+              <DimTable t={t} rows={data.mrrProduct.map((r) => ({ key: `${r.key}:${r.currency}`, name: r.key, a: money(r.mrr, r.currency), b: String(r.subs) }))} head={[t("Product"), t("MRR"), t("Subs")]} caption={t("MRR by product (table view)")} />
             </Panel>
-            <Panel eyebrow={`Last ${days} days`} title="Revenue by acquisition channel">
+            <Panel eyebrow={t("Last {days} days", { days })} title={t("Revenue by acquisition channel")}>
               <BarList
-                rows={data.revChannel.map((r) => ({ key: `${r.key}:${r.currency}`, label: label(r.key), value: r.revenue, hint: `${money(r.revenue, r.currency)} · ${r.events} event(s)` }))}
+                rows={data.revChannel.map((r) => ({ key: `${r.key}:${r.currency}`, label: ch(r.key), value: r.revenue, hint: eventsHint(money(r.revenue, r.currency), r.events) }))}
                 format={(v) => money(v)}
-                empty="No revenue events in this period."
+                empty={t("No revenue events in this period.")}
               />
-              <DimTable rows={data.revChannel.map((r) => ({ key: `${r.key}:${r.currency}`, name: label(r.key), a: money(r.revenue, r.currency), b: money(r.newMrr, r.currency), c: r.currency, beacon: BEACON.has(r.key) }))} head={["Channel", "Revenue", "MRR Δ", "Currency"]} caption="Revenue by channel (table view)" />
+              <DimTable t={t} rows={data.revChannel.map((r) => ({ key: `${r.key}:${r.currency}`, name: ch(r.key), a: money(r.revenue, r.currency), b: money(r.newMrr, r.currency), c: r.currency, beacon: BEACON.has(r.key) }))} head={[t("Channel"), t("Revenue"), t("MRR Δ"), t("Currency")]} caption={t("Revenue by channel (table view)")} />
             </Panel>
-            <Panel eyebrow={`Last ${days} days`} title="Revenue by product">
-              <BarList rows={data.revProduct.map((r) => ({ key: `${r.key}:${r.currency}`, label: r.key, value: r.revenue, hint: `${money(r.revenue, r.currency)} · ${r.events} event(s)` }))} format={(v) => money(v)} empty="No revenue events in this period." />
-              <DimTable rows={data.revProduct.map((r) => ({ key: `${r.key}:${r.currency}`, name: r.key, a: money(r.revenue, r.currency), b: money(r.newMrr, r.currency), c: r.currency }))} head={["Product", "Revenue", "MRR Δ", "Currency"]} caption="Revenue by product (table view)" />
+            <Panel eyebrow={t("Last {days} days", { days })} title={t("Revenue by product")}>
+              <BarList rows={data.revProduct.map((r) => ({ key: `${r.key}:${r.currency}`, label: r.key, value: r.revenue, hint: eventsHint(money(r.revenue, r.currency), r.events) }))} format={(v) => money(v)} empty={t("No revenue events in this period.")} />
+              <DimTable t={t} rows={data.revProduct.map((r) => ({ key: `${r.key}:${r.currency}`, name: r.key, a: money(r.revenue, r.currency), b: money(r.newMrr, r.currency), c: r.currency }))} head={[t("Product"), t("Revenue"), t("MRR Δ"), t("Currency")]} caption={t("Revenue by product (table view)")} />
             </Panel>
           </div>
 
-          <Panel eyebrow="Ledger" title="Latest 50 revenue events" className="mt-6" pad={false}>
+          <Panel eyebrow={t("Ledger")} title={t("Latest 50 revenue events")} className="mt-6" pad={false}>
             <Table>
               <thead>
                 <tr>
-                  <Th>Occurred</Th>
-                  <Th>Product</Th>
-                  <Th>Type</Th>
-                  <Th className="text-right">Amount</Th>
-                  <Th className="text-right">MRR Δ</Th>
-                  <Th>Currency</Th>
-                  <Th>Channel</Th>
-                  <Th>Provider</Th>
-                  <Th>External ID</Th>
+                  <Th>{t("Occurred")}</Th>
+                  <Th>{t("Product")}</Th>
+                  <Th>{t("Type")}</Th>
+                  <Th className="text-right">{t("Amount")}</Th>
+                  <Th className="text-right">{t("MRR Δ")}</Th>
+                  <Th>{t("Currency")}</Th>
+                  <Th>{t("Channel")}</Th>
+                  <Th>{t("Provider")}</Th>
+                  <Th>{t("External ID")}</Th>
                 </tr>
               </thead>
               <tbody>
@@ -137,7 +151,7 @@ export default async function RevenuePage({ searchParams }: { searchParams: Prom
                     <Td className="num text-xs">{e.occurredAt.toISOString().slice(0, 16).replace("T", " ")}</Td>
                     <Td className="text-xs">{productName ?? "—"}</Td>
                     <Td>
-                      <Badge tone={e.type === "CHURN" || e.type === "REFUND" ? "crit" : e.type === "NEW" ? "ok" : "neutral"}>{e.type}</Badge>
+                      <Badge tone={e.type === "CHURN" || e.type === "REFUND" ? "crit" : e.type === "NEW" ? "ok" : "neutral"}>{evType(e.type)}</Badge>
                     </Td>
                     <Td className="num text-right text-platinum">{money(e.amountCents, e.currency)}</Td>
                     <Td className={`num text-right text-xs ${e.mrrDeltaCents > 0 ? "text-ok" : e.mrrDeltaCents < 0 ? "text-crit" : "text-muted"}`}>
@@ -145,7 +159,7 @@ export default async function RevenuePage({ searchParams }: { searchParams: Prom
                     </Td>
                     <Td className="num text-xs">{e.currency}</Td>
                     <Td>
-                      <Badge tone={BEACON.has(e.channel) ? "gold" : "neutral"}>{label(e.channel)}</Badge>
+                      <Badge tone={BEACON.has(e.channel) ? "gold" : "neutral"}>{ch(e.channel)}</Badge>
                     </Td>
                     <Td className="text-xs">{e.provider}</Td>
                     <Td className="num max-w-48 truncate text-xs">
@@ -159,30 +173,32 @@ export default async function RevenuePage({ searchParams }: { searchParams: Prom
         </>
       )}
 
-      <Panel eyebrow="Definitions" title="How revenue is attributed" className="mt-6">
+      <Panel eyebrow={t("Definitions")} title={t("How revenue is attributed")} className="mt-6">
         <Table>
           <tbody>
             <tr>
-              <Th>Attributable to Beacon</Th>
+              <Th>{t("Attributable to Beacon")}</Th>
               <Td>
-                MRR of active and past-due subscriptions whose acquisition channel is one Beacon operates: {BEACON_CHANNELS.map((c) => label(c).toLowerCase()).join(", ")}. The channel is fixed at acquisition using the organisation’s attribution rules (see{" "}
+                {t("MRR of active and past-due subscriptions whose acquisition channel is one Beacon operates: {channels}. The channel is fixed at acquisition using the organisation’s attribution rules (see", {
+                  channels: BEACON_CHANNELS.map((c) => t(label(c).toLowerCase())).join(", "),
+                })}{" "}
                 <Link href="/conversions" className="text-blue-bright hover:text-cyan">
-                  Conversions
+                  {t("Conversions")}
                 </Link>
-                ). Paid, social, email, direct and other channels are not counted.
+                {t("). Paid, social, email, direct and other channels are not counted.")}
               </Td>
             </tr>
             <tr>
-              <Th>New MRR via Beacon</Th>
-              <Td>Sum of MRR deltas of revenue events in the period on Beacon channels (new, upgrades, downgrades and churn net out).</Td>
+              <Th>{t("New MRR via Beacon")}</Th>
+              <Td>{t("Sum of MRR deltas of revenue events in the period on Beacon channels (new, upgrades, downgrades and churn net out).")}</Td>
             </tr>
             <tr>
-              <Th>ARR</Th>
-              <Td>Current MRR × 12.</Td>
+              <Th>{t("ARR")}</Th>
+              <Td>{t("Current MRR × 12.")}</Td>
             </tr>
             <tr>
-              <Th>Currencies</Th>
-              <Td>Money is stored in minor units (cents) in each event’s own currency and is never converted. Totals are labelled in the organisation’s primary currency ({currency}); check the currency column when more than one currency is recorded.</Td>
+              <Th>{t("Currencies")}</Th>
+              <Td>{t("Money is stored in minor units (cents) in each event’s own currency and is never converted. Totals are labelled in the organisation’s primary currency ({currency}); check the currency column when more than one currency is recorded.", { currency })}</Td>
             </tr>
           </tbody>
         </Table>
@@ -191,11 +207,11 @@ export default async function RevenuePage({ searchParams }: { searchParams: Prom
   );
 }
 
-function DimTable({ rows, head, caption }: { rows: { key: string; name: string; a: string; b: string; c?: string; beacon?: boolean }[]; head: string[]; caption: string }) {
+function DimTable({ t, rows, head, caption }: { t: T; rows: { key: string; name: string; a: string; b: string; c?: string; beacon?: boolean }[]; head: string[]; caption: string }) {
   if (!rows.length) return null;
   return (
     <details className="mt-4 border-t border-line pt-3">
-      <summary className="eyebrow cursor-pointer text-chrome">Table view</summary>
+      <summary className="eyebrow cursor-pointer text-chrome">{t("Table view")}</summary>
       <Table>
         <caption className="sr-only">{caption}</caption>
         <thead>

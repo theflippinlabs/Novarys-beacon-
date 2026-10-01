@@ -17,8 +17,13 @@ import { loadProductGraph } from "@/core/knowledge/load";
 import { addDays, isoDay } from "@/core/util/text";
 import { daysParam, pageData, productOr404, type SP } from "@/lib/page";
 import { db } from "@/db";
+import { getI18n, getT } from "@/i18n/server";
+import type { Metadata } from "next";
 
-export const metadata = { title: "Product" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT();
+  return { title: t("Product") };
+}
 
 export default async function ProductDashboard({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<SP> }) {
   const { slug } = await params;
@@ -45,6 +50,7 @@ export default async function ProductDashboard({ params, searchParams }: { param
     const analysis = await db().select().from(jobs).where(and(eq(jobs.organizationId, ctx.org.id), eq(jobs.type, "product.analyze"), sql`${jobs.payload}->>'productId' = ${p.id}`)).orderBy(desc(jobs.createdAt)).limit(1);
     return { p, g, score, k, series, history, audit, ai, checklist, opps, exps, clicks, impressions, qstats: qstats.rows, pstats: pstats.rows, analysis: analysis[0] ?? null };
   });
+  const { t } = await getI18n();
   const { p, score, k } = data;
   const base = `/products/${p.slug}`;
   const cov = Object.fromEntries(data.qstats.map((r) => [r.coverage, Number(r.n)]));
@@ -53,9 +59,9 @@ export default async function ProductDashboard({ params, searchParams }: { param
   return (
     <>
       <PageHeader
-        eyebrow={`Product · ${p.category ?? "category unknown"}`}
+        eyebrow={t("Product · {category}", { category: p.category ?? t("category unknown") })}
         title={p.name}
-        description={p.shortDescription ?? <span className="text-muted">No short description yet — complete onboarding step 4.</span>}
+        description={p.shortDescription ?? <span className="text-muted">{t("No short description yet — complete onboarding step 4.")}</span>}
         actions={
           <>
             <RangePicker base={base} days={days} />
@@ -63,7 +69,7 @@ export default async function ProductDashboard({ params, searchParams }: { param
               <form action={runProductAnalysisAction}>
                 <HiddenBack path={base} />
                 <input type="hidden" name="productId" value={p.id} />
-                <Button>Re-run analysis</Button>
+                <Button>{t("Re-run analysis")}</Button>
               </form>
             )}
           </>
@@ -73,26 +79,26 @@ export default async function ProductDashboard({ params, searchParams }: { param
       <Flash searchParams={sp} />
       {data.analysis && data.analysis.status !== "SUCCEEDED" && (
         <div className="mb-6 flex items-center gap-3 border border-gold-dim px-4 py-3 text-sm text-chrome">
-          <StatusBadge status={data.analysis.status} /> Product analysis {data.analysis.status === "DEAD" ? `failed: ${data.analysis.lastError}` : "is queued or running in the background worker."}
+          <StatusBadge status={data.analysis.status} /> {data.analysis.status === "DEAD" ? t("Product analysis failed: {error}", { error: String(data.analysis.lastError) }) : t("Product analysis is queued or running in the background worker.")}
         </div>
       )}
 
       <div className="grid gap-6 xl:grid-cols-[26rem_1fr]">
-        <Panel eyebrow="Beacon score" title="Operational discoverability readiness">
+        <Panel eyebrow={t("Beacon score")} title={t("Operational discoverability readiness")}>
           <div className="flex items-end gap-3">
             <div className="num text-6xl font-medium tracking-tighter text-platinum">{score.total}</div>
             <div className="pb-2 text-sm text-muted">/ 100</div>
           </div>
-          <p className="mt-1 text-xs text-muted">Transparent readiness score from observable facts. Not a ranking or traffic prediction.</p>
+          <p className="mt-1 text-xs text-muted">{t("Transparent readiness score from observable facts. Not a ranking or traffic prediction.")}</p>
           <div className="mt-5 flex flex-col gap-3">
             {score.components.map((c) => (
               <details key={c.key} className="group">
                 <summary className="flex cursor-pointer list-none flex-col gap-1">
                   <span className="flex justify-between text-xs text-chrome">
-                    <span>{c.label}</span>
-                    <span className="text-muted group-open:text-gold">details</span>
+                    <span>{t(c.label)}</span>
+                    <span className="text-muted group-open:text-gold">{t("details")}</span>
                   </span>
-                  <Meter value={c.earned} max={c.max} label={c.label} />
+                  <Meter value={c.earned} max={c.max} label={t(c.label)} />
                 </summary>
                 <ul className="mt-2 flex flex-col gap-1.5 border-l border-line pl-3">
                   {c.lines.map((l) => (
@@ -100,7 +106,7 @@ export default async function ProductDashboard({ params, searchParams }: { param
                       <span className="num text-platinum">
                         {l.earned}/{l.max}
                       </span>{" "}
-                      <span className="text-chrome">{l.label}:</span> <span className="text-muted">{l.reason}</span>
+                      <span className="text-chrome">{t("{label}:", { label: t(l.label) })}</span> <span className="text-muted">{t(l.reason)}</span>
                     </li>
                   ))}
                 </ul>
@@ -109,13 +115,13 @@ export default async function ProductDashboard({ params, searchParams }: { param
           </div>
           {score.pathTo.tasks.length > 0 && (
             <div className="mt-6 border-t border-line pt-4">
-              <div className="eyebrow text-gold">Fastest path to {score.pathTo.target}</div>
+              <div className="eyebrow text-gold">{t("Fastest path to {target}", { target: score.pathTo.target })}</div>
               <ol className="mt-2 flex flex-col gap-2">
-                {score.pathTo.tasks.map((t, i) => (
-                  <li key={t.task} className="flex gap-3 text-xs">
+                {score.pathTo.tasks.map((task, i) => (
+                  <li key={task.task} className="flex gap-3 text-xs">
                     <span className="num text-muted">{i + 1}.</span>
-                    <span className="flex-1 text-chrome">{t.task}</span>
-                    <span className="num text-ok">+{t.points}</span>
+                    <span className="flex-1 text-chrome">{t(task.task)}</span>
+                    <span className="num text-ok">+{task.points}</span>
                   </li>
                 ))}
               </ol>
@@ -125,42 +131,42 @@ export default async function ProductDashboard({ params, searchParams }: { param
 
         <div className="flex flex-col gap-6">
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <Stat label="Organic clicks" value={k.discovery.organicClicks.now} prev={k.discovery.organicClicks.prev} source={k.discovery.organicClicks.source} />
-            <Stat label="Impressions" value={k.discovery.organicImpressions.now} prev={k.discovery.organicImpressions.prev} source={k.discovery.organicImpressions.source} />
-            <Stat label="AI referrals" value={k.discovery.aiReferrals.now} prev={k.discovery.aiReferrals.prev} source={k.discovery.aiReferrals.source} />
-            <Stat label="AI mentions (sampled)" value={k.discovery.aiMentions.now} prev={k.discovery.aiMentions.prev} source={k.discovery.aiMentions.source} />
-            <Stat label="Visitors" value={k.acquisition.visitors.now} prev={k.acquisition.visitors.prev} source={k.acquisition.visitors.source} />
-            <Stat label="Signups" value={k.acquisition.signups.now} prev={k.acquisition.signups.prev} source={k.acquisition.signups.source} />
-            <Stat label="MRR" value={k.revenue.mrr.now} fmt="money" currency={k.currency} source={k.revenue.mrr.source} />
-            <Stat label="Conversion rate" value={k.revenue.conversionRate.now} prev={k.revenue.conversionRate.prev} fmt="percent" source={k.revenue.conversionRate.source} />
+            <Stat label={t("Organic clicks")} value={k.discovery.organicClicks.now} prev={k.discovery.organicClicks.prev} source={t(k.discovery.organicClicks.source)} />
+            <Stat label={t("Impressions")} value={k.discovery.organicImpressions.now} prev={k.discovery.organicImpressions.prev} source={t(k.discovery.organicImpressions.source)} />
+            <Stat label={t("AI referrals")} value={k.discovery.aiReferrals.now} prev={k.discovery.aiReferrals.prev} source={t(k.discovery.aiReferrals.source)} />
+            <Stat label={t("AI mentions (sampled)")} value={k.discovery.aiMentions.now} prev={k.discovery.aiMentions.prev} source={t(k.discovery.aiMentions.source)} />
+            <Stat label={t("Visitors")} value={k.acquisition.visitors.now} prev={k.acquisition.visitors.prev} source={t(k.acquisition.visitors.source)} />
+            <Stat label={t("Signups")} value={k.acquisition.signups.now} prev={k.acquisition.signups.prev} source={t(k.acquisition.signups.source)} />
+            <Stat label={t("MRR")} value={k.revenue.mrr.now} fmt="money" currency={k.currency} source={t(k.revenue.mrr.source)} />
+            <Stat label={t("Conversion rate")} value={k.revenue.conversionRate.now} prev={k.revenue.conversionRate.prev} fmt="percent" source={t(k.revenue.conversionRate.source)} />
           </div>
-          <Panel title={`Search visibility · last ${days} days`} eyebrow="Visibility">
+          <Panel title={t("Search visibility · last {days} days", { days })} eyebrow={t("Visibility")}>
             {data.clicks.length ? (
               <LineChart
-                title={`Organic clicks and impressions for ${p.name}`}
+                title={t("Organic clicks and impressions for {name}", { name: p.name })}
                 series={[
-                  { key: "impr", label: "Impressions", color: "var(--color-s1)", points: data.impressions.map((d) => ({ x: d.day, y: d.value })) },
-                  { key: "clicks", label: "Clicks", color: "var(--color-s2)", points: data.clicks.map((d) => ({ x: d.day, y: d.value })) },
+                  { key: "impr", label: t("Impressions"), color: "var(--color-s1)", points: data.impressions.map((d) => ({ x: d.day, y: d.value })) },
+                  { key: "clicks", label: t("Clicks"), color: "var(--color-s2)", points: data.clicks.map((d) => ({ x: d.day, y: d.value })) },
                 ]}
               />
             ) : (
-              <EmptyState title="Search data not connected" action={<LinkButton href={`${base}/onboarding?step=13`}>Connect Search Console</LinkButton>}>
-                Beacon never estimates search traffic. Connect Search Console or Bing Webmaster to import measured impressions and clicks.
+              <EmptyState title={t("Search data not connected")} action={<LinkButton href={`${base}/onboarding?step=13`}>{t("Connect Search Console")}</LinkButton>}>
+                {t("Beacon never estimates search traffic. Connect Search Console or Bing Webmaster to import measured impressions and clicks.")}
               </EmptyState>
             )}
           </Panel>
-          <Panel title={`Visitors & signups · last ${days} days`} eyebrow="Acquisition">
+          <Panel title={t("Visitors & signups · last {days} days", { days })} eyebrow={t("Acquisition")}>
             {k.acquisition.visitors.now !== null ? (
               <LineChart
-                title={`Daily visitors and signups for ${p.name}`}
+                title={t("Daily visitors and signups for {name}", { name: p.name })}
                 series={[
-                  { key: "v", label: "Visitors", color: "var(--color-s1)", points: data.series.map((d) => ({ x: d.day, y: d.visitors })) },
-                  { key: "s", label: "Signups", color: "var(--color-s3)", points: data.series.map((d) => ({ x: d.day, y: d.signups })) },
+                  { key: "v", label: t("Visitors"), color: "var(--color-s1)", points: data.series.map((d) => ({ x: d.day, y: d.visitors })) },
+                  { key: "s", label: t("Signups"), color: "var(--color-s3)", points: data.series.map((d) => ({ x: d.day, y: d.signups })) },
                 ]}
               />
             ) : (
-              <EmptyState title="No first-party events yet" action={<LinkButton href={`${base}/tracking`}>Install tracker</LinkButton>}>
-                Install the Beacon tracker to measure visitors, CTA clicks and conversions.
+              <EmptyState title={t("No first-party events yet")} action={<LinkButton href={`${base}/tracking`}>{t("Install tracker")}</LinkButton>}>
+                {t("Install the Beacon tracker to measure visitors, CTA clicks and conversions.")}
               </EmptyState>
             )}
           </Panel>
@@ -168,50 +174,50 @@ export default async function ProductDashboard({ params, searchParams }: { param
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-3">
-        <Panel title="Queries" eyebrow="Coverage" actions={<Link className="eyebrow hover:text-chrome" href={`/queries?product=${p.slug}`}>Open →</Link>}>
-          <KV items={[["Covered", cov.COVERED ?? 0], ["Partial", cov.PARTIAL ?? 0], ["Not covered", cov.NONE ?? 0], ["Active total", (cov.COVERED ?? 0) + (cov.PARTIAL ?? 0) + (cov.NONE ?? 0)]]} />
+        <Panel title={t("Queries")} eyebrow={t("Coverage")} actions={<Link className="eyebrow hover:text-chrome" href={`/queries?product=${p.slug}`}>{t("Open →")}</Link>}>
+          <KV items={[[t("Covered"), cov.COVERED ?? 0], [t("Partial"), cov.PARTIAL ?? 0], [t("Not covered"), cov.NONE ?? 0], [t("Active total"), (cov.COVERED ?? 0) + (cov.PARTIAL ?? 0) + (cov.NONE ?? 0)]]} />
         </Panel>
-        <Panel title="Pages" eyebrow="Discovery" actions={<Link className="eyebrow hover:text-chrome" href={`/discovery?product=${p.slug}`}>Open →</Link>}>
-          <KV items={[["Planned", pages.PLANNED ?? 0], ["Draft / review", (pages.DRAFT ?? 0) + (pages.IN_REVIEW ?? 0)], ["Approved", pages.APPROVED ?? 0], ["Published", pages.PUBLISHED ?? 0]]} />
+        <Panel title={t("Pages")} eyebrow={t("Discovery")} actions={<Link className="eyebrow hover:text-chrome" href={`/discovery?product=${p.slug}`}>{t("Open →")}</Link>}>
+          <KV items={[[t("Planned"), pages.PLANNED ?? 0], [t("Draft / review"), (pages.DRAFT ?? 0) + (pages.IN_REVIEW ?? 0)], [t("Approved"), pages.APPROVED ?? 0], [t("Published"), pages.PUBLISHED ?? 0]]} />
         </Panel>
-        <Panel title="Technical" eyebrow="Latest audit" actions={data.audit && <Link className="eyebrow hover:text-chrome" href={`/discovery/audits/${data.audit.id}`}>Open →</Link>}>
+        <Panel title={t("Technical")} eyebrow={t("Latest audit")} actions={data.audit && <Link className="eyebrow hover:text-chrome" href={`/discovery/audits/${data.audit.id}`}>{t("Open →")}</Link>}>
           {data.audit ? (
-            <KV items={[["Critical", data.audit.summary.CRITICAL ?? 0], ["High", data.audit.summary.HIGH ?? 0], ["Pages crawled", data.audit.pagesCrawled], ["Finished", data.audit.finishedAt?.toISOString().slice(0, 16).replace("T", " ")]]} />
+            <KV items={[[t("Critical"), data.audit.summary.CRITICAL ?? 0], [t("High"), data.audit.summary.HIGH ?? 0], [t("Pages crawled"), data.audit.pagesCrawled], [t("Finished"), data.audit.finishedAt?.toISOString().slice(0, 16).replace("T", " ")]]} />
           ) : (
-            <p className="text-sm text-muted">No audit yet. Run one from Discovery.</p>
+            <p className="text-sm text-muted">{t("No audit yet. Run one from Discovery.")}</p>
           )}
         </Panel>
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
-        <Panel title="Top opportunities" eyebrow="Opportunity engine" pad={false} actions={<Link className="eyebrow hover:text-chrome" href={`/opportunities?product=${p.slug}`}>All →</Link>}>
+        <Panel title={t("Top opportunities")} eyebrow={t("Opportunity engine")} pad={false} actions={<Link className="eyebrow hover:text-chrome" href={`/opportunities?product=${p.slug}`}>{t("All →")}</Link>}>
           {data.opps.length ? (
             <ul>
               {data.opps.map((o) => (
                 <li key={o.id} className="flex items-start justify-between gap-3 border-b border-line/60 px-4 py-3 last:border-0">
                   <div className="min-w-0">
                     <Link href={`/opportunities/${o.id}`} className="text-sm text-platinum hover:text-blue-bright">
-                      {o.title}
+                      {t(o.title)}
                     </Link>
-                    <div className="text-xs text-muted">{o.problem}</div>
+                    <div className="text-xs text-muted">{t(o.problem)}</div>
                   </div>
                   <PotentialBadge potential={o.potential} />
                 </li>
               ))}
             </ul>
           ) : (
-            <div className="p-4 text-sm text-muted">No open opportunities. They are generated after analysis, audits and data syncs.</div>
+            <div className="p-4 text-sm text-muted">{t("No open opportunities. They are generated after analysis, audits and data syncs.")}</div>
           )}
         </Panel>
-        <Panel title="AI observations" eyebrow="Sampled AI visibility" pad={false} actions={<Link className="eyebrow hover:text-chrome" href="/ai-visibility">Open →</Link>}>
+        <Panel title={t("AI observations")} eyebrow={t("Sampled AI visibility")} pad={false} actions={<Link className="eyebrow hover:text-chrome" href="/ai-visibility">{t("Open →")}</Link>}>
           {data.ai.length ? (
             <Table>
               <thead>
                 <tr>
-                  <Th>Prompt</Th>
-                  <Th>Tests</Th>
-                  <Th>Mentioned</Th>
-                  <Th>Competitors seen</Th>
+                  <Th>{t("Prompt")}</Th>
+                  <Th>{t("Tests")}</Th>
+                  <Th>{t("Mentioned")}</Th>
+                  <Th>{t("Competitors seen")}</Th>
                 </tr>
               </thead>
               <tbody>
@@ -226,31 +232,31 @@ export default async function ProductDashboard({ params, searchParams }: { param
               </tbody>
             </Table>
           ) : (
-            <div className="p-4 text-sm text-muted">No AI visibility prompts for this product.</div>
+            <div className="p-4 text-sm text-muted">{t("No AI visibility prompts for this product.")}</div>
           )}
         </Panel>
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-3">
-        <Panel title="Launch checklist" eyebrow="Readiness" className="lg:col-span-2">
+        <Panel title={t("Launch checklist")} eyebrow={t("Readiness")} className="lg:col-span-2">
           <ul className="grid gap-2 sm:grid-cols-2">
             {data.checklist.map((c) => (
               <li key={c.label}>
                 <Link href={c.href} className="flex items-center gap-3 border border-line px-3 py-2 text-sm hover:border-line-strong">
                   <span className={c.done ? "text-ok" : "text-muted"}>{c.done ? "✓" : "○"}</span>
-                  <span className={c.done ? "text-chrome" : "text-platinum"}>{c.label}</span>
-                  {c.detail && <span className="num ml-auto text-xs text-muted">{c.detail}</span>}
+                  <span className={c.done ? "text-chrome" : "text-platinum"}>{t(c.label)}</span>
+                  {c.detail && <span className="num ml-auto text-xs text-muted">{t(c.detail)}</span>}
                 </Link>
               </li>
             ))}
           </ul>
         </Panel>
-        <Panel title="Competitors & experiments" eyebrow="Context">
-          <div className="eyebrow mb-2">Competitors</div>
+        <Panel title={t("Competitors & experiments")} eyebrow={t("Context")}>
+          <div className="eyebrow mb-2">{t("Competitors")}</div>
           <div className="flex flex-wrap gap-1.5">
-            {data.g.competitors.length ? data.g.competitors.map((c) => <Badge key={c.competitorId}>{c.competitor.name} · {c.comparisonFacts.filter((f) => f.sourceUrl).length} facts</Badge>) : <span className="text-sm text-muted">None recorded</span>}
+            {data.g.competitors.length ? data.g.competitors.map((c) => <Badge key={c.competitorId}>{c.competitor.name} · {t("{n} facts", { n: c.comparisonFacts.filter((f) => f.sourceUrl).length })}</Badge>) : <span className="text-sm text-muted">{t("None recorded")}</span>}
           </div>
-          <div className="eyebrow mb-2 mt-5">Experiments</div>
+          <div className="eyebrow mb-2 mt-5">{t("Experiments")}</div>
           {data.exps.length ? (
             <ul className="flex flex-col gap-1.5">
               {data.exps.map((e) => (
@@ -261,11 +267,11 @@ export default async function ProductDashboard({ params, searchParams }: { param
               ))}
             </ul>
           ) : (
-            <span className="text-sm text-muted">None</span>
+            <span className="text-sm text-muted">{t("None")}</span>
           )}
           {data.history.length > 1 && (
             <>
-              <div className="eyebrow mb-1 mt-5">Score history</div>
+              <div className="eyebrow mb-1 mt-5">{t("Score history")}</div>
               <div className="num text-xs text-chrome">{data.history.map((h) => Math.round(h.total)).join(" → ")}</div>
             </>
           )}

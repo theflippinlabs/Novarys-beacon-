@@ -17,3 +17,4 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - Never invent product claims or show fabricated numbers; unconnected data renders as "Not connected".
 - UI colours follow the Beacon logo (navy-black surfaces, electric blue/cyan for focus and navigation, logo gold for primary actions); chart series use `--color-s1…s5` in order (validated palette — re-validate if you change it).
 - Checks: `pnpm typecheck && pnpm lint && pnpm test && pnpm test:integration && pnpm build && pnpm test:e2e`.
+- UI text is bilingual (EN/FR). Wrap every user-visible string in `t("English text")` (`getI18n()` on the server, `useI18n()` in client components) and add the French to `src/i18n/fr/<area>.ts`; `tests/unit/i18n.test.ts` fails on missing keys. Enum values go through `enumLabel(t, v)`; use `"Key||context"` when one English word needs two French renderings.

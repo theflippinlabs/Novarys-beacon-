@@ -1,17 +1,21 @@
 import type { ReactNode } from "react";
+import { enumLabel } from "@/i18n/core";
+import { getI18n } from "@/i18n/server";
 
 /** Horizontal bar list: one hue (magnitude), value at the bar tip, native tooltip per bar. */
-export function BarList({ rows, format = (v: number) => v.toLocaleString("en-GB"), color = "var(--color-blue)", empty = "No data yet." }: { rows: { label: ReactNode; value: number; key: string; hint?: string }[]; format?: (v: number) => string; color?: string; empty?: string }) {
-  if (!rows.length) return <div className="text-sm text-muted">{empty}</div>;
+export async function BarList({ rows, format, color = "var(--color-blue)", empty }: { rows: { label: ReactNode; value: number; key: string; hint?: string }[]; format?: (v: number) => string; color?: string; empty?: string }) {
+  const { t, intl } = await getI18n();
+  const fmt = format ?? ((v: number) => v.toLocaleString(intl));
+  if (!rows.length) return <div className="text-sm text-muted">{empty ?? t("No data yet.")}</div>;
   const max = Math.max(...rows.map((r) => Math.abs(r.value)), 1);
   return (
     <ul className="flex flex-col gap-2.5">
       {rows.map((r) => (
-        <li key={r.key} className="grid grid-cols-[minmax(0,10rem)_1fr] items-center gap-3 sm:grid-cols-[minmax(0,14rem)_1fr]" title={r.hint ?? `${format(r.value)}`}>
+        <li key={r.key} className="grid grid-cols-[minmax(0,10rem)_1fr] items-center gap-3 sm:grid-cols-[minmax(0,14rem)_1fr]" title={r.hint ?? `${fmt(r.value)}`}>
           <span className="truncate text-xs text-chrome">{r.label}</span>
           <span className="flex items-center gap-2">
             <span className="h-3 rounded-r-[4px]" style={{ width: `${Math.max(1, (Math.abs(r.value) / max) * 100)}%`, maxWidth: "calc(100% - 5rem)", background: color }} />
-            <span className="num text-xs text-platinum">{format(r.value)}</span>
+            <span className="num text-xs text-platinum">{fmt(r.value)}</span>
           </span>
         </li>
       ))}
@@ -20,18 +24,19 @@ export function BarList({ rows, format = (v: number) => v.toLocaleString("en-GB"
 }
 
 /** Funnel as ordered bars with step-to-step conversion. Null rates render as "—" (no denominator). */
-export function FunnelBars({ steps }: { steps: { step: string; visitors: number; conversionFromPrev: number | null }[] }) {
+export async function FunnelBars({ steps }: { steps: { step: string; visitors: number; conversionFromPrev: number | null }[] }) {
+  const { t, intl } = await getI18n();
   const max = Math.max(...steps.map((s) => s.visitors), 1);
   return (
     <ol className="flex flex-col gap-2">
       {steps.map((s) => (
         <li key={s.step} className="grid grid-cols-[9rem_1fr_4.5rem] items-center gap-3">
-          <span className="eyebrow text-chrome">{s.step.replace(/_/g, " ")}</span>
+          <span className="eyebrow text-chrome">{enumLabel(t, s.step)}</span>
           <span className="flex items-center gap-2">
-            <span className="h-4 rounded-r-[4px] bg-blue" style={{ width: `${Math.max(0.5, (s.visitors / max) * 100)}%`, maxWidth: "calc(100% - 3.5rem)" }} title={`${s.visitors} unique`} />
-            <span className="num text-xs text-platinum">{s.visitors.toLocaleString("en-GB")}</span>
+            <span className="h-4 rounded-r-[4px] bg-blue" style={{ width: `${Math.max(0.5, (s.visitors / max) * 100)}%`, maxWidth: "calc(100% - 3.5rem)" }} title={t("{n} unique", { n: s.visitors })} />
+            <span className="num text-xs text-platinum">{s.visitors.toLocaleString(intl)}</span>
           </span>
-          <span className="num text-right text-xs text-muted">{s.conversionFromPrev === null ? "—" : `${(s.conversionFromPrev * 100).toFixed(1)}%`}</span>
+          <span className="num text-right text-xs text-muted">{s.conversionFromPrev === null ? "—" : t("{pct}%", { pct: (s.conversionFromPrev * 100).toLocaleString(intl, { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false }) })}</span>
         </li>
       ))}
     </ol>

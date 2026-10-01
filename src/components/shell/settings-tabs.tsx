@@ -1,14 +1,16 @@
 import { Tabs } from "@/components/ui";
+import { getT } from "@/i18n/server";
 
-export function SettingsTabs({ active }: { active: "org" | "integrations" | "health" | "audit" }) {
+export async function SettingsTabs({ active }: { active: "org" | "integrations" | "health" | "audit" }) {
+  const t = await getT();
   return (
     <Tabs
       active={active}
       items={[
-        { key: "org", label: "Organisation & members", href: "/settings" },
-        { key: "integrations", label: "Integrations", href: "/settings/integrations" },
-        { key: "health", label: "System health", href: "/settings/health" },
-        { key: "audit", label: "Audit log", href: "/settings/audit" },
+        { key: "org", label: t("Organisation & members"), href: "/settings" },
+        { key: "integrations", label: t("Integrations"), href: "/settings/integrations" },
+        { key: "health", label: t("System health"), href: "/settings/health" },
+        { key: "audit", label: t("Audit log"), href: "/settings/audit" },
       ]}
     />
   );
