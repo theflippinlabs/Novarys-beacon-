@@ -56,7 +56,7 @@ export function verifiedOnly(g: ProductGraph): ProductGraph {
   const pv = Boolean(g.product.lastVerifiedAt);
   return {
     ...g,
-    product: pv ? g.product : { ...g.product, shortDescription: null, fullDescription: null, howItWorks: null },
+    product: pv ? g.product : { ...g.product, shortDescription: null, fullDescription: null, howItWorks: null, category: null, keywords: [] },
     facets: g.facets.filter(isVerified),
     pricing: g.pricing.filter(isVerified),
     faqs: g.faqs.filter(isVerified),

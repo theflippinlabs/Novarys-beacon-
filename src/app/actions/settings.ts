@@ -3,7 +3,7 @@
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { asSystem } from "@/db";
-import { integrations, memberships, organizations, products, users } from "@/db/schema";
+import { integrations, memberships, organizations, products, sessions, users } from "@/db/schema";
 import { act, zId, zOptText } from "@/lib/actions";
 import { audit } from "@/lib/audit";
 import { canAssignRole, ROLES } from "@/lib/auth/rbac";
@@ -81,7 +81,11 @@ export async function removeMemberAction(fd: FormData) {
     const m = await asSystem((stx) => stx.query.memberships.findFirst({ where: and(eq(memberships.organizationId, actor.organizationId), eq(memberships.userId, i.userId)) }));
     if (!m) throw new Error("Member not found");
     if (m.role === "OWNER" && ctx.role !== "OWNER") throw new Error("Only an owner can remove an owner.");
-    await asSystem((stx) => stx.delete(memberships).where(and(eq(memberships.organizationId, actor.organizationId), eq(memberships.userId, i.userId))));
+    await asSystem(async (stx) => {
+      await stx.delete(memberships).where(and(eq(memberships.organizationId, actor.organizationId), eq(memberships.userId, i.userId)));
+      // Revoke the removed member's sessions in this organisation immediately.
+      await stx.delete(sessions).where(and(eq(sessions.userId, i.userId), eq(sessions.organizationId, actor.organizationId)));
+    });
     await audit(tx, actor, "member.remove", "user", i.userId);
     return { ok: "Member removed." };
   });

@@ -1282,6 +1282,7 @@ export const productCompetitorsRelations = relations(productCompetitors, ({ one 
 
 /** Tables protected by RLS — kept in sync with migrations/0001_rls.sql by a test. */
 export const TENANT_TABLES = [
+  "memberships",
   "api_keys",
   "audit_logs",
   "products",

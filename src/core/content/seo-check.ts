@@ -7,7 +7,7 @@ const MIN_WORDS: Partial<Record<ContentType, number>> = { LANDING_PAGE: 250, ART
 const WEB_TYPES = new Set<ContentType>(["LANDING_PAGE", "ARTICLE", "TUTORIAL", "COMPARISON", "FAQ", "RELEASE_ANNOUNCEMENT"]);
 
 /** On-page SEO/GEO checks for a draft. Social formats only get length and TODO checks. */
-export function seoCheck(input: { type: ContentType; body: string; metaTitle: string | null; metaDescription: string | null; targetQuery?: string | null; structuredData: unknown[] }): { passed: boolean; checks: SeoCheck[] } {
+export function seoCheck(input: { type: ContentType; body: string; metaTitle: string | null; metaDescription: string | null; targetQuery?: string | null; structuredData: unknown[]; brandTerms?: string[] }): { passed: boolean; checks: SeoCheck[] } {
   const checks: SeoCheck[] = [];
   const add = (rule: string, ok: boolean, message: string) => checks.push({ rule, ok, message });
   const body = input.body;
@@ -34,8 +34,11 @@ export function seoCheck(input: { type: ContentType; body: string; metaTitle: st
       const head = `${input.metaTitle ?? ""} ${h1[0] ?? ""}`.toLowerCase();
       const coverage = q.length ? q.filter((t) => head.includes(t)).length / q.length : 1;
       add("query_in_title", coverage >= 0.5, `${Math.round(coverage * 100)}% of target query terms in title/H1.`);
+      // Brand/product-name terms naturally repeat on their own page; stuffing is measured on the other terms.
+      const brand = new Set((input.brandTerms ?? []).flatMap((b) => tokens(b)));
       const bt = tokens(body, { keepStop: true });
-      const density = q.length ? Math.max(...q.map((t) => bt.filter((x) => x === t).length / Math.max(1, bt.length))) : 0;
+      const nonBrand = q.filter((t) => !brand.has(t));
+      const density = nonBrand.length ? Math.max(...nonBrand.map((t) => bt.filter((x) => x === t).length / Math.max(1, bt.length))) : 0;
       add("no_keyword_stuffing", density <= 0.04, `Max target-term density ${(density * 100).toFixed(1)}% (≤ 4%).`);
     }
   }

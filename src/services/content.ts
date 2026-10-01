@@ -93,7 +93,7 @@ async function runChecks(tx: Tx, organizationId: string, asset: typeof contentAs
   if (!g) throw new Error("Product not found");
   const fact = factCheckDraft(v.body, g);
   const target = asset.targetQueryId ? await tx.query.queries.findFirst({ where: eq(queries.id, asset.targetQueryId) }) : null;
-  const seo = seoCheck({ type: asset.type, body: v.body, metaTitle: v.metaTitle, metaDescription: v.metaDescription, targetQuery: target?.query, structuredData: v.structuredData });
+  const seo = seoCheck({ type: asset.type, body: v.body, metaTitle: v.metaTitle, metaDescription: v.metaDescription, targetQuery: target?.query, structuredData: v.structuredData, brandTerms: [g.product.name] });
   await tx.update(contentVersions).set({ factCheck: fact, seoCheck: seo }).where(eq(contentVersions.id, v.id));
   // GENERATED → FACT_CHECK → SEO_CHECK → HUMAN_APPROVAL, stopping at the first failing gate.
   const target_ = statusAfterChecks(fact, seo);

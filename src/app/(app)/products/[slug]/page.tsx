@@ -1,3 +1,4 @@
+import { inSequence } from "@/db";
 import Link from "next/link";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { runProductAnalysisAction } from "@/app/actions/products";
@@ -27,19 +28,19 @@ export default async function ProductDashboard({ params, searchParams }: { param
     const p = await productOr404(tx, ctx.org.id, slug);
     const g = (await loadProductGraph(tx, ctx.org.id, p.id))!;
     const score = computeBeaconScore(await scoreInput(tx, ctx.org.id, p.id));
-    const [k, series, history, audit, ai, checklist, opps, exps, clicks, impressions, qstats, pstats] = await Promise.all([
-      kpis(tx, ctx.org.id, { days, productId: p.id }),
-      dailySeries(tx, ctx.org.id, days, p.id),
-      scoreHistory(tx, ctx.org.id, p.id),
-      latestAudit(tx, ctx.org.id, p.id),
-      promptSummaries(tx, ctx.org.id, p.id),
-      launchChecklist(tx, ctx.org.id, p.id),
-      tx.select().from(opportunities).where(and(eq(opportunities.productId, p.id), eq(opportunities.status, "OPEN"))).orderBy(desc(opportunities.priorityScore)).limit(6),
-      tx.select().from(experiments).where(eq(experiments.productId, p.id)).orderBy(desc(experiments.createdAt)).limit(5),
-      metricSeries(tx, ctx.org.id, "search_clicks", isoDay(addDays(new Date(), -days)), { productId: p.id, dimension: "" }),
-      metricSeries(tx, ctx.org.id, "search_impressions", isoDay(addDays(new Date(), -days)), { productId: p.id, dimension: "" }),
-      tx.execute<{ coverage: string; n: number }>(sql`select coverage, count(*)::int as n from queries where product_id = ${p.id} and status = 'ACTIVE' group by coverage`),
-      tx.execute<{ status: string; n: number }>(sql`select status, count(*)::int as n from pages where product_id = ${p.id} group by status`),
+    const [k, series, history, audit, ai, checklist, opps, exps, clicks, impressions, qstats, pstats] = await inSequence([
+      () => kpis(tx, ctx.org.id, { days, productId: p.id }),
+      () => dailySeries(tx, ctx.org.id, days, p.id),
+      () => scoreHistory(tx, ctx.org.id, p.id),
+      () => latestAudit(tx, ctx.org.id, p.id),
+      () => promptSummaries(tx, ctx.org.id, p.id),
+      () => launchChecklist(tx, ctx.org.id, p.id),
+      () => tx.select().from(opportunities).where(and(eq(opportunities.productId, p.id), eq(opportunities.status, "OPEN"))).orderBy(desc(opportunities.priorityScore)).limit(6),
+      () => tx.select().from(experiments).where(eq(experiments.productId, p.id)).orderBy(desc(experiments.createdAt)).limit(5),
+      () => metricSeries(tx, ctx.org.id, "search_clicks", isoDay(addDays(new Date(), -days)), { productId: p.id, dimension: "" }),
+      () => metricSeries(tx, ctx.org.id, "search_impressions", isoDay(addDays(new Date(), -days)), { productId: p.id, dimension: "" }),
+      () => tx.execute<{ coverage: string; n: number }>(sql`select coverage, count(*)::int as n from queries where product_id = ${p.id} and status = 'ACTIVE' group by coverage`),
+      () => tx.execute<{ status: string; n: number }>(sql`select status, count(*)::int as n from pages where product_id = ${p.id} group by status`),
     ]);
     const analysis = await db().select().from(jobs).where(and(eq(jobs.organizationId, ctx.org.id), eq(jobs.type, "product.analyze"), sql`${jobs.payload}->>'productId' = ${p.id}`)).orderBy(desc(jobs.createdAt)).limit(1);
     return { p, g, score, k, series, history, audit, ai, checklist, opps, exps, clicks, impressions, qstats: qstats.rows, pstats: pstats.rows, analysis: analysis[0] ?? null };

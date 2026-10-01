@@ -61,3 +61,14 @@ export async function closeDb() {
 }
 
 export { schema };
+
+/**
+ * Run thunks one after another and return their results as a tuple. A
+ * transaction is a single connection, so queries on it must not be issued
+ * concurrently (pg deprecates concurrent client.query calls).
+ */
+export async function inSequence<const T extends readonly (() => Promise<unknown>)[]>(fns: T): Promise<{ -readonly [K in keyof T]: Awaited<ReturnType<T[K]>> }> {
+  const out: unknown[] = [];
+  for (const fn of fns) out.push(await fn());
+  return out as { -readonly [K in keyof T]: Awaited<ReturnType<T[K]>> };
+}

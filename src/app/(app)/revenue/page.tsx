@@ -1,3 +1,4 @@
+import { inSequence } from "@/db";
 import Link from "next/link";
 import { desc, eq, sql } from "drizzle-orm";
 import { Badge, EmptyState, LinkButton, PageHeader, Panel, Stat, Table, Td, Th, formatValue } from "@/components/ui";
@@ -17,12 +18,12 @@ export default async function RevenuePage({ searchParams }: { searchParams: Prom
   const days = daysParam(sp);
   const { data } = await pageData(async (tx, ctx) => {
     const org = ctx.org.id;
-    const [k, mrrChannel, mrrProduct, revChannel, revProduct] = await Promise.all([
-      kpis(tx, org, { days }),
-      mrrByDimension(tx, org, "channel"),
-      mrrByDimension(tx, org, "product"),
-      revenueByDimension(tx, org, "channel", days),
-      revenueByDimension(tx, org, "product", days),
+    const [k, mrrChannel, mrrProduct, revChannel, revProduct] = await inSequence([
+      () => kpis(tx, org, { days }),
+      () => mrrByDimension(tx, org, "channel"),
+      () => mrrByDimension(tx, org, "product"),
+      () => revenueByDimension(tx, org, "channel", days),
+      () => revenueByDimension(tx, org, "product", days),
     ]);
     const recent = await tx
       .select({ e: revenueEvents, productName: products.name })

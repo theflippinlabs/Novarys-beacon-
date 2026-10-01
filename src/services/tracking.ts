@@ -206,7 +206,7 @@ export async function ingestEvent(tx: Tx, key: ResolvedKey, ev: IncomingEvent, m
     const status = ev.type === "CANCELLED" ? "CANCELLED" : ev.type === "SUBSCRIBED" || ev.type === "UPGRADED" ? "ACTIVE" : ev.type === "TRIAL_STARTED" ? "TRIALING" : null;
     await tx
       .insert(identityProducts)
-      .values({ organizationId: orgId, identityId: identity.id, productId: product.id, status, sharedTraits: ev.traits ?? [] })
+      .values({ organizationId: orgId, identityId: identity.id, productId: product.id, status, sharedTraits: ev.traits ?? [], firstSeenAt: occurredAt, lastSeenAt: occurredAt })
       .onConflictDoUpdate({
         target: [identityProducts.identityId, identityProducts.productId],
         set: { lastSeenAt: new Date(), ...(status ? { status } : {}), ...(ev.traits ? { sharedTraits: ev.traits } : {}) },
@@ -324,7 +324,7 @@ export async function recordRevenue(tx: Tx, organizationId: string, productId: s
     if (identity)
       await tx
         .insert(identityProducts)
-        .values({ organizationId, identityId: identity.id, productId, plan: r.subscription.plan, status: r.subscription.status })
+        .values({ organizationId, identityId: identity.id, productId, plan: r.subscription.plan, status: r.subscription.status, firstSeenAt: occurredAt, lastSeenAt: occurredAt })
         .onConflictDoUpdate({ target: [identityProducts.identityId, identityProducts.productId], set: { plan: r.subscription.plan, status: r.subscription.status, lastSeenAt: new Date() } });
   }
 

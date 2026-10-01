@@ -40,7 +40,7 @@ export async function saveIntegration(
       .values({ organizationId: actor.organizationId, integrationId: integ.id, ciphertext })
       .onConflictDoUpdate({ target: providerCredentials.integrationId, set: { ciphertext, rotatedAt: new Date() } });
   }
-  await audit(tx, actor, "integration.save", "integration", integ.id, { provider: input.provider, productId: input.productId, configKeys: Object.keys(input.config), secretUpdated: Boolean(input.secret) });
+  await audit(tx, actor, "integration.save", "integration", integ.id, { provider: input.provider, productId: input.productId, configKeys: Object.keys(input.config), rotated: Boolean(input.secret) });
   return integ;
 }
 
