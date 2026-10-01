@@ -11,6 +11,8 @@
  */
 import { relations, sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
+  check,
   customType,
   bigint,
   boolean,
@@ -22,11 +24,14 @@ import {
   pgEnum,
   pgTable,
   primaryKey,
+  real,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import type { AuditDiff } from "@/core/seo/diff";
 
 const id = () => uuid("id").primaryKey().defaultRandom();
 const orgId = () =>
@@ -43,7 +48,7 @@ const updatedAt = () =>
 // ─── Enums ──────────────────────────────────────────────────────────────
 export const roleEnum = pgEnum("member_role", ["OWNER", "ADMIN", "EDITOR", "ANALYST", "VIEWER"]);
 export const productStatusEnum = pgEnum("product_status", ["UNKNOWN", "IN_DEVELOPMENT", "BETA", "LIVE", "DEPRECATED"]);
-export const verificationEnum = pgEnum("verification_status", ["UNVERIFIED", "NEEDS_REVIEW", "VERIFIED", "REJECTED"]);
+export const verificationEnum = pgEnum("verification_status", ["UNVERIFIED", "NEEDS_REVIEW", "VERIFIED", "REJECTED", "OUTDATED", "CONFLICTING"]);
 export const facetKindEnum = pgEnum("facet_kind", [
   "FEATURE",
   "USE_CASE",
@@ -79,6 +84,7 @@ export const funnelStageEnum = pgEnum("funnel_stage", ["AWARENESS", "CONSIDERATI
 export const coverageEnum = pgEnum("coverage_status", ["NONE", "PARTIAL", "COVERED"]);
 export const queryStatusEnum = pgEnum("query_status", ["CANDIDATE", "ACTIVE", "ARCHIVED"]);
 export const querySourceEnum = pgEnum("query_source", ["MANUAL", "GENERATED", "IMPORTED", "SEARCH_CONSOLE"]);
+export const queryTopicTypeEnum = pgEnum("query_topic_type", ["FEATURE", "INDUSTRY", "AUDIENCE", "USE_CASE", "INTEGRATION", "CATEGORY", "BRAND", "COMPETITOR", "PROBLEM"]);
 export const pageTypeEnum = pgEnum("page_type", [
   "PRODUCT",
   "FEATURE",
@@ -125,7 +131,7 @@ export const severityEnum = pgEnum("severity", ["CRITICAL", "HIGH", "MEDIUM", "L
 export const issueStatusEnum = pgEnum("issue_status", ["OPEN", "RESOLVED", "IGNORED"]);
 export const runStatusEnum = pgEnum("run_status", ["QUEUED", "RUNNING", "SUCCEEDED", "FAILED"]);
 export const potentialEnum = pgEnum("potential", ["LOW", "MEDIUM", "HIGH"]);
-export const opportunityStatusEnum = pgEnum("opportunity_status", ["OPEN", "ACCEPTED", "IN_PROGRESS", "DONE", "DISMISSED"]);
+export const opportunityStatusEnum = pgEnum("opportunity_status", ["OPEN", "ACCEPTED", "IN_PROGRESS", "DONE", "DISMISSED", "OBSOLETE"]);
 export const distributionKindEnum = pgEnum("distribution_kind", [
   "DIRECTORY",
   "LAUNCH_PLATFORM",
@@ -159,6 +165,14 @@ export const conversionEventEnum = pgEnum("conversion_event_type", [
   "SUBSCRIBED",
   "UPGRADED",
   "CANCELLED",
+  // Phase 2 canonical names (legacy names above stay accepted as aliases; see core/conversions/events.ts).
+  "PRODUCT_VIEWED",
+  "SIGNUP_STARTED",
+  "SIGNUP_COMPLETED",
+  "ACTIVATION_COMPLETED",
+  "SUBSCRIPTION_STARTED",
+  "SUBSCRIPTION_UPGRADED",
+  "SUBSCRIPTION_CANCELLED",
 ]);
 export const channelEnum = pgEnum("acquisition_channel", [
   "ORGANIC_SEARCH",
@@ -171,6 +185,8 @@ export const channelEnum = pgEnum("acquisition_channel", [
   "DIRECT",
   "CROSS_SELL",
   "OTHER",
+  /** No touch at all in the lookback window (distinct from DIRECT, which is a measured direct visit). */
+  "UNATTRIBUTED",
 ]);
 export const subscriptionStatusEnum = pgEnum("subscription_status", ["TRIALING", "ACTIVE", "PAST_DUE", "CANCELLED"]);
 export const revenueTypeEnum = pgEnum("revenue_event_type", [
@@ -196,10 +212,14 @@ export const integrationProviderEnum = pgEnum("integration_provider", [
   "OPENAI",
   "PERPLEXITY",
 ]);
-export const integrationStatusEnum = pgEnum("integration_status", ["NOT_CONNECTED", "CONNECTED", "ERROR", "DISABLED"]);
+export const integrationStatusEnum = pgEnum("integration_status", ["NOT_CONNECTED", "CONNECTED", "ERROR", "DISABLED", "EXPIRED"]);
+export const searchProviderEnum = pgEnum("search_provider", ["GOOGLE_SEARCH_CONSOLE", "BING_WEBMASTER"]);
 export const jobStatusEnum = pgEnum("job_status", ["QUEUED", "RUNNING", "SUCCEEDED", "FAILED", "DEAD", "CANCELLED"]);
 export const apiKeyKindEnum = pgEnum("api_key_kind", ["PUBLISHABLE", "SECRET"]);
 export const campaignStatusEnum = pgEnum("campaign_status", ["DRAFT", "ACTIVE", "PAUSED", "ENDED"]);
+export const attributionModelEnum = pgEnum("attribution_model", ["FIRST_TOUCH", "LAST_TOUCH", "LINEAR", "POSITION_BASED"]);
+export const webhookStatusEnum = pgEnum("webhook_status", ["RECEIVED", "UNMAPPED", "PROCESSED", "FAILED"]);
+export const productRelationshipTypeEnum = pgEnum("product_relationship_type", ["COMPLEMENTARY", "SAME_AUDIENCE", "WORKFLOW_EXTENSION", "UPSELL", "CROSS_SELL"]);
 
 // ─── Identity, tenancy & access ─────────────────────────────────────────
 export const organizations = pgTable("organizations", {
@@ -210,9 +230,13 @@ export const organizations = pgTable("organizations", {
   branding: jsonb("branding").$type<{ displayName?: string; accent?: string; logoUrl?: string }>().notNull().default({}),
   settings: jsonb("settings")
     .$type<{
-      attribution?: { model: "LAST_TOUCH" | "FIRST_TOUCH"; lookbackDays: number; referralPrecedence: boolean };
+      attribution?: { model: "LAST_TOUCH" | "FIRST_TOUCH" | "LINEAR" | "POSITION_BASED"; lookbackDays: number; referralPrecedence: boolean };
       crossSell?: { globalDailyCap: number };
       publicSiteEnabled?: boolean;
+      /** Knowledge provenance: verified claims older than this are marked OUTDATED by `sources.check` (default 180). */
+      knowledge?: { staleAfterDays?: number };
+      /** Content approval policy: when on, the approver of a version must not be its author. */
+      content?: { requireDistinctApprover?: boolean };
     }>()
     .notNull()
     .default({}),
@@ -310,6 +334,18 @@ export const rateLimitBuckets = pgTable(
   (t) => [primaryKey({ columns: [t.key, t.windowStart] })],
 );
 
+/** Login back-off per HMAC(email, ip): exponential delay after repeated failures (no account lockout). */
+export const loginThrottle = pgTable(
+  "login_throttle",
+  {
+    key: text("key").primaryKey(),
+    failures: integer("failures").notNull().default(0),
+    blockedUntil: timestamp("blocked_until", { withTimezone: true }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("login_throttle_updated_idx").on(t.updatedAt)],
+);
+
 // ─── Product knowledge graph ────────────────────────────────────────────
 export const products = pgTable(
   "products",
@@ -364,6 +400,9 @@ export const productSources = pgTable(
     kind: sourceKindEnum("kind").notNull().default("WEBSITE"),
     lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }),
     httpStatus: integer("http_status"),
+    /** Consecutive failed liveness checks (4xx/5xx/unreachable); 2 or more = failing. */
+    consecutiveFailures: integer("consecutive_failures").notNull().default(0),
+    lastError: text("last_error"),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("product_sources_uq").on(t.productId, t.url)],
@@ -388,6 +427,10 @@ export const productFacets = pgTable(
     description: text("description"),
     sourceId: uuid("source_id").references(() => productSources.id, { onDelete: "set null" }),
     verification: verificationEnum("verification").notNull().default("UNVERIFIED"),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    verifiedBy: uuid("verified_by").references(() => users.id, { onDelete: "set null" }),
+    /** Derived (src/core/knowledge/confidence.ts); recomputed when its inputs change. */
+    confidence: real("confidence"),
     sortOrder: integer("sort_order").notNull().default(0),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -405,19 +448,25 @@ export const productPricing = pgTable("product_pricing", {
     .notNull()
     .references(() => products.id, { onDelete: "cascade" }),
   planName: text("plan_name").notNull(),
-  /** null = price not public / unknown. */
+  /** null = price not public / unknown (never 0 for "Contact sales"). */
   priceCents: bigint("price_cents", { mode: "number" }),
-  currency: text("currency").notNull().default("EUR"),
-  interval: billingIntervalEnum("interval").notNull().default("MONTH"),
+  /** null = currency unknown (never defaulted). */
+  currency: text("currency"),
+  /** null = billing interval unknown (never defaulted). */
+  interval: billingIntervalEnum("interval"),
   description: text("description"),
   includedFeatures: text("included_features").array().notNull().default(sql`'{}'::text[]`),
   trialDays: integer("trial_days"),
   sourceId: uuid("source_id").references(() => productSources.id, { onDelete: "set null" }),
   verification: verificationEnum("verification").notNull().default("UNVERIFIED"),
+  verifiedAt: timestamp("verified_at", { withTimezone: true }),
+  verifiedBy: uuid("verified_by").references(() => users.id, { onDelete: "set null" }),
+  /** Derived (src/core/knowledge/confidence.ts); recomputed when its inputs change. */
+  confidence: real("confidence"),
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
-});
+}, (t) => [index("product_pricing_product_idx").on(t.productId)]);
 
 export const productFaqs = pgTable("product_faqs", {
   id: id(),
@@ -429,10 +478,16 @@ export const productFaqs = pgTable("product_faqs", {
   answer: text("answer").notNull(),
   sourceId: uuid("source_id").references(() => productSources.id, { onDelete: "set null" }),
   verification: verificationEnum("verification").notNull().default("UNVERIFIED"),
+  verifiedAt: timestamp("verified_at", { withTimezone: true }),
+  verifiedBy: uuid("verified_by").references(() => users.id, { onDelete: "set null" }),
+  /** Derived (src/core/knowledge/confidence.ts); recomputed when its inputs change. */
+  confidence: real("confidence"),
+  /** Set on drafts suggested by Beacon (e.g. "query:<id>", "prompt:<id>"): a human must answer and verify them. */
+  suggestedFrom: text("suggested_from"),
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
-});
+}, (t) => [index("product_faqs_product_idx").on(t.productId)]);
 
 export const productProofs = pgTable("product_proofs", {
   id: id(),
@@ -446,10 +501,14 @@ export const productProofs = pgTable("product_proofs", {
   attribution: text("attribution"),
   sourceId: uuid("source_id").references(() => productSources.id, { onDelete: "set null" }),
   verification: verificationEnum("verification").notNull().default("UNVERIFIED"),
+  verifiedAt: timestamp("verified_at", { withTimezone: true }),
+  verifiedBy: uuid("verified_by").references(() => users.id, { onDelete: "set null" }),
+  /** Derived (src/core/knowledge/confidence.ts); recomputed when its inputs change. */
+  confidence: real("confidence"),
   /** Explicit permission to publish (testimonials, customer names). */
   publishable: boolean("publishable").notNull().default(false),
   createdAt: createdAt(),
-});
+}, (t) => [index("product_proofs_product_idx").on(t.productId)]);
 
 export const productChangelog = pgTable("product_changelog", {
   id: id(),
@@ -462,8 +521,43 @@ export const productChangelog = pgTable("product_changelog", {
   title: text("title").notNull(),
   body: text("body"),
   sourceId: uuid("source_id").references(() => productSources.id, { onDelete: "set null" }),
+  /** Changelog entries are claims too: UNVERIFIED until a human verifies them against a source. */
+  verification: verificationEnum("verification").notNull().default("UNVERIFIED"),
+  verifiedAt: timestamp("verified_at", { withTimezone: true }),
+  verifiedBy: uuid("verified_by").references(() => users.id, { onDelete: "set null" }),
+  /** Derived (src/core/knowledge/confidence.ts); recomputed when its inputs change. */
+  confidence: real("confidence"),
   createdAt: createdAt(),
-});
+}, (t) => [index("product_changelog_product_idx").on(t.productId)]);
+
+/**
+ * Scalar product claims (category, descriptions, status, URLs…): one row per
+ * asserted value with its own source, verification, verifier and confidence.
+ * The `products` columns hold the current values; `syncProductClaims`
+ * (services/provenance.ts) keeps these rows in sync on every edit.
+ */
+export const productClaims = pgTable(
+  "product_claims",
+  {
+    id: id(),
+    organizationId: orgId(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    /** One of CLAIM_FIELDS (src/core/knowledge/provenance.ts). */
+    field: text("field").notNull(),
+    /** Serialised value (see claimValue). */
+    value: text("value").notNull(),
+    sourceId: uuid("source_id").references(() => productSources.id, { onDelete: "set null" }),
+    verification: verificationEnum("verification").notNull().default("UNVERIFIED"),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    verifiedBy: uuid("verified_by").references(() => users.id, { onDelete: "set null" }),
+    confidence: real("confidence"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("product_claims_product_field_idx").on(t.productId, t.field), index("product_claims_org_idx").on(t.organizationId)],
+);
 
 export const competitors = pgTable(
   "competitors",
@@ -474,6 +568,8 @@ export const competitors = pgTable(
     slug: text("slug").notNull(),
     domain: text("domain"),
     notes: text("notes"),
+    /** Other names the competitor is known by (matched in sampled AI answers). */
+    aliases: text("aliases").array().notNull().default(sql`'{}'::text[]`),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("competitors_org_slug_uq").on(t.organizationId, t.slug)],
@@ -500,6 +596,7 @@ export const productCompetitors = pgTable(
 );
 
 // ─── Discovery: queries, pages, content ─────────────────────────────────
+export type QueryClassificationMeta = { source?: "rules" | "generation" | "search_import" | "manual"; intentSignals?: string[]; topicSignals?: string[]; brandTerm?: string | null };
 export const queryClusters = pgTable(
   "query_clusters",
   {
@@ -509,7 +606,20 @@ export const queryClusters = pgTable(
     name: text("name").notNull(),
     slug: text("slug").notNull(),
     pillarPageId: uuid("pillar_page_id"),
+    /** MANUAL (named by a human), TEMPLATE (legacy generator groups) or SEMANTIC (core/queries/cluster.ts). */
+    origin: text("origin").$type<"MANUAL" | "TEMPLATE" | "SEMANTIC">().notNull().default("MANUAL"),
+    /** Dominant intent and topic type of the cluster's queries. */
+    intent: queryIntentEnum("intent"),
+    topicType: queryTopicTypeEnum("topic_type"),
+    branded: boolean("branded").notNull().default(false),
+    headTerms: text("head_terms").array().notNull().default(sql`'{}'::text[]`),
+    coverage: coverageEnum("coverage").notNull().default("NONE"),
+    coverageReason: text("coverage_reason"),
+    coveredByUrl: text("covered_by_url"),
+    /** One recommended asset per cluster (never one page per keyword). */
+    recommendedAsset: text("recommended_asset"),
     createdAt: createdAt(),
+    updatedAt: updatedAt(),
   },
   (t) => [uniqueIndex("query_clusters_uq").on(t.organizationId, t.productId, t.slug)],
 );
@@ -534,13 +644,21 @@ export const queries = pgTable(
     pageId: uuid("page_id").references(() => pages.id, { onDelete: "set null" }),
     status: queryStatusEnum("status").notNull().default("ACTIVE"),
     source: querySourceEnum("source").notNull().default("MANUAL"),
+    /** Contains a brand term of the product (or the organisation). */
+    branded: boolean("branded").notNull().default(false),
+    topicType: queryTopicTypeEnum("topic_type"),
+    /** Explainable classification: signals and provenance (rules, generation template, search import). */
+    classification: jsonb("classification").$type<QueryClassificationMeta>().notNull().default({}),
+    coverageReason: text("coverage_reason"),
+    coveredByUrl: text("covered_by_url"),
     lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }),
     notes: text("notes"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
-    uniqueIndex("queries_uq").on(t.organizationId, t.normalized, t.language, t.market),
+    // Product-scoped: the same query may be tracked for several products (NULL product = ecosystem).
+    uniqueIndex("queries_uq").on(t.organizationId, sql`COALESCE(${t.productId}, '00000000-0000-0000-0000-000000000000'::uuid)`, t.normalized, t.language, t.market),
     index("queries_product_idx").on(t.productId),
     index("queries_org_status_idx").on(t.organizationId, t.status),
   ],
@@ -595,17 +713,43 @@ export const contentAssets = pgTable(
     approvedAt: timestamp("approved_at", { withTimezone: true }),
     publishedAt: timestamp("published_at", { withTimezone: true }),
     rejectionReason: text("rejection_reason"),
+    /** The version a human approved (kept while a newer draft is edited). */
+    approvedVersionId: uuid("approved_version_id").references((): AnyPgColumn => contentVersions.id, { onDelete: "set null" }),
+    /** The version served publicly; stays live until a newer approved version is published. */
+    publishedVersionId: uuid("published_version_id").references((): AnyPgColumn => contentVersions.id, { onDelete: "set null" }),
+    /** Repurposing: the approved/published asset and version this derivative was built from. */
+    sourceAssetId: uuid("source_asset_id").references((): AnyPgColumn => contentAssets.id, { onDelete: "set null" }),
+    sourceVersionId: uuid("source_version_id").references((): AnyPgColumn => contentVersions.id, { onDelete: "set null" }),
+    /** Set when the source asset publishes a newer version than the one this derivative was built from. */
+    sourceStaleAt: timestamp("source_stale_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [index("content_assets_org_status_idx").on(t.organizationId, t.status)],
+  (t) => [index("content_assets_org_status_idx").on(t.organizationId, t.status), index("content_assets_source_idx").on(t.sourceAssetId)],
 );
 
+export type ClaimStatus = "SUPPORTED" | "UNSUPPORTED" | "NEEDS_REVIEW" | "WRONG_PRICING" | "OUTDATED_PRICING";
+export type ClaimKind = "FACT" | "PRICING" | "STATISTIC" | "CUSTOMER" | "TESTIMONIAL" | "AWARD" | "RATING" | "SUPERLATIVE" | "INTEGRATION" | "COMPETITOR";
+/** HIGH blocks approval and publication; MEDIUM needs an explicit acknowledgment by the approver; LOW is informational. */
+export type ClaimSeverity = "HIGH" | "MEDIUM" | "LOW";
 export type ClaimCheck = {
   claim: string;
-  status: "SUPPORTED" | "UNSUPPORTED" | "NEEDS_REVIEW";
+  status: ClaimStatus;
+  /** Absent on checks stored before Phase 2 (treated as FACT, HIGH unless SUPPORTED). */
+  kind?: ClaimKind;
+  severity?: ClaimSeverity;
+  location?: "body" | "heading" | "meta_title" | "meta_description";
+  reason?: string;
   factRef?: string;
   sourceUrl?: string;
+};
+export type FactCheckResult = { passed: boolean; claims: ClaimCheck[]; checkedAt: string; counts?: Record<ClaimSeverity, number> };
+export type QualityCheck = {
+  passed: boolean;
+  checks: { rule: string; ok: boolean; message: string }[];
+  metrics: Record<string, number | null>;
+  duplicateOf?: string | null;
+  checkedAt: string;
 };
 
 export const contentVersions = pgTable(
@@ -622,8 +766,10 @@ export const contentVersions = pgTable(
     metaDescription: text("meta_description"),
     structuredData: jsonb("structured_data").$type<Record<string, unknown>[]>().notNull().default([]),
     factRefs: jsonb("fact_refs").$type<{ ref: string; sourceUrl?: string }[]>().notNull().default([]),
-    factCheck: jsonb("fact_check").$type<{ passed: boolean; claims: ClaimCheck[]; checkedAt: string } | null>(),
+    factCheck: jsonb("fact_check").$type<FactCheckResult | null>(),
     seoCheck: jsonb("seo_check").$type<{ passed: boolean; checks: { rule: string; ok: boolean; message: string }[] } | null>(),
+    /** Body-based quality gate (core/content/quality.ts), enforced at approval and publication. */
+    qualityCheck: jsonb("quality_check").$type<QualityCheck | null>(),
     aiRunId: uuid("ai_run_id"),
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: createdAt(),
@@ -648,9 +794,11 @@ export const seoAudits = pgTable(
     error: text("error"),
     startedAt: timestamp("started_at", { withTimezone: true }),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
+    /** Change summary against the previous successful audit of the product (core/seo/diff.ts). */
+    diff: jsonb("diff").$type<AuditDiff>(),
     createdAt: createdAt(),
   },
-  (t) => [index("seo_audits_product_idx").on(t.productId, t.createdAt)],
+  (t) => [index("seo_audits_product_idx").on(t.productId, t.createdAt), index("seo_audits_org_product_created_idx").on(t.organizationId, t.productId, t.createdAt)],
 );
 
 export const seoIssues = pgTable(
@@ -669,10 +817,14 @@ export const seoIssues = pgTable(
     severity: severityEnum("severity").notNull(),
     message: text("message").notNull(),
     details: jsonb("details").$type<Record<string, unknown>>().notNull().default({}),
+    /** Values for the rule's detail template (core/seo/rules.ts). */
+    params: jsonb("params").$type<Record<string, string | number>>().notNull().default({}),
+    /** product|rule|url|key: identity across audits, used to carry decisions forward. */
+    fingerprint: text("fingerprint"),
     status: issueStatusEnum("status").notNull().default("OPEN"),
     createdAt: createdAt(),
   },
-  (t) => [index("seo_issues_audit_idx").on(t.auditId), index("seo_issues_org_sev_idx").on(t.organizationId, t.severity, t.status)],
+  (t) => [index("seo_issues_fingerprint_idx").on(t.auditId, t.fingerprint), index("seo_issues_audit_idx").on(t.auditId), index("seo_issues_audit_rule_status_idx").on(t.auditId, t.rule, t.status), index("seo_issues_org_sev_idx").on(t.organizationId, t.severity, t.status)],
 );
 
 export const crawledPages = pgTable(
@@ -695,9 +847,89 @@ export const crawledPages = pgTable(
     inlinks: integer("inlinks").notNull().default(0),
     outlinks: jsonb("outlinks").$type<string[]>().notNull().default([]),
     structuredDataTypes: text("structured_data_types").array().notNull().default(sql`'{}'::text[]`),
+    finalUrl: text("final_url"),
+    redirectChain: jsonb("redirect_chain").$type<string[]>().notNull().default([]),
+    robotsMeta: text("robots_meta"),
+    xRobotsTag: text("x_robots_tag"),
+    /** INDEXABLE or the reason it is not (core/seo/analyze.ts IndexabilityReason). */
+    indexability: text("indexability"),
+    h1: jsonb("h1").$type<string[]>().notNull().default([]),
+    headings: jsonb("headings").$type<{ level: number; text: string }[]>().notNull().default([]),
+    outlinksCount: integer("outlinks_count").notNull().default(0),
+    externalLinks: jsonb("external_links").$type<string[]>().notNull().default([]),
+    jsonLd: jsonb("json_ld").$type<{ valid: boolean; error?: string; types: string[]; missing: { type: string; property: string }[] }[]>().notNull().default([]),
+    hreflang: jsonb("hreflang").$type<{ lang: string; href: string }[]>().notNull().default([]),
+    openGraph: jsonb("open_graph").$type<Record<string, string>>().notNull().default({}),
+    twitter: jsonb("twitter").$type<Record<string, string>>().notNull().default({}),
+    images: jsonb("images").$type<{ src: string; alt: string | null; hasWidth: boolean; hasHeight: boolean }[]>().notNull().default([]),
+    contentHash: text("content_hash"),
+    textSample: text("text_sample"),
+    depth: integer("depth"),
+    lastModified: text("last_modified"),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("crawled_pages_uq").on(t.auditId, t.url)],
+);
+
+/** Link edges found by a crawl (internal and external), with anchor text. */
+export const crawlLinks = pgTable(
+  "crawl_links",
+  {
+    id: id(),
+    organizationId: orgId(),
+    auditId: uuid("audit_id")
+      .notNull()
+      .references(() => seoAudits.id, { onDelete: "cascade" }),
+    fromUrl: text("from_url").notNull(),
+    toUrl: text("to_url").notNull(),
+    anchor: text("anchor").notNull().default(""),
+    nofollow: boolean("nofollow").notNull().default(false),
+    isInternal: boolean("is_internal").notNull().default(true),
+  },
+  (t) => [index("crawl_links_to_idx").on(t.auditId, t.toUrl), index("crawl_links_from_idx").on(t.auditId, t.fromUrl)],
+);
+
+/** Every sitemap document read during an audit. */
+export const sitemapSnapshots = pgTable(
+  "sitemap_snapshots",
+  {
+    id: id(),
+    organizationId: orgId(),
+    auditId: uuid("audit_id")
+      .notNull()
+      .references(() => seoAudits.id, { onDelete: "cascade" }),
+    sitemapUrl: text("sitemap_url").notNull(),
+    parentUrl: text("parent_url"),
+    kind: text("kind").$type<"urlset" | "index" | "invalid" | "error">().notNull(),
+    status: integer("status"),
+    urlCount: integer("url_count").notNull().default(0),
+    compressed: boolean("compressed").notNull().default(false),
+    lastmodMax: timestamp("lastmod_max", { withTimezone: true }),
+    errors: jsonb("errors").$type<string[]>().notNull().default([]),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("sitemap_snapshots_audit_idx").on(t.auditId)],
+);
+
+export const domainVerificationMethodEnum = pgEnum("domain_verification_method", ["DNS_TXT", "WELL_KNOWN_FILE"]);
+
+/** Domains an organisation proved it controls; audits may only crawl these (and their subdomains). */
+export const verifiedDomains = pgTable(
+  "verified_domains",
+  {
+    id: id(),
+    organizationId: orgId(),
+    domain: text("domain").notNull(),
+    token: text("token").notNull(),
+    method: domainVerificationMethodEnum("method"),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("verified_domains_uq").on(t.organizationId, t.domain)],
 );
 
 // ─── Visibility monitoring ──────────────────────────────────────────────
@@ -731,9 +963,13 @@ export const aiVisibilityPrompts = pgTable("ai_visibility_prompts", {
   productId: uuid("product_id").references(() => products.id, { onDelete: "cascade" }),
   prompt: text("prompt").notNull(),
   category: text("category"),
+  locale: text("locale").notNull().default("en"),
   active: boolean("active").notNull().default(true),
   createdAt: createdAt(),
 });
+
+export type MentionRecord = { name: string; position: number; offset?: number; snippet?: string };
+export type CitationDetail = { url: string; title?: string | null; offsets?: number[] };
 
 export const aiVisibilityTests = pgTable(
   "ai_visibility_tests",
@@ -747,9 +983,17 @@ export const aiVisibilityTests = pgTable(
     model: text("model").notNull(),
     ranAt: timestamp("ran_at", { withTimezone: true }).notNull().defaultNow(),
     response: text("response").notNull(),
-    productsMentioned: jsonb("products_mentioned").$type<{ productId: string; name: string; position: number }[]>().notNull().default([]),
-    competitorsMentioned: jsonb("competitors_mentioned").$type<{ competitorId: string; name: string; position: number }[]>().notNull().default([]),
+    /** Order of first appearance (`position`), character offset and a short snippet around the first mention. */
+    productsMentioned: jsonb("products_mentioned").$type<(MentionRecord & { productId: string })[]>().notNull().default([]),
+    competitorsMentioned: jsonb("competitors_mentioned").$type<(MentionRecord & { competitorId: string })[]>().notNull().default([]),
     citations: jsonb("citations").$type<string[]>().notNull().default([]),
+    /** Exact prompt text sent (snapshot), the model the provider reports having served, and request settings. */
+    promptText: text("prompt_text"),
+    servedModel: text("served_model"),
+    grounded: boolean("grounded").notNull().default(false),
+    params: jsonb("params").$type<Record<string, unknown>>().notNull().default({}),
+    locale: text("locale"),
+    citationDetails: jsonb("citation_details").$type<CitationDetail[]>().notNull().default([]),
     ownDomainCited: boolean("own_domain_cited").notNull().default(false),
     orgMentioned: boolean("org_mentioned").notNull().default(false),
     /** Rank among all detected entities, only when objectively measurable. */
@@ -757,7 +1001,7 @@ export const aiVisibilityTests = pgTable(
     label: text("label").notNull().default("SAMPLED_OBSERVATION"),
     createdAt: createdAt(),
   },
-  (t) => [index("ai_visibility_tests_prompt_idx").on(t.promptId, t.ranAt)],
+  (t) => [index("ai_visibility_tests_prompt_idx").on(t.promptId, t.ranAt), index("ai_visibility_tests_org_ran_idx").on(t.organizationId, t.ranAt)],
 );
 
 export const aiMentions = pgTable("ai_mentions", {
@@ -771,11 +1015,52 @@ export const aiMentions = pgTable("ai_mentions", {
   source: text("source").notNull(),
   url: text("url"),
   context: text("context"),
+  /** About 200 characters of the answer around the mention, and the character offset of the mention. */
+  snippet: text("snippet"),
+  mentionOffset: integer("mention_offset"),
   observedAt: timestamp("observed_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [index("ai_mentions_org_observed_idx").on(t.organizationId, t.observedAt), index("ai_mentions_test_idx").on(t.testId)]);
+
+export type CitationKind = "OWN" | "COMPETITOR" | "THIRD_PARTY";
+export type CitationCategory = "OFFICIAL_SITE" | "DOCUMENTATION" | "REVIEW_SITE" | "DIRECTORY" | "NEWS" | "COMMUNITY" | "COMPARISON" | "OTHER";
+
+/** One URL cited in one sampled AI answer (see core/visibility/citations.ts for the classification heuristic). */
+export const aiCitations = pgTable(
+  "ai_citations",
+  {
+    id: id(),
+    organizationId: orgId(),
+    testId: uuid("test_id")
+      .notNull()
+      .references(() => aiVisibilityTests.id, { onDelete: "cascade" }),
+    promptId: uuid("prompt_id").references(() => aiVisibilityPrompts.id, { onDelete: "cascade" }),
+    /** Product of the prompt (null for ecosystem prompts). */
+    productId: uuid("product_id").references(() => products.id, { onDelete: "set null" }),
+    /** Set when the cited domain is a competitor's. */
+    competitorId: uuid("competitor_id").references(() => competitors.id, { onDelete: "set null" }),
+    url: text("url").notNull(),
+    host: text("host").notNull(),
+    registrableDomain: text("registrable_domain").notNull(),
+    kind: text("kind").$type<CitationKind>().notNull(),
+    category: text("category").$type<CitationCategory>().notNull(),
+    /** 1-based order in the provider's citation list. */
+    position: integer("position").notNull(),
+    title: text("title"),
+    /** Entities mentioned in the answer close to where this source is cited. */
+    nearProductIds: jsonb("near_product_ids").$type<string[]>().notNull().default([]),
+    nearCompetitorIds: jsonb("near_competitor_ids").$type<string[]>().notNull().default([]),
+    observedAt: timestamp("observed_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("ai_citations_org_domain_idx").on(t.organizationId, t.registrableDomain, t.observedAt), index("ai_citations_test_idx").on(t.testId)],
+);
 
 // ─── Intelligence ───────────────────────────────────────────────────────
 export type OpportunityAction = { order: number; action: string; kind: string; done?: boolean };
+/** Each factor is 1 to 5; the rationale says why. */
+export type ScoringRationale = Partial<Record<"impact" | "confidence" | "effort" | "urgency", string>>;
+export type OpportunityNextAction = { label: string; href: string };
+export type OpportunitySources = { queryIds?: string[]; testIds?: string[]; urls?: string[]; clusterId?: string };
 
 export const opportunities = pgTable(
   "opportunities",
@@ -797,6 +1082,13 @@ export const opportunities = pgTable(
     urgency: integer("urgency").notNull(),
     priorityScore: doublePrecision("priority_score").notNull(),
     status: opportunityStatusEnum("status").notNull().default("OPEN"),
+    /** Taxonomy: CONTENT, QUERY, AI_VISIBILITY, CITATION, TECHNICAL, PRODUCT_KNOWLEDGE, DISTRIBUTION, CROSS_SELL, REFERRAL, CONVERSION. */
+    category: text("category").notNull().default("CONTENT"),
+    scoringRationale: jsonb("scoring_rationale").$type<ScoringRationale>().notNull().default({}),
+    nextAction: jsonb("next_action").$type<OpportunityNextAction | null>(),
+    sources: jsonb("sources").$type<OpportunitySources>().notNull().default({}),
+    /** Set when the condition stopped holding; the opportunity reopens if its fingerprint recurs. */
+    obsoletedAt: timestamp("obsoleted_at", { withTimezone: true }),
     /** Deterministic key so regeneration is idempotent. */
     fingerprint: text("fingerprint").notNull(),
     generatedBy: text("generated_by").notNull().default("rules"),
@@ -806,6 +1098,8 @@ export const opportunities = pgTable(
   (t) => [
     uniqueIndex("opportunities_fingerprint_uq").on(t.organizationId, t.fingerprint),
     index("opportunities_org_status_idx").on(t.organizationId, t.status, t.priorityScore),
+    index("opportunities_org_product_status_idx").on(t.organizationId, t.productId, t.status),
+    index("opportunities_org_category_idx").on(t.organizationId, t.category, t.status),
   ],
 );
 
@@ -1013,10 +1307,19 @@ export const attributionEvents = pgTable(
     utm: jsonb("utm").$type<Record<string, string>>().notNull().default({}),
     referrerHost: text("referrer_host"),
     landingUrl: text("landing_url"),
+    /** Tracker session (30 min inactivity); a session's first touch may be a measured DIRECT visit. */
+    sessionId: text("session_id"),
     ipHash: text("ip_hash"),
     occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("attribution_events_visitor_idx").on(t.organizationId, t.visitorId, t.occurredAt)],
+  (t) => [
+    index("attribution_events_visitor_idx").on(t.organizationId, t.visitorId, t.occurredAt),
+    index("attribution_events_identity_idx").on(t.organizationId, t.identityId, t.occurredAt),
+    index("attribution_events_session_idx").on(t.organizationId, t.sessionId),
+    index("attribution_events_ip_idx").on(t.occurredAt).where(sql`${t.ipHash} is not null`),
+    index("attribution_events_ip_hash_idx").on(t.organizationId, t.ipHash, t.occurredAt),
+    index("attribution_events_referral_idx").on(t.referralCodeId),
+  ],
 );
 
 export const conversionEvents = pgTable(
@@ -1038,12 +1341,23 @@ export const conversionEvents = pgTable(
     campaignId: uuid("campaign_id").references(() => campaigns.id, { onDelete: "set null" }),
     properties: jsonb("properties").$type<Record<string, string | number | boolean>>().notNull().default({}),
     idempotencyKey: text("idempotency_key"),
+    sessionId: text("session_id"),
+    utm: jsonb("utm").$type<Partial<Record<"source" | "medium" | "campaign" | "term" | "content", string>>>().notNull().default({}),
+    referrerHost: text("referrer_host"),
+    landingUrl: text("landing_url"),
+    /** Persisted single-touch decision (org default single-touch model) and the touches behind it. */
+    attributionRule: text("attribution_rule"),
+    attributionTouchId: uuid("attribution_touch_id").references(() => attributionEvents.id, { onDelete: "set null" }),
+    firstTouchId: uuid("first_touch_id").references(() => attributionEvents.id, { onDelete: "set null" }),
     occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
+    index("conversion_events_landing_idx").on(t.organizationId, t.landingUrl),
     uniqueIndex("conversion_events_idem_uq").on(t.organizationId, t.idempotencyKey),
     index("conversion_events_org_type_idx").on(t.organizationId, t.type, t.occurredAt),
     index("conversion_events_product_idx").on(t.productId, t.occurredAt),
+    index("conversion_events_identity_idx").on(t.organizationId, t.identityId),
+    index("conversion_events_referral_idx").on(t.organizationId, t.referralCodeId),
   ],
 );
 
@@ -1061,12 +1375,15 @@ export const subscriptions = pgTable(
     plan: text("plan"),
     status: subscriptionStatusEnum("status").notNull(),
     mrrCents: bigint("mrr_cents", { mode: "number" }).notNull().default(0),
-    currency: text("currency").notNull().default("EUR"),
+    /** ISO currency, always provided by the source (no default: Beacon never assumes a currency). */
+    currency: text("currency").notNull(),
     channel: channelEnum("channel"),
     referralCodeId: uuid("referral_code_id").references(() => referralCodes.id, { onDelete: "set null" }),
     campaignId: uuid("campaign_id").references(() => campaigns.id, { onDelete: "set null" }),
     startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    /** Provider time of the last event applied (ordering guard: older events never overwrite newer state). */
+    lastEventAt: timestamp("last_event_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -1086,16 +1403,20 @@ export const revenueEvents = pgTable(
     type: revenueTypeEnum("type").notNull(),
     amountCents: bigint("amount_cents", { mode: "number" }).notNull(),
     mrrDeltaCents: bigint("mrr_delta_cents", { mode: "number" }).notNull().default(0),
-    currency: text("currency").notNull().default("EUR"),
+    /** ISO currency, always provided by the source (no default: Beacon never assumes a currency). */
+    currency: text("currency").notNull(),
     channel: channelEnum("channel").notNull().default("DIRECT"),
     campaignId: uuid("campaign_id").references(() => campaigns.id, { onDelete: "set null" }),
     referralCodeId: uuid("referral_code_id").references(() => referralCodes.id, { onDelete: "set null" }),
     provider: text("provider").notNull(),
     externalId: text("external_id").notNull(),
+    /** Provider object behind the event (e.g. the Stripe charge of a refund), used to avoid double counting. */
+    sourceRef: text("source_ref"),
     occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
     createdAt: createdAt(),
   },
   (t) => [
+    index("revenue_events_source_ref_idx").on(t.organizationId, t.provider, t.sourceRef),
     uniqueIndex("revenue_events_ext_uq").on(t.organizationId, t.provider, t.externalId),
     index("revenue_events_org_time_idx").on(t.organizationId, t.occurredAt),
   ],
@@ -1150,6 +1471,8 @@ export const crossSellRules = pgTable("cross_sell_rules", {
   frequencyCapDays: integer("frequency_cap_days").notNull().default(14),
   maxImpressions: integer("max_impressions").notNull().default(3),
   active: boolean("active").notNull().default(true),
+  /** Optional typed ecosystem relationship this rule implements. */
+  relationshipId: uuid("relationship_id").references((): AnyPgColumn => productRelationships.id, { onDelete: "set null" }),
   createdAt: createdAt(),
 });
 
@@ -1168,7 +1491,7 @@ export const crossSellEvents = pgTable(
     revenueCents: bigint("revenue_cents", { mode: "number" }),
     occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("cross_sell_events_rule_identity_idx").on(t.ruleId, t.identityId, t.occurredAt)],
+  (t) => [index("cross_sell_events_rule_identity_idx").on(t.ruleId, t.identityId, t.occurredAt), index("cross_sell_events_identity_idx").on(t.identityId, t.occurredAt), index("cross_sell_events_org_type_idx").on(t.organizationId, t.type, t.occurredAt)],
 );
 
 // ─── Integrations & scores ──────────────────────────────────────────────
@@ -1185,10 +1508,49 @@ export const integrations = pgTable(
     lastSyncAt: timestamp("last_sync_at", { withTimezone: true }),
     lastError: text("last_error"),
     consecutiveFailures: integer("consecutive_failures").notNull().default(0),
+    /** Last successful sync or connection test; last failed one. */
+    lastSuccessAt: timestamp("last_success_at", { withTimezone: true }),
+    lastFailureAt: timestamp("last_failure_at", { withTimezone: true }),
+    /** Scopes / permissions granted to Beacon (OAuth scopes, property permission level). */
+    scopes: text("scopes").array().notNull().default(sql`'{}'::text[]`),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [uniqueIndex("integrations_uq").on(t.organizationId, t.provider, t.productId)],
+);
+
+/**
+ * Normalized daily search rows (Search Console, Bing). The grain of a row is
+ * given by which dimensions are set: none = daily total, query only, page
+ * only, query + page, country only, device only. Re-imports upsert on the
+ * unique key, so overlapping syncs never double count.
+ */
+export const searchDaily = pgTable(
+  "search_daily",
+  {
+    id: id(),
+    organizationId: orgId(),
+    productId: uuid("product_id").references(() => products.id, { onDelete: "cascade" }),
+    integrationId: uuid("integration_id")
+      .notNull()
+      .references(() => integrations.id, { onDelete: "cascade" }),
+    provider: searchProviderEnum("provider").notNull(),
+    day: date("day").notNull(),
+    query: text("query"),
+    page: text("page"),
+    country: text("country"),
+    device: text("device"),
+    clicks: integer("clicks").notNull().default(0),
+    impressions: integer("impressions").notNull().default(0),
+    ctr: doublePrecision("ctr").notNull().default(0),
+    position: doublePrecision("position"),
+    importedAt: timestamp("imported_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique("search_daily_uq").on(t.integrationId, t.day, t.query, t.page, t.country, t.device).nullsNotDistinct(),
+    index("search_daily_org_product_day_idx").on(t.organizationId, t.productId, t.day),
+    index("search_daily_org_query_idx").on(t.organizationId, t.query),
+  ],
 );
 
 export const providerCredentials = pgTable("provider_credentials", {
@@ -1234,6 +1596,8 @@ export const jobs = pgTable(
     runAt: timestamp("run_at", { withTimezone: true }).notNull().defaultNow(),
     lockedAt: timestamp("locked_at", { withTimezone: true }),
     lockedBy: text("locked_by"),
+    /** Refreshed by long handlers; stale recovery reclaims jobs whose heartbeat stopped. */
+    heartbeatAt: timestamp("heartbeat_at", { withTimezone: true }),
     idempotencyKey: text("idempotency_key").unique(),
     lastError: text("last_error"),
     result: jsonb("result").$type<unknown>(),
@@ -1241,7 +1605,7 @@ export const jobs = pgTable(
     finishedAt: timestamp("finished_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
-  (t) => [index("jobs_claim_idx").on(t.status, t.runAt), index("jobs_org_type_idx").on(t.organizationId, t.type, t.createdAt)],
+  (t) => [index("jobs_claim_idx").on(t.status, t.runAt), index("jobs_org_type_idx").on(t.organizationId, t.type, t.createdAt), index("jobs_status_finished_idx").on(t.status, t.finishedAt)],
 );
 
 // ─── Relations (for relational queries) ─────────────────────────────────
@@ -1351,6 +1715,119 @@ export const agentMessages = pgTable(
   (t) => [uniqueIndex("agent_messages_seq_uq").on(t.conversationId, t.seq)],
 );
 
+// ─── Measurement (Phase 2) ──────────────────────────────────────────────
+/** Credit of one conversion or revenue event to one touch under one model; weights per (event, model) sum to 1. */
+export const attributionCredits = pgTable(
+  "attribution_credits",
+  {
+    id: id(),
+    organizationId: orgId(),
+    productId: uuid("product_id").references(() => products.id, { onDelete: "cascade" }),
+    conversionEventId: uuid("conversion_event_id").references(() => conversionEvents.id, { onDelete: "cascade" }),
+    revenueEventId: uuid("revenue_event_id").references(() => revenueEvents.id, { onDelete: "cascade" }),
+    /** null when nothing qualified (channel UNATTRIBUTED). */
+    touchId: uuid("touch_id").references(() => attributionEvents.id, { onDelete: "set null" }),
+    model: attributionModelEnum("model").notNull(),
+    channel: channelEnum("channel"),
+    campaignId: uuid("campaign_id").references(() => campaigns.id, { onDelete: "set null" }),
+    weight: doublePrecision("weight").notNull(),
+    valueCents: bigint("value_cents", { mode: "number" }),
+    currency: text("currency"),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("attribution_credits_org_model_idx").on(t.organizationId, t.model, t.occurredAt),
+    index("attribution_credits_conversion_idx").on(t.conversionEventId),
+    index("attribution_credits_revenue_idx").on(t.revenueEventId),
+    check("attribution_credits_target_ck", sql`${t.conversionEventId} IS NOT NULL OR ${t.revenueEventId} IS NOT NULL`),
+    check("attribution_credits_weight_ck", sql`${t.weight} >= 0 AND ${t.weight} <= 1`),
+  ],
+);
+
+/** Every verified provider webhook event, stored before processing (reprocessable when unmapped or failed). */
+export const webhookInbox = pgTable(
+  "webhook_inbox",
+  {
+    id: id(),
+    organizationId: orgId(),
+    integrationId: uuid("integration_id")
+      .notNull()
+      .references(() => integrations.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    externalId: text("external_id").notNull(),
+    eventType: text("event_type").notNull(),
+    status: webhookStatusEnum("status").notNull().default("RECEIVED"),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+    error: text("error"),
+    attempts: integer("attempts").notNull().default(0),
+    eventCreatedAt: timestamp("event_created_at", { withTimezone: true }),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+  },
+  (t) => [uniqueIndex("webhook_inbox_event_uq").on(t.integrationId, t.externalId), index("webhook_inbox_status_idx").on(t.organizationId, t.status, t.receivedAt)],
+);
+
+/**
+ * GA4 daily rows. `report` names the grain: "landing" (landing page, source,
+ * medium, campaign) or "geo_device" (country, device); dimensions a report
+ * does not use are ''. Never sum rows across reports.
+ */
+export const analyticsDaily = pgTable(
+  "analytics_daily",
+  {
+    id: id(),
+    organizationId: orgId(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    integrationId: uuid("integration_id")
+      .notNull()
+      .references(() => integrations.id, { onDelete: "cascade" }),
+    report: text("report").$type<"landing" | "geo_device">().notNull(),
+    day: date("day").notNull(),
+    landingPage: text("landing_page").notNull().default(""),
+    source: text("source").notNull().default(""),
+    medium: text("medium").notNull().default(""),
+    campaign: text("campaign").notNull().default(""),
+    country: text("country").notNull().default(""),
+    device: text("device").notNull().default(""),
+    sessions: integer("sessions").notNull().default(0),
+    users: integer("users").notNull().default(0),
+    engagedSessions: integer("engaged_sessions").notNull().default(0),
+    keyEvents: doublePrecision("key_events").notNull().default(0),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex("analytics_daily_uq").on(t.integrationId, t.report, t.day, t.landingPage, t.source, t.medium, t.campaign, t.country, t.device),
+    index("analytics_daily_product_idx").on(t.organizationId, t.productId, t.report, t.day),
+  ],
+);
+
+/** Typed ecosystem graph between products (explained by a rationale, optionally sourced). */
+export const productRelationships = pgTable(
+  "product_relationships",
+  {
+    id: id(),
+    organizationId: orgId(),
+    fromProductId: uuid("from_product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    toProductId: uuid("to_product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    type: productRelationshipTypeEnum("type").notNull(),
+    rationale: text("rationale").notNull(),
+    sourceId: uuid("source_id").references(() => productSources.id, { onDelete: "set null" }),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("product_relationships_uq").on(t.organizationId, t.fromProductId, t.toProductId, t.type),
+    check("product_relationships_distinct_ck", sql`${t.fromProductId} <> ${t.toProductId}`),
+  ],
+);
+
 export const TENANT_TABLES = [
   "memberships",
   "api_keys",
@@ -1362,6 +1839,7 @@ export const TENANT_TABLES = [
   "product_faqs",
   "product_proofs",
   "product_changelog",
+  "product_claims",
   "competitors",
   "product_competitors",
   "query_clusters",
@@ -1376,6 +1854,7 @@ export const TENANT_TABLES = [
   "ai_visibility_prompts",
   "ai_visibility_tests",
   "ai_mentions",
+  "ai_citations",
   "opportunities",
   "growth_reports",
   "recommendations",
@@ -1396,8 +1875,16 @@ export const TENANT_TABLES = [
   "cross_sell_events",
   "integrations",
   "provider_credentials",
+  "search_daily",
   "beacon_scores",
   "media",
   "agent_conversations",
   "agent_messages",
+  "attribution_credits",
+  "webhook_inbox",
+  "analytics_daily",
+  "product_relationships",
+  "crawl_links",
+  "sitemap_snapshots",
+  "verified_domains",
 ] as const;

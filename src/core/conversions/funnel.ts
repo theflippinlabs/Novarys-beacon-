@@ -1,17 +1,34 @@
-export const FUNNEL_STEPS = ["PAGE_VIEW", "CTA_CLICK", "SIGNUP", "TRIAL_STARTED", "ACTIVATED", "CHECKOUT_STARTED", "SUBSCRIBED"] as const;
+import type { CanonicalEvent } from "./events";
+
+/** Acquisition funnel, in order. Optional steps are shown only when the product sends them. */
+export const FUNNEL_STEPS = [
+  "PAGE_VIEW",
+  "CTA_CLICK",
+  "PRODUCT_VIEWED",
+  "SIGNUP_STARTED",
+  "SIGNUP_COMPLETED",
+  "TRIAL_STARTED",
+  "ACTIVATION_COMPLETED",
+  "CHECKOUT_STARTED",
+  "SUBSCRIPTION_STARTED",
+] as const satisfies readonly CanonicalEvent[];
 export type FunnelStep = (typeof FUNNEL_STEPS)[number];
+export const OPTIONAL_FUNNEL_STEPS: ReadonlySet<FunnelStep> = new Set(["PRODUCT_VIEWED", "SIGNUP_STARTED"]);
 
 export type FunnelRow = { step: FunnelStep; visitors: number; conversionFromPrev: number | null; conversionFromStart: number | null };
 
 /**
- * Funnel from distinct-visitor counts per step. Rates are null when the
- * denominator is zero (never shown as 0% or 100% without data).
+ * Funnel from distinct-person counts per step (a cohort: see
+ * `funnelCounts`). Optional steps with no event are left out, so a product
+ * that never sends them keeps meaningful step-to-step rates. Rates are null
+ * when the denominator is zero (never shown as 0% or 100% without data).
  */
 export function buildFunnel(counts: Partial<Record<FunnelStep, number>>): FunnelRow[] {
+  const steps = FUNNEL_STEPS.filter((s) => !OPTIONAL_FUNNEL_STEPS.has(s) || (counts[s] ?? 0) > 0);
   const start = counts.PAGE_VIEW ?? 0;
-  return FUNNEL_STEPS.map((step, i) => {
+  return steps.map((step, i) => {
     const v = counts[step] ?? 0;
-    const prev = i === 0 ? null : counts[FUNNEL_STEPS[i - 1]] ?? 0;
+    const prev = i === 0 ? null : (counts[steps[i - 1]] ?? 0);
     return {
       step,
       visitors: v,

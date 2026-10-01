@@ -116,7 +116,8 @@ describe("POST /api/v1/events", () => {
     const a = await (await sendEvent({ type: "CTA_CLICK", visitorId: v, idempotencyKey: key })).json();
     const b = await (await sendEvent({ type: "CTA_CLICK", visitorId: v, idempotencyKey: key })).json();
     expect(a.duplicate).toBe(false);
-    expect(b).toMatchObject({ ok: true, duplicate: true, id: null });
+    // A replay returns the stored event (same id) and writes nothing.
+    expect(b).toMatchObject({ ok: true, duplicate: true, id: a.id });
     const rows = await q((tx) => tx.select().from(conversionEvents).where(and(eq(conversionEvents.organizationId, orgId), eq(conversionEvents.idempotencyKey, key))));
     expect(rows).toHaveLength(1);
   });
@@ -162,7 +163,7 @@ describe("identity linking, revenue attribution and commissions", () => {
   });
 
   it("revenue requires a secret key with revenue:write", async () => {
-    const body = { externalId: `inv_${uid()}`, type: "ONE_TIME", amountCents: 100 };
+    const body = { externalId: `inv_${uid()}`, type: "ONE_TIME", amountCents: 100, currency: "EUR" };
     expect((await sendRevenue(body, skNoRevenue)).status).toBe(401);
     expect((await sendRevenue(body, pk)).status).toBe(401);
     expect((await sendRevenue({ type: "NEW" })).status).toBe(400);
@@ -185,7 +186,7 @@ describe("identity linking, revenue attribution and commissions", () => {
     const touch = await sendEvent({ type: "PAGE_VIEW", visitorId: v, url: `${ORIGIN()}/?ref=${code}`, occurredAt: new Date(Date.now() - opts.touchAgoMs).toISOString() });
     expect((await touch.json()).channel).toBe("AFFILIATE");
     await sendEvent({ type: "SIGNUP", visitorId: v, identityRef: ref, emailHashInput: opts.email }, { key: sk, origin: null });
-    const res = await sendRevenue({ externalId: `inv_${uid()}`, type: "NEW", amountCents: 10_000, mrrDeltaCents: 10_000, identityRef: ref, subscription: { externalId: `sub_${uid()}`, status: "ACTIVE", mrrCents: 10_000 } });
+    const res = await sendRevenue({ externalId: `inv_${uid()}`, type: "NEW", amountCents: 10_000, mrrDeltaCents: 10_000, currency: "EUR", identityRef: ref, subscription: { externalId: `sub_${uid()}`, status: "ACTIVE", mrrCents: 10_000 } });
     expect(res.status).toBe(201);
     const json = await res.json();
     const comm = await q((tx) => tx.select().from(commissions).where(eq(commissions.revenueEventId, json.id)));

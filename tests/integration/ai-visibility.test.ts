@@ -42,12 +42,15 @@ describe("runPromptTests", () => {
     expect(tests).toHaveLength(1);
     const t = tests[0];
     expect(t).toMatchObject({ provider: "anthropic", model: "fake-model-1", label: "SAMPLED_OBSERVATION", ownDomainCited: true, orgMentioned: true, position: 2 });
-    expect(t.productsMentioned).toEqual([{ productId, name: "Beacon Live", position: 2 }]);
-    expect(t.competitorsMentioned).toEqual([{ competitorId, name: "ModBot", position: 1 }]);
+    expect(t.productsMentioned).toMatchObject([{ productId, name: "Beacon Live", position: 2 }]);
+    expect(t.productsMentioned[0].snippet).toContain("Beacon Live");
+    expect(t.promptText).toBe(prompt.prompt);
+    expect(t.competitorsMentioned).toMatchObject([{ competitorId, name: "ModBot", position: 1, offset: 20 }]);
     expect(t.citations).toEqual(expect.arrayContaining(["https://reviews.example/tiktok-moderation", `https://${domain}/docs`]));
 
     const mentions = await run((tx) => tx.select().from(aiMentions).where(eq(aiMentions.testId, t.id)));
-    expect(mentions).toEqual([expect.objectContaining({ productId, engine: "anthropic:fake-model-1", source: "SAMPLED_TEST", context: prompt.prompt })]);
+    // Mention context is the snippet of the answer around the mention, not the prompt.
+    expect(mentions).toEqual([expect.objectContaining({ productId, engine: "anthropic:fake-model-1", source: "SAMPLED_TEST", context: expect.stringContaining("Beacon Live"), snippet: expect.stringContaining("Beacon Live") })]);
     const runs = await run((tx) => tx.select().from(aiRuns).where(eq(aiRuns.task, "analyzeVisibility")));
     expect(runs.length).toBeGreaterThanOrEqual(1);
 

@@ -1,6 +1,7 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import type { Metadata } from "next";
-import { addCrossSellRuleAction, addExperimentAction, decideRecommendationAction, runReportAction, setExperimentStatusAction, toggleCrossSellRuleAction } from "@/app/actions/growth";
+import { addCrossSellRuleAction, addExperimentAction, addRelationshipAction, decideRecommendationAction, removeRelationshipAction, runReportAction, setExperimentStatusAction, toggleCrossSellRuleAction } from "@/app/actions/growth";
+import { listRelationships, RELATIONSHIP_TYPES, ruleFunnels } from "@/services/ecosystem";
 import { Badge, Button, EmptyState, Field, Flash, HiddenBack, PageHeader, Panel, StatusBadge, Table, Td, Th, formatValue } from "@/components/ui";
 import { crossSellRules, experiments, growthReports, products, recommendations } from "@/db/schema";
 import type { GrowthAnalysis } from "@/core/autopilot/analyst";
@@ -26,10 +27,8 @@ export default async function AutopilotPage({ searchParams }: { searchParams: Pr
     const exps = await tx.select().from(experiments).where(eq(experiments.organizationId, org)).orderBy(desc(experiments.updatedAt));
     const prods = await tx.select().from(products).where(eq(products.organizationId, org)).orderBy(products.name);
     const rules = await tx.select().from(crossSellRules).where(eq(crossSellRules.organizationId, org));
-    const ruleStats = await tx.execute<{ rule_id: string; imp: number; clk: number; conv: number; rev: number }>(sql`
-      select rule_id, count(*) filter (where type = 'IMPRESSION')::int as imp, count(*) filter (where type = 'CLICK')::int as clk,
-        count(*) filter (where type = 'CONVERSION')::int as conv, coalesce(sum(revenue_cents), 0)::bigint as rev
-      from cross_sell_events where organization_id = ${org} group by rule_id`);
+    const ruleStats = await ruleFunnels(tx, org);
+    const relationships = await listRelationships(tx, org);
     let recommendation = null;
     if (need) {
       const graphs = [];
@@ -39,11 +38,12 @@ export default async function AutopilotPage({ searchParams }: { searchParams: Pr
       }
       recommendation = recommendProducts(need, graphs, { complementaryPairs: new Set(rules.map((r) => `${r.sourceProductId}:${r.destinationProductId}`)) });
     }
-    return { report, recs, exps, prods, rules, ruleStats: new Map(ruleStats.rows.map((r) => [r.rule_id, r])), recommendation };
+    return { report, recs, exps, prods, rules, ruleStats, relationships, recommendation };
   });
   const back = "/autopilot";
   const s = data.report?.sections as GrowthAnalysis | undefined;
   const pname = (id: string) => data.prods.find((p) => p.id === id)?.name ?? t("n/a");
+  const rel = (id: string | null) => (id ? data.relationships.find((x) => x.id === id) : undefined);
   /** Enum value in lower case (English output keeps the raw value when `raw` is set). */
   const lower = (v: string, raw = false) => (locale === "en" && raw ? v : enumLabel(t, v).toLocaleLowerCase(intl));
   const recBody = (body: string) => {
@@ -290,8 +290,9 @@ export default async function AutopilotPage({ searchParams }: { searchParams: Pr
                   <Th>{t("Conditions")}</Th>
                   <Th>{t("Impr.")}</Th>
                   <Th>{t("Clicks")}</Th>
-                  <Th>{t("Conv.")}</Th>
-                  <Th>{t("Revenue")}</Th>
+                  <Th>{t("Signups")}</Th>
+                  <Th>{t("Subs")}</Th>
+                  <Th>{t("Measured revenue")}</Th>
                   <Th />
                 </tr>
               </thead>
@@ -303,6 +304,7 @@ export default async function AutopilotPage({ searchParams }: { searchParams: Pr
                       <Td>
                         <div className="text-platinum">{r.name}</div>
                         <div className="text-xs text-muted">{r.message}</div>
+                        {rel(r.relationshipId) && <Badge tone="muted">{enumLabel(t, rel(r.relationshipId)!.type)}</Badge>}
                       </Td>
                       <Td className="text-xs">
                         {pname(r.sourceProductId)} → {pname(r.destinationProductId)}
@@ -312,10 +314,14 @@ export default async function AutopilotPage({ searchParams }: { searchParams: Pr
                         {r.conditions.minDaysOnSource ? ` · ≥${t("{n}d", { n: r.conditions.minDaysOnSource })}` : ""}
                         <div className="text-muted">{t("cap 1/{days}d · max {max}", { days: r.frequencyCapDays, max: r.maxImpressions })}</div>
                       </Td>
-                      <Td className="num">{Number(st?.imp ?? 0)}</Td>
-                      <Td className="num">{Number(st?.clk ?? 0)}</Td>
-                      <Td className="num">{Number(st?.conv ?? 0)}</Td>
-                      <Td className="num">{formatValue(Number(st?.rev ?? 0), "money", undefined, intl)}</Td>
+                      <Td className="num">{st?.impressions ?? 0}</Td>
+                      <Td className="num">{st?.clicks ?? 0}</Td>
+                      <Td className="num">{st?.signups ?? 0}</Td>
+                      <Td className="num">{st?.subscriptions ?? 0}</Td>
+                      <Td className="num text-xs">
+                        {st?.revenue.length ? st.revenue.map((v) => formatValue(v.cents, "money", v.currency, intl)).join(" · ") : formatValue(0, "count", undefined, intl)}
+                        {st?.reportedRevenueCents ? <div className="text-[11px] text-muted">{t("{amount} reported by the product", { amount: formatValue(st.reportedRevenueCents, "money", undefined, intl) })}</div> : null}
+                      </Td>
                       <Td>
                         {can("growth:write") && (
                           <form action={toggleCrossSellRuleAction}>
@@ -334,6 +340,9 @@ export default async function AutopilotPage({ searchParams }: { searchParams: Pr
           ) : (
             <p className="p-4 text-sm text-muted">{t("No cross-sell rules. Recommendations are only shown to identities that consented to cross-product recommendations.")}</p>
           )}
+          <p className="border-t border-line px-4 py-2 text-[11px] text-muted">
+            {t("Impressions and clicks: cross-sell events recorded by the products. Signups and subscriptions: destination-product events whose visit came from the rule's link (utm_source beacon-cross-sell, utm_campaign = rule id). Measured revenue: revenue events of those people in the destination product. Correlation, not causation.")}
+          </p>
         </Panel>
         {can("growth:write") && data.prods.length > 1 && (
           <Panel title={t("New cross-sell rule")}>
@@ -385,8 +394,108 @@ export default async function AutopilotPage({ searchParams }: { searchParams: Pr
               <Field label={t("Max impressions")}>
                 <input name="maxImpressions" type="number" min={1} max={20} defaultValue={3} />
               </Field>
+              {data.relationships.length > 0 && (
+                <Field label={t("Ecosystem relationship (optional)")}>
+                  <select name="relationshipId" defaultValue="">
+                    <option value="">{t("None")}</option>
+                    {data.relationships.map((x) => (
+                      <option key={x.id} value={x.id}>
+                        {`${pname(x.fromProductId)} → ${pname(x.toProductId)} · ${enumLabel(t, x.type)}`}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              )}
               <div>
                 <Button>{t("Create rule")}</Button>
+              </div>
+            </form>
+          </Panel>
+        )}
+      </div>
+
+      <div id="ecosystem" className="mt-6 grid gap-6 xl:grid-cols-[1fr_22rem]">
+        <Panel title={t("Ecosystem graph")} eyebrow={t("Typed relationships between products · explained, optionally sourced")} pad={false}>
+          {data.relationships.length ? (
+            <Table>
+              <thead>
+                <tr>
+                  <Th>{t("From → to")}</Th>
+                  <Th>{t("Type")}</Th>
+                  <Th>{t("Rationale")}</Th>
+                  <Th>{t("Rules")}</Th>
+                  <Th />
+                </tr>
+              </thead>
+              <tbody>
+                {data.relationships.map((x) => (
+                  <tr key={x.id}>
+                    <Td className="text-xs">
+                      {pname(x.fromProductId)} → {pname(x.toProductId)}
+                    </Td>
+                    <Td>
+                      <Badge>{enumLabel(t, x.type)}</Badge>
+                    </Td>
+                    <Td className="text-xs">
+                      {x.rationale}
+                      {x.sourceId && <div className="text-[11px] text-muted">{t("Sourced")}</div>}
+                    </Td>
+                    <Td className="num text-xs">{data.rules.filter((r) => r.relationshipId === x.id).length}</Td>
+                    <Td>
+                      {can("growth:write") && (
+                        <form action={removeRelationshipAction}>
+                          <HiddenBack path={`${back}#ecosystem`} />
+                          <input type="hidden" name="id" value={x.id} />
+                          <button className="eyebrow hover:text-chrome">{t("remove")}</button>
+                        </form>
+                      )}
+                    </Td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          ) : (
+            <p className="p-4 text-sm text-muted">{t("No relationships yet. Describe how your products relate (complementary, same audience, workflow extension, upsell, cross-sell) so cross-sell rules rest on an explicit, reviewable reason.")}</p>
+          )}
+        </Panel>
+        {can("growth:write") && data.prods.length > 1 && (
+          <Panel title={t("New relationship")}>
+            <form action={addRelationshipAction} className="flex flex-col gap-3">
+              <HiddenBack path={`${back}#ecosystem`} />
+              <div className="grid grid-cols-2 gap-2">
+                <Field label={t("From")}>
+                  <select name="fromProductId">
+                    {data.prods.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label={t("To")}>
+                  <select name="toProductId" defaultValue={data.prods[1]?.id}>
+                    {data.prods.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              </div>
+              <Field label={t("Type")}>
+                <select name="type">
+                  {RELATIONSHIP_TYPES.map((x) => (
+                    <option key={x} value={x}>
+                      {enumLabel(t, x)}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label={t("Rationale (why these products relate)")}>
+                <textarea name="rationale" required minLength={10} maxLength={500} className="min-h-16" />
+              </Field>
+              <div>
+                <Button>{t("Save relationship")}</Button>
               </div>
             </form>
           </Panel>

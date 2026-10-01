@@ -65,7 +65,7 @@ export const queueAiVisibilityTests = defineTool({
 export const getConversionsSummary = defineTool({
   name: "get_conversions_summary",
   label: "Reading conversions",
-  description: "Read the conversion funnel (page view → CTA click → signup → trial → activation → checkout → subscription, distinct visitors per step and step rates) and the breakdown by acquisition channel for a period, from Beacon's first-party events. If no events were ever received, returns \"not connected\"; never estimate.",
+  description: "Read the cohort conversion funnel (people first seen in the period: page view → CTA click → [product viewed → signup started, when sent] → signup completed → trial → activation → checkout → subscription, distinct people per step and step rates) and the breakdown by acquisition channel for a period, from Beacon's first-party events. If no events were ever received, returns \"not connected\"; never estimate.",
   permission: "read",
   kind: "read",
   input: z.object({ days: daysInput, product: optionalProductRef() }),
@@ -89,19 +89,19 @@ export const getConversionsSummary = defineTool({
 export const getRevenueSummary = defineTool({
   name: "get_revenue_summary",
   label: "Reading revenue",
-  description: "Read revenue for a period vs the previous period: new subscriptions, revenue, new MRR via Beacon channels, current MRR/ARR, and revenue/MRR by acquisition channel. Amounts are in minor units (cents) and grouped per currency (never summed across currencies). If no revenue source is connected, values are \"not connected\".",
+  description: "Read revenue for a period vs the previous period: new subscriptions, revenue, new MRR via Beacon channels, current MRR/ARR, and revenue/MRR by acquisition channel. Amounts are in minor units (cents) and grouped per currency (never summed across currencies). If no revenue source is connected, values are \"not connected\"; connected without data yet, \"no data yet\".",
   permission: "read",
   kind: "read",
   input: z.object({ days: daysInput }),
   run: async ({ tx, ctx }, i) => {
     const days = i.days ?? 28;
     const k = await kpis(tx, ctx.org.id, { days });
-    const connected = k.revenue.revenue.now !== null;
+    const connected = k.revenue.revenue.state === "OK";
     const byChannel = connected ? await revenueByDimension(tx, ctx.org.id, "channel", days) : [];
     const mrrByChannel = connected ? await mrrByDimension(tx, ctx.org.id, "channel") : [];
     return {
       periodDays: days,
-      currency: connected ? k.currency : null,
+      currencies: connected ? k.currencies : [],
       newSubscriptions: kpi(k.revenue.newSubscriptions),
       revenue: kpi(k.revenue.revenue, "money_minor_units"),
       newMrrViaBeaconChannels: kpi(k.revenue.beaconNewMrr, "money_minor_units"),

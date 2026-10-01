@@ -32,23 +32,50 @@ export function parseNamed(text: string | null | undefined): { name: string; slu
 }
 
 export const INTERVALS = ["ONE_TIME", "MONTH", "YEAR", "USAGE", "CUSTOM"] as const;
+export type Interval = (typeof INTERVALS)[number];
 
-/** "Plan | price | currency | interval | trial days | description": blank price means unknown/not public. */
+/** Unambiguous currency symbols only ("$" is shared by many currencies and is never guessed). */
+const SYMBOLS: Record<string, string> = { "€": "EUR", "£": "GBP" };
+
+/**
+ * Parse a price field into minor units. Returns null unless the field is a
+ * number: "Contact sales", "Custom", "On request" or "" are unknown prices,
+ * never 0. Accepts "29", "29.90", "29,90", "1,299.50", "1 299", "€29".
+ */
+export function parsePrice(text: string | null | undefined): number | null {
+  let t = (text ?? "").trim().replace(/[€£$\s\u00a0\u202f]/g, "");
+  if (!t) return null;
+  if (/^\d+,\d{1,2}$/.test(t)) t = t.replace(",", ".");
+  else if (/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(t)) t = t.replace(/,/g, "");
+  if (!/^\d+(\.\d+)?$/.test(t)) return null;
+  const n = Number(t);
+  return Number.isFinite(n) ? Math.round(n * 100) : null;
+}
+
+/**
+ * "Plan | price | currency | interval | trial days | description".
+ * Nothing is defaulted: a missing or invalid currency or interval is null
+ * (shown as "unknown" and asked for in onboarding). A non-numeric price
+ * ("Contact sales") is null with a CUSTOM interval unless one is given.
+ */
 export function parsePricing(text: string | null | undefined) {
-  return splitLines(text, 20).map((line, i) => {
-    const [planName, price, currency, interval, trial, description] = line.split("|").map((s) => s?.trim() ?? "");
-    const p = price ? Number(price.replace(/[^\d.]/g, "")) : NaN;
-    const iv = (interval || "MONTH").toUpperCase();
-    return {
-      planName: planName.slice(0, 100),
-      priceCents: Number.isFinite(p) ? Math.round(p * 100) : null,
-      currency: /^[A-Za-z]{3}$/.test(currency) ? currency.toUpperCase() : "EUR",
-      interval: (INTERVALS as readonly string[]).includes(iv) ? (iv as (typeof INTERVALS)[number]) : "MONTH",
-      trialDays: trial && /^\d+$/.test(trial) ? Number(trial) : null,
-      description: description || null,
-      sortOrder: i,
-    };
-  }).filter((p) => p.planName);
+  return splitLines(text, 20)
+    .map((line, i) => {
+      const [planName, price = "", currency = "", interval = "", trial = "", description = ""] = line.split("|").map((s) => s?.trim() ?? "");
+      const priceCents = parsePrice(price);
+      const iv = interval.toUpperCase();
+      const symbol = Object.keys(SYMBOLS).find((k) => price.includes(k));
+      return {
+        planName: planName.slice(0, 100),
+        priceCents,
+        currency: /^[A-Za-z]{3}$/.test(currency) ? currency.toUpperCase() : symbol ? SYMBOLS[symbol] : null,
+        interval: (INTERVALS as readonly string[]).includes(iv) ? (iv as Interval) : price && priceCents === null ? ("CUSTOM" as const) : null,
+        trialDays: trial && /^\d+$/.test(trial) ? Number(trial) : null,
+        description: description || null,
+        sortOrder: i,
+      };
+    })
+    .filter((p) => p.planName);
 }
 
 export const SOURCE_KINDS = ["WEBSITE", "DOCUMENTATION", "PRICING", "CHANGELOG", "CASE_STUDY", "PRESS", "REPOSITORY", "LEGAL", "OTHER"] as const;

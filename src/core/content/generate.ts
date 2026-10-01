@@ -3,21 +3,12 @@ import { buildAnswerBlocks } from "@/core/geo/entity";
 import { breadcrumbJsonLd, faqPageJsonLd, softwareApplicationJsonLd, articleJsonLd } from "@/core/seo/schema-org";
 import { canonicalUrl, pagePath, type PageType } from "@/core/discovery/urls";
 import { formatMoney, stripLongDashes } from "@/core/util/text";
+import { publishableGraph } from "@/core/knowledge/facts";
+import type { ContentType } from "./types";
+import { EDITOR_TODO } from "./markers";
 
-export type ContentType =
-  | "LANDING_PAGE"
-  | "ARTICLE"
-  | "FAQ"
-  | "TUTORIAL"
-  | "COMPARISON"
-  | "RELEASE_ANNOUNCEMENT"
-  | "X_POST"
-  | "LINKEDIN_POST"
-  | "TIKTOK_SCRIPT"
-  | "SHORT_VIDEO_SCRIPT"
-  | "NEWSLETTER"
-  | "DIRECTORY_DESCRIPTION"
-  | "OUTREACH";
+export type { ContentType } from "./types";
+export { EDITOR_TODO } from "./markers";
 
 export type DraftRequest = {
   type: ContentType;
@@ -36,9 +27,6 @@ export type Draft = {
   factRefs: { ref: string; sourceUrl?: string }[];
   structuredData: Record<string, unknown>[];
 };
-
-/** Marker that blocks approval until an editor supplies information the graph does not hold. */
-export const EDITOR_TODO = "> TODO(editor):";
 
 class Writer {
   lines: string[] = [];
@@ -106,7 +94,12 @@ function pricingSection(g: ProductGraph, w: Writer) {
     return;
   }
   for (const p of plans) {
-    const price = p.priceCents === null ? "price on request" : `${formatMoney(p.priceCents, p.currency)}${p.interval === "MONTH" ? " / month" : p.interval === "YEAR" ? " / year" : ""}`;
+    if (p.priceCents !== null && !p.currency) {
+      // Never assume a currency: the editor must complete the plan in the knowledge graph.
+      w.todo(`Plan "${p.planName}" has a price without a currency. Complete it in the knowledge graph.`);
+      continue;
+    }
+    const price = p.priceCents === null ? "price on request" : `${formatMoney(p.priceCents, p.currency!)}${p.interval === "MONTH" ? " / month" : p.interval === "YEAR" ? " / year" : ""}`;
     w.line(`- **${p.planName}**: ${price}${p.trialDays ? ` (${p.trialDays}-day trial)` : ""}${p.description ? `. ${sentence(p.description)}` : ""}`);
     w.ref(`pricing:${p.id}`, src(g, p.sourceId) ?? g.product.pricingUrl ?? undefined);
   }
@@ -130,12 +123,14 @@ function productUrl(g: ProductGraph, path: string) {
 
 /**
  * Deterministic, fact-grounded draft generation. Every statement is composed
- * from knowledge-graph facts and recorded in `factRefs`; anything the graph
+ * from VERIFIED knowledge-graph facts and recorded in `factRefs`; anything the graph
  * cannot support becomes an explicit editor TODO instead of invented copy.
  * An LLM provider can rewrite the prose (see ai/tasks.ts) but the fact check
  * always runs against the same graph afterwards.
  */
-export function generateDraft(g: ProductGraph, req: DraftRequest): Draft {
+export function generateDraft(graph: ProductGraph, req: DraftRequest): Draft {
+  // Anything Beacon drafts can be published or distributed: only VERIFIED facts are used.
+  const g = publishableGraph(graph);
   const p = g.product;
   const w = new Writer();
   const facet = req.facetId ? g.facets.find((f) => f.id === req.facetId) ?? null : null;
@@ -352,8 +347,8 @@ export function generateDraft(g: ProductGraph, req: DraftRequest): Draft {
       w.line("**Description (≤ 300 chars):**").line();
       w.line(truncate([p.shortDescription, features.slice(0, 3).map((f) => f.name).join(", ")].filter(Boolean).join(" Features: "), 300)).line();
       for (const f of features.slice(0, 3)) w.ref(`facet:${f.id}`, src(g, f.sourceId));
-      const priced = g.pricing.filter((x) => x.priceCents !== null && isVerified(x));
-      w.line(`**Pricing:** ${priced.length ? priced.map((x) => `${x.planName} ${formatMoney(x.priceCents!, x.currency)}`).join(", ") : p.freeTrial ? "Free trial available" : "see website"}`);
+      const priced = g.pricing.filter((x) => x.priceCents !== null && x.currency && isVerified(x));
+      w.line(`**Pricing:** ${priced.length ? priced.map((x) => `${x.planName} ${formatMoney(x.priceCents!, x.currency!)}`).join(", ") : p.freeTrial ? "Free trial available" : "see website"}`);
       for (const x of priced) w.ref(`pricing:${x.id}`, src(g, x.sourceId));
       return finish(w, title, null, structuredData);
     }

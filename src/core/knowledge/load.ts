@@ -3,6 +3,7 @@ import type { Tx } from "@/db";
 import {
   competitors,
   productChangelog,
+  productClaims,
   productCompetitors,
   productFacets,
   productFaqs,
@@ -23,6 +24,7 @@ export async function loadProductGraph(tx: Tx, organizationId: string, productId
   const proofs = await tx.select().from(productProofs).where(eq(productProofs.productId, productId));
   const sources = await tx.select().from(productSources).where(eq(productSources.productId, productId));
   const changelog = await tx.select().from(productChangelog).where(eq(productChangelog.productId, productId));
+  const claims = await tx.select().from(productClaims).where(eq(productClaims.productId, productId)).orderBy(asc(productClaims.field), asc(productClaims.createdAt));
   const comps = await tx
     .select({ link: productCompetitors, competitor: competitors })
     .from(productCompetitors)
@@ -37,6 +39,7 @@ export async function loadProductGraph(tx: Tx, organizationId: string, productId
     sources,
     changelog: changelog.sort((a, b) => b.releasedOn.localeCompare(a.releasedOn)),
     competitors: comps.map((c) => ({ ...c.link, competitor: c.competitor })),
+    claims,
   };
 }
 

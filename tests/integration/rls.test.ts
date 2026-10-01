@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq, sql } from "drizzle-orm";
-import { asSystem, closeDb, db, withOrg } from "@/db";
-import { memberships, products, TENANT_TABLES } from "@/db/schema";
+import { asSystem, closeDb, db, systemDb, withOrg } from "@/db";
+import { jobs, memberships, organizations, products, TENANT_TABLES } from "@/db/schema";
 import { newOrg, pgError, uid } from "./helpers";
 
 type Org = Awaited<ReturnType<typeof newOrg>>;
@@ -85,9 +85,6 @@ describe("row level security", () => {
     }
   });
 
-  // BUG: `memberships` carries organization_id but is neither in TENANT_TABLES nor
-  // protected by RLS (0001_rls.sql), contrary to the schema.ts convention
-  // "Every tenant-owned table carries organization_id and is protected by RLS".
   it("every table with an organization_id column (except jobs, sessions) is in TENANT_TABLES", async () => {
     const r = await db().execute<{ table_name: string }>(sql`
       select distinct table_name from information_schema.columns
@@ -104,9 +101,71 @@ describe("row level security", () => {
     expect(missing).toEqual([]);
   });
 
-  // BUG (same root cause): org B's tenant scope can read org A's memberships (user ids + roles).
   it("memberships of org A are invisible inside withOrg(orgB)", async () => {
     const rows = await withOrg(B.org.id, (tx) => tx.select().from(memberships).where(eq(memberships.organizationId, A.org.id)));
     expect(rows).toHaveLength(0);
+  });
+
+  it("the application role cannot bypass RLS through session settings", async () => {
+    // The pre-Phase-2 bypass setting is ignored, in a tenant scope and on a raw connection.
+    const scoped = await withOrg(B.org.id, async (tx) => {
+      await tx.execute(sql`select set_config('beacon.bypass_rls', 'on', true)`);
+      return tx.select({ id: products.id }).from(products);
+    });
+    expect(scoped.map((r) => r.id)).not.toContain(productA.id);
+    const raw = await db().transaction(async (tx) => {
+      await tx.execute(sql`select set_config('beacon.bypass_rls', 'on', true)`);
+      return tx.execute<{ n: number }>(sql`select count(*)::int as n from products`);
+    });
+    expect(raw.rows[0].n).toBe(0);
+    // row_security = off does not bypass for a non-BYPASSRLS role: the query is refused.
+    const off = await pgError(
+      db().transaction(async (tx) => {
+        await tx.execute(sql`set local row_security = off`);
+        return tx.execute(sql`select count(*) from products`);
+      }),
+    );
+    expect(off.message).toMatch(/row-level security/i);
+    // An empty org id never matches.
+    const empty = await db().transaction(async (tx) => {
+      await tx.execute(sql`select set_config('beacon.org_id', '', true)`);
+      return tx.select().from(products);
+    });
+    expect(empty).toHaveLength(0);
+  });
+
+  it("the application role is not a member of the system role and cannot assume it", async () => {
+    const r = await db().execute<{ n: number }>(sql`select count(*)::int as n from pg_auth_members m join pg_roles r on r.oid = m.roleid join pg_roles u on u.oid = m.member where u.rolname = current_user and r.rolbypassrls`);
+    expect(r.rows[0].n).toBe(0);
+    const setRole = await pgError(db().execute(sql`set role beacon_system`));
+    expect(setRole.code).toBe("42501");
+  });
+
+  it("asSystem runs as a separate BYPASSRLS role that is not a superuser", async () => {
+    const r = await asSystem((tx) => tx.execute<{ user: string; rolsuper: boolean; rolbypassrls: boolean }>(sql`select current_user as user, rolsuper, rolbypassrls from pg_roles where rolname = current_user`));
+    expect(r.rows[0]).toMatchObject({ rolsuper: false, rolbypassrls: true });
+    const app = await db().execute<{ user: string }>(sql`select current_user as user`);
+    expect(r.rows[0].user).not.toBe(app.rows[0].user);
+  });
+
+  it("organizations are RLS-protected: a tenant scope only sees its own organisation", async () => {
+    const seen = await withOrg(B.org.id, (tx) => tx.select({ id: organizations.id }).from(organizations));
+    expect(seen.map((o) => o.id)).toEqual([B.org.id]);
+    const upd = await withOrg(B.org.id, (tx) => tx.update(organizations).set({ name: "hijacked" }).where(eq(organizations.id, A.org.id)).returning());
+    expect(upd).toHaveLength(0);
+    expect(await db().select().from(organizations)).toHaveLength(0);
+    // Foreign keys to organizations still work inside a tenant scope (RI checks bypass RLS).
+    const p = await withOrg(B.org.id, (tx) => tx.insert(products).values({ organizationId: B.org.id, slug: `fk-${uid()}`, name: "FK" }).returning());
+    expect(p).toHaveLength(1);
+  });
+
+  it("jobs have RLS enabled and forced, with system jobs hidden from tenant scopes", async () => {
+    const r = await db().execute<{ relrowsecurity: boolean; relforcerowsecurity: boolean }>(sql`select relrowsecurity, relforcerowsecurity from pg_class where relname = 'jobs' and relnamespace = 'public'::regnamespace`);
+    expect(r.rows[0]).toEqual({ relrowsecurity: true, relforcerowsecurity: true });
+    const [sys] = await systemDb().insert(jobs).values({ type: "test.noop", organizationId: null, status: "CANCELLED" }).returning();
+    const seen = await withOrg(A.org.id, (tx) => tx.select({ id: jobs.id }).from(jobs));
+    expect(seen.map((j) => j.id)).not.toContain(sys.id);
+    const ins = await pgError(withOrg(A.org.id, (tx) => tx.insert(jobs).values({ type: "test.noop", organizationId: null })));
+    expect(ins.code).toBe("42501");
   });
 });

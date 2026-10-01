@@ -22,7 +22,7 @@ export const QUALITY_THRESHOLDS = {
   usefulness: 0.65,
 } as const;
 
-const VERIFICATION_WEIGHT: Record<FactRef["verification"], number> = { VERIFIED: 1, UNVERIFIED: 0.55, NEEDS_REVIEW: 0.3, REJECTED: 0 };
+const VERIFICATION_WEIGHT: Record<FactRef["verification"], number> = { VERIFIED: 1, UNVERIFIED: 0.55, NEEDS_REVIEW: 0.3, OUTDATED: 0.3, CONFLICTING: 0.1, REJECTED: 0 };
 
 const INTENT_FIT: Record<PageType, Partial<Record<Intent, number>>> = {
   PRODUCT: { NAVIGATIONAL: 1, COMMERCIAL: 0.9, TRANSACTIONAL: 0.8, INFORMATIONAL: 0.6 },

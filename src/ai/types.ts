@@ -19,7 +19,22 @@ export interface LlmProvider {
   readonly label: string;
   readonly model: string;
   generateObject?<S extends z.ZodType>(args: { system: string; prompt: string; schema: S; maxTokens?: number }): Promise<z.infer<S>>;
-  answer(prompt: string): Promise<{ text: string; citations: string[] }>;
+  answer(prompt: string): Promise<AnswerResult>;
 }
+
+/**
+ * One sampled answer. `servedModel` is the model the provider reports having
+ * served (may differ from the configured one); `grounded` is true when the
+ * answer used live web search; `citationDetails` keeps titles and character
+ * offsets where the provider annotates them.
+ */
+export type AnswerResult = {
+  text: string;
+  citations: string[];
+  servedModel?: string | null;
+  grounded?: boolean;
+  params?: Record<string, unknown>;
+  citationDetails?: { url: string; title?: string | null; offsets?: number[] }[];
+};
 
 export type ProviderCredentials = { apiKey: string; model?: string; baseUrl?: string };

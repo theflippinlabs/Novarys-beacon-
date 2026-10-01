@@ -37,10 +37,17 @@ export function iso(d: Date | string | null | undefined): string | null {
   return d instanceof Date ? d.toISOString() : String(d);
 }
 
-/** A measured KPI, or an explicit "not connected" marker, never an estimate or a zero standing in for missing data. */
+/**
+ * A measured KPI, or an explicit "not connected" / "no data yet" marker, never
+ * an estimate or a zero standing in for missing data. Money in several
+ * currencies is returned per currency (never summed); a rate without
+ * denominator is "n/a".
+ */
 export function kpi(k: Kpi, unit: "count" | "money_minor_units" | "ratio" = "count") {
-  if (k.now === null) return { status: "not connected" as const, source: k.source };
-  return { now: k.now, previous: k.prev, unit, source: k.source };
+  if (k.state === "NOT_CONNECTED") return { status: "not connected" as const, source: k.source };
+  if (k.state === "NO_DATA_YET") return { status: "no data yet" as const, source: k.source };
+  if (k.byCurrency && k.byCurrency.length > 1) return { byCurrency: k.byCurrency.map((c) => ({ currency: c.currency, now: c.now, previous: c.prev })), unit, source: k.source };
+  return { now: k.now ?? ("n/a" as const), previous: k.prev, unit, ...(k.currency ? { currency: k.currency } : {}), source: k.source };
 }
 
 // ── Context helpers ─────────────────────────────────────────────────────

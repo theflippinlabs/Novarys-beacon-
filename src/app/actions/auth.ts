@@ -28,8 +28,8 @@ export async function loginAction(fd: FormData) {
   const ipHash = await clientIpHash();
   const [byIp, byEmail] = await Promise.all([rateLimit(`login:ip:${ipHash}`, 20, 900), rateLimit(`login:email:${hmac(parsed.data.email.toLowerCase(), "email")}`, 10, 900)]);
   if (!byIp.allowed || !byEmail.allowed) redirect("/login?error=Too many attempts. Try again in 15 minutes.");
-  const res = await authenticate(parsed.data.email, parsed.data.password);
-  if (!res.ok) redirect(`/login?error=${res.reason === "locked" ? "Account temporarily locked after repeated failures." : "Invalid email or password."}`);
+  const res = await authenticate(parsed.data.email, parsed.data.password, { ipHash });
+  if (!res.ok) redirect(`/login?error=${res.reason === "throttled" ? "Too many failed attempts. Wait a moment and try again." : "Invalid email or password."}`);
   const h = await headers();
   const { token } = await createSession(res.userId, { ipHash, userAgent: h.get("user-agent") ?? undefined });
   await setSessionCookie(token);

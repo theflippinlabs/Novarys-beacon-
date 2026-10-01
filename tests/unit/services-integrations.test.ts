@@ -39,9 +39,14 @@ describe("verifyStripeSignature", () => {
 describe("mapStripeEvent", () => {
   const created = 1_750_000_000;
   const occurredAt = new Date(created * 1000).toISOString();
+  /** First mapped revenue item, or null when the event is ignored. */
+  const one = (e: Parameters<typeof mapStripeEvent>[0]) => {
+    const m = mapStripeEvent(e);
+    return m.action === "record" ? m.items[0] : null;
+  };
 
   it("maps a first invoice to NEW with monthly MRR (yearly prices divided by 12)", () => {
-    const r = mapStripeEvent({
+    const r = one({
       id: "evt_1",
       type: "invoice.paid",
       created,
@@ -77,42 +82,43 @@ describe("mapStripeEvent", () => {
   });
 
   it("maps renewals and one-time invoices without MRR delta", () => {
-    const renewal = mapStripeEvent({
+    const renewal = one({
       id: "evt_2",
       type: "invoice.paid",
       created,
-      data: { object: { id: "in_2", subscription: "sub_1", billing_reason: "subscription_cycle", amount_paid: 2_900, metadata: { beacon_identity: "id-42" }, lines: { data: [{ price: { unit_amount: 2_900, recurring: { interval: "month" } } }] } } },
+      data: { object: { id: "in_2", subscription: "sub_1", billing_reason: "subscription_cycle", amount_paid: 2_900, currency: "eur", metadata: { beacon_identity: "id-42" }, lines: { data: [{ price: { unit_amount: 2_900, recurring: { interval: "month" } } }] } } },
     });
     expect(renewal).toMatchObject({ type: "RENEWAL", mrrDeltaCents: 0, currency: "EUR", identityRef: "id-42" });
-    const once = mapStripeEvent({ id: "evt_3", type: "invoice.paid", created, data: { object: { id: "in_3", amount_paid: 500 } } });
-    expect(once).toMatchObject({ type: "ONE_TIME", amountCents: 500, subscription: undefined, identityRef: undefined });
+    const once = one({ id: "evt_3", type: "invoice.paid", created, data: { object: { id: "in_3", amount_paid: 500, currency: "eur" } } });
+    expect(once).toMatchObject({ type: "ONE_TIME", amountCents: 500, subscription: undefined });
+    expect(once?.identityRef).toBeUndefined();
   });
 
   it("maps a deleted subscription to CHURN with a negative MRR delta", () => {
-    const r = mapStripeEvent({
+    const r = one({
       id: "evt_4",
       type: "customer.subscription.deleted",
       created,
-      data: { object: { id: "sub_1", customer: "cus_1", status: "canceled", items: { data: [{ price: { unit_amount: 2_900, recurring: { interval: "month" }, nickname: "Pro" }, quantity: 1 }] } } },
+      data: { object: { id: "sub_1", customer: "cus_1", status: "canceled", currency: "eur", items: { data: [{ price: { unit_amount: 2_900, recurring: { interval: "month" }, nickname: "Pro" }, quantity: 1 }] } } },
     });
     expect(r).toMatchObject({ type: "CHURN", amountCents: 0, mrrDeltaCents: -2_900, subscription: { externalId: "sub_1", plan: "Pro", status: "CANCELLED", mrrCents: 0 } });
   });
 
   it("maps subscription updates to UPGRADE/DOWNGRADE and ignores no-op updates", () => {
-    const items = (amount: number) => ({ data: [{ price: { unit_amount: amount, recurring: { interval: "month" } }, quantity: 1 }] });
-    const up = mapStripeEvent({ id: "e", type: "customer.subscription.updated", created, data: { object: { id: "sub_1", status: "active", items: items(4_900) }, previous_attributes: { items: items(2_900) } } });
+    const items = (amount: number) => ({ data: [{ price: { unit_amount: amount, currency: "eur", recurring: { interval: "month" } }, quantity: 1 }] });
+    const up = one({ id: "e", type: "customer.subscription.updated", created, data: { object: { id: "sub_1", status: "active", items: items(4_900) }, previous_attributes: { items: items(2_900) } } });
     expect(up).toMatchObject({ type: "UPGRADE", mrrDeltaCents: 2_000 });
-    const down = mapStripeEvent({ id: "e", type: "customer.subscription.updated", created, data: { object: { id: "sub_1", status: "active", items: items(900) }, previous_attributes: { items: items(2_900) } } });
+    const down = one({ id: "e", type: "customer.subscription.updated", created, data: { object: { id: "sub_1", status: "active", items: items(900) }, previous_attributes: { items: items(2_900) } } });
     expect(down).toMatchObject({ type: "DOWNGRADE", mrrDeltaCents: -2_000 });
-    expect(mapStripeEvent({ id: "e", type: "customer.subscription.updated", created, data: { object: { id: "sub_1", status: "active", items: items(900) }, previous_attributes: { metadata: {} } } })).toBeNull();
-    const pastDue = mapStripeEvent({ id: "e", type: "customer.subscription.updated", created, data: { object: { id: "sub_1", status: "past_due", items: items(900) }, previous_attributes: { status: "active" } } });
+    expect(one({ id: "e", type: "customer.subscription.updated", created, data: { object: { id: "sub_1", status: "active", items: items(900) }, previous_attributes: { metadata: {} } } })).toBeNull();
+    const pastDue = one({ id: "e", type: "customer.subscription.updated", created, data: { object: { id: "sub_1", status: "past_due", items: items(900) }, previous_attributes: { status: "active" } } });
     expect(pastDue).toMatchObject({ type: "RENEWAL", mrrDeltaCents: 0, subscription: { status: "PAST_DUE" } });
   });
 
   it("maps charge.refunded to a negative REFUND and ignores unknown types", () => {
-    const r = mapStripeEvent({ id: "evt_5", type: "charge.refunded", created, data: { object: { id: "ch_1", amount_refunded: 1_500, currency: "eur", customer: "cus_9", metadata: { beacon_product: "p" } } } });
+    const r = one({ id: "evt_5", type: "charge.refunded", created, data: { object: { id: "ch_1", amount_refunded: 1_500, currency: "eur", customer: "cus_9", metadata: { beacon_product: "p" } } } });
     expect(r).toMatchObject({ type: "REFUND", amountCents: -1_500, mrrDeltaCents: 0, productSlug: "p", identityRef: "stripe:cus_9", currency: "EUR" });
-    expect(mapStripeEvent({ id: "evt_6", type: "customer.created", created, data: { object: { id: "cus_1" } } })).toBeNull();
+    expect(one({ id: "evt_6", type: "customer.created", created, data: { object: { id: "cus_1" } } })).toBeNull();
   });
 });
 
@@ -199,22 +205,18 @@ describe("Google Search Console adapter", () => {
     return { impl, requests };
   }
 
-  it("signs a JWT, exchanges it for a token and produces metric rows", async () => {
+  it("signs a JWT, exchanges it for a token and produces daily total metric rows (per-query data goes to search_daily)", async () => {
     const { impl, requests } = fakeGoogle();
-    const rows = await createSearchConsoleAdapter(impl).fetchMetrics({ siteUrl: "sc-domain:acme.example" }, { serviceAccountJson }, { start: "2026-01-01", end: "2026-01-28" });
+    const rows = await createSearchConsoleAdapter(impl, { delayMs: 0 }).fetchMetrics({ siteUrl: "sc-domain:acme.example" }, { serviceAccountJson }, { start: "2026-01-01", end: "2026-01-28" });
     expect(rows).toEqual([
       { metric: "search_impressions", day: "2026-01-01", value: 100 },
       { metric: "search_clicks", day: "2026-01-01", value: 3 },
       { metric: "search_position", day: "2026-01-01", value: 7.5, weight: 100 },
-      { metric: "query_impressions", day: "2026-01-28", dimension: "tiktok moderation", value: 40 },
-      { metric: "query_clicks", day: "2026-01-28", dimension: "tiktok moderation", value: 2 },
-      { metric: "query_position", day: "2026-01-28", dimension: "tiktok moderation", value: 4, weight: 40 },
-      { metric: "indexed_pages_with_impressions", day: "2026-01-28", value: 1 },
     ]);
     const api = requests.filter((r) => r.url.includes("searchAnalytics"));
-    expect(api).toHaveLength(3);
+    expect(api).toHaveLength(1);
     expect(api[0].url).toBe("https://www.googleapis.com/webmasters/v3/sites/sc-domain%3Aacme.example/searchAnalytics/query");
-    expect(JSON.parse(api[0].body)).toEqual({ startDate: "2026-01-01", endDate: "2026-01-28", dimensions: ["date"], rowLimit: 500 });
+    expect(JSON.parse(api[0].body)).toEqual({ startDate: "2026-01-01", endDate: "2026-01-28", dimensions: ["date"], type: "web", dataState: "final", rowLimit: 25000, startRow: 0 });
   });
 
   it("surfaces OAuth failures and invalid service accounts", async () => {

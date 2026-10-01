@@ -4,6 +4,7 @@ import { competitors, productCompetitors, productFacets, productPricing, product
 import type { FacetKind } from "@/core/knowledge/types";
 import { slugify } from "@/core/util/text";
 import { audit, type Actor } from "@/lib/audit";
+import { resetFactsForRemovedSources, resetOnChange, syncProductClaims } from "./provenance";
 
 export async function getProductBySlug(tx: Tx, organizationId: string, slug: string) {
   const p = await tx.query.products.findFirst({ where: and(eq(products.organizationId, organizationId), eq(products.slug, slug)) });
@@ -21,10 +22,24 @@ export async function createProduct(tx: Tx, actor: Actor, input: { name: string;
   return p;
 }
 
+/** Fields covered by the legacy product-level verification (`lastVerifiedAt`). */
+const LEGACY_VERIFIED: (keyof typeof products.$inferSelect)[] = ["shortDescription", "fullDescription", "howItWorks", "category", "keywords"];
+
+/**
+ * Update product fields. Scalar claims are kept in sync (a changed verified
+ * value goes back to NEEDS_REVIEW) and the legacy product-level verification
+ * is cleared when a description, the category or the keywords change.
+ */
 export async function updateProduct(tx: Tx, actor: Actor, productId: string, patch: Partial<typeof products.$inferInsert>) {
   const { id: _i, organizationId: _o, createdAt: _c, ...safe } = patch;
-  await tx.update(products).set(safe).where(and(eq(products.id, productId), eq(products.organizationId, actor.organizationId)));
-  await audit(tx, actor, "product.update", "product", productId, { fields: Object.keys(safe) });
+  const before = await tx.query.products.findFirst({ where: and(eq(products.id, productId), eq(products.organizationId, actor.organizationId)) });
+  if (!before) throw new Error("Product not found");
+  const changedLegacy = LEGACY_VERIFIED.some((k) => k in safe && JSON.stringify(before[k] ?? null) !== JSON.stringify((safe as Record<string, unknown>)[k] ?? null));
+  const set = changedLegacy && !("lastVerifiedAt" in safe) && before.lastVerifiedAt ? { ...safe, lastVerifiedAt: null } : safe;
+  const [after] = await tx.update(products).set(set).where(and(eq(products.id, productId), eq(products.organizationId, actor.organizationId))).returning();
+  const reverify = await syncProductClaims(tx, actor, before, after);
+  await audit(tx, actor, "product.update", "product", productId, { fields: Object.keys(safe), ...(reverify.length ? { reverify } : {}) });
+  return { product: after, reverify };
 }
 
 /**
@@ -53,7 +68,7 @@ export async function syncFacets(tx: Tx, actor: Actor, productId: string, kind: 
       const changed = prev.name !== it.name || (prev.description ?? null) !== it.description;
       await tx
         .update(productFacets)
-        .set({ name: it.name, description: it.description, sortOrder: i, ...(changed && prev.verification === "VERIFIED" ? { verification: "NEEDS_REVIEW" as const } : {}) })
+        .set({ name: it.name, description: it.description, sortOrder: i, ...resetOnChange(prev, changed) })
         .where(eq(productFacets.id, prev.id));
     } else await tx.insert(productFacets).values({ organizationId: actor.organizationId, productId, kind, slug: it.slug, name: it.name, description: it.description, sortOrder: i });
   }
@@ -68,10 +83,16 @@ export async function replacePricing(tx: Tx, actor: Actor, productId: string, pl
   for (const plan of plans) {
     const prev = byName.get(plan.planName.toLowerCase());
     if (prev) {
-      const changed = prev.priceCents !== plan.priceCents || prev.currency !== plan.currency || prev.interval !== plan.interval || prev.trialDays !== plan.trialDays;
+      const changed =
+        prev.planName !== plan.planName ||
+        prev.priceCents !== (plan.priceCents ?? null) ||
+        prev.currency !== (plan.currency ?? null) ||
+        prev.interval !== (plan.interval ?? null) ||
+        prev.trialDays !== (plan.trialDays ?? null) ||
+        (prev.description ?? null) !== (plan.description ?? null);
       await tx
         .update(productPricing)
-        .set({ ...plan, ...(changed && prev.verification === "VERIFIED" ? { verification: "NEEDS_REVIEW" as const } : {}) })
+        .set({ ...plan, ...resetOnChange(prev, changed) })
         .where(eq(productPricing.id, prev.id));
     } else await tx.insert(productPricing).values({ organizationId: actor.organizationId, productId, ...plan });
   }
@@ -88,7 +109,10 @@ export async function syncSources(tx: Tx, actor: Actor, productId: string, sourc
       .values({ organizationId: actor.organizationId, productId, title: s.title, url: s.url, kind: s.kind })
       .onConflictDoUpdate({ target: [productSources.productId, productSources.url], set: { title: s.title, kind: s.kind } });
   const keep = sources.map((s) => s.url);
-  // Sources removed from the list are deleted; facts pointing at them lose their source link (FK set null).
+  // Sources removed from the list are deleted; facts pointing at them lose their source link (FK set null),
+  // so verified facts that relied on them go back to review first.
+  const removed = await tx.select({ id: productSources.id }).from(productSources).where(and(eq(productSources.productId, productId), keep.length ? notInArray(productSources.url, keep) : undefined));
+  await resetFactsForRemovedSources(tx, removed.map((r) => r.id));
   await tx.delete(productSources).where(and(eq(productSources.productId, productId), keep.length ? notInArray(productSources.url, keep) : undefined));
   await audit(tx, actor, "product.sources.sync", "product", productId, { count: sources.length });
 }

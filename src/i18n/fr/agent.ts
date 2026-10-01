@@ -34,6 +34,7 @@ export const fr: Record<string, string> = {
   "Updating an opportunity": "Mise à jour d’une opportunité",
   "Creating a content draft": "Création d’un brouillon de contenu",
   "Regenerating a draft": "Régénération d’un brouillon",
+  "Repurposing content": "Déclinaison d’un contenu",
   "Adding a distribution target": "Ajout d’une cible de distribution",
   "Updating a distribution target": "Mise à jour d’une cible de distribution",
   "Queuing AI visibility tests": "Mise en file des tests de visibilité IA",

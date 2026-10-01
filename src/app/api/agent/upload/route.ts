@@ -1,16 +1,14 @@
 import { withOrg } from "@/db";
 import { getAuthContext } from "@/lib/auth/session";
 import { can } from "@/lib/auth/rbac";
-import { err, ipHashOf, json, limited } from "@/lib/http";
+import { err, ipHashOf, json, limited, sameOrigin } from "@/lib/http";
 import { ingestImage, MAX_UPLOAD_BYTES } from "@/services/media";
 
 export const dynamic = "force-dynamic";
 
 /** Photo attached in the agent chat: stored PRIVATE (only members of the organisation can view it). */
 export async function POST(req: Request) {
-  const origin = req.headers.get("origin");
-  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
-  if (!origin || !host || new URL(origin).host !== host) return err(403, "Cross-origin request refused");
+  if (!sameOrigin(req)) return err(403, "Cross-origin request refused");
   const ctx = await getAuthContext();
   if (!ctx) return err(401, "Not signed in");
   if (!can(ctx.role, "read")) return err(403, "Forbidden");

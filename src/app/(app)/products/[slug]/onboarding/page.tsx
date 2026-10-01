@@ -186,13 +186,28 @@ export default async function OnboardingPage({ params, searchParams }: { params:
             )}
 
             {step === 8 && (
-              <Field label={t("Plans (one per line): Plan | price | currency | MONTH/YEAR/ONE_TIME/USAGE/CUSTOM | trial days | description")} hint={t("Leave the price blank when it is not public. Prices are only published in structured data once verified.")}>
-                <textarea
-                  name="pricing"
-                  className={TEXTAREA}
-                  defaultValue={g.pricing.map((x) => [x.planName, x.priceCents === null ? "" : (x.priceCents / 100).toString(), x.currency, x.interval, x.trialDays ?? "", x.description ?? ""].join(" | ")).join("\n")}
-                />
-              </Field>
+              <>
+                <Field
+                  label={t("Plans (one per line): Plan | price | currency | MONTH/YEAR/ONE_TIME/USAGE/CUSTOM | trial days | description")}
+                  hint={t("Leave the price blank (or write \"Contact sales\") when it is not public: it is stored as unknown, never 0. Currency (e.g. EUR) and billing interval are never guessed: give them for every priced plan. Prices are only published in structured data once verified.")}
+                >
+                  <textarea
+                    name="pricing"
+                    className={TEXTAREA}
+                    defaultValue={g.pricing.map((x) => [x.planName, x.priceCents === null ? "" : (x.priceCents / 100).toString(), x.currency ?? "", x.interval ?? "", x.trialDays ?? "", x.description ?? ""].join(" | ")).join("\n")}
+                  />
+                </Field>
+                {g.pricing.some((x) => x.priceCents !== null && (!x.currency || !x.interval)) && (
+                  <p className="text-xs text-warn">
+                    {t("Unknown currency or billing interval for: {plans}. Add them so prices can be published.", {
+                      plans: g.pricing
+                        .filter((x) => x.priceCents !== null && (!x.currency || !x.interval))
+                        .map((x) => x.planName)
+                        .join(", "),
+                    })}
+                  </p>
+                )}
+              </>
             )}
 
             {step === 9 && (

@@ -6,9 +6,12 @@ import { FunnelBars } from "@/components/charts/bars";
 import { FilterBar, SelectFilter } from "@/components/shell/filters";
 import { RangePicker } from "@/components/shell/product-tabs";
 import { buildFunnel, type FunnelStep } from "@/core/conversions/funnel";
-import { DEFAULT_ATTRIBUTION } from "@/core/attribution/attribution";
-import { channelEnum, conversionEventEnum, products } from "@/db/schema";
+import { ATTRIBUTION_MODELS, DEFAULT_ATTRIBUTION, MODEL_RULES, type AttributionModel } from "@/core/attribution/attribution";
+import { CANONICAL_EVENTS, LEGACY_ALIASES } from "@/core/conversions/events";
+import { channelEnum, products } from "@/db/schema";
 import { contentPerformance, conversionsByChannel, funnelCounts, hasConversionEvents } from "@/services/metrics";
+import { conversionList, creditedTotals } from "@/services/attribution";
+import { journey, type LinkLabel } from "@/services/journey";
 import { daysParam, pageData, sp1, type SP } from "@/lib/page";
 import { enumLabel, type Locale, type T } from "@/i18n/core";
 import { getI18n, getT } from "@/i18n/server";
@@ -30,19 +33,25 @@ const CLASSIFICATION_ORDER = [
   "Referrer is a known search engine → ORGANIC_SEARCH",
   "Referrer or utm_medium is social → SOCIAL",
   "No referrer and no UTM → DIRECT; anything else → OTHER",
+  "No touch at all in the lookback window → UNATTRIBUTED (distinct from DIRECT)",
 ];
 
 const EVENT_HELP: Record<string, string> = {
-  PAGE_VIEW: "Browser tracker, automatic on every page load.",
+  PAGE_VIEW: "Browser tracker, automatic on every page load and SPA navigation.",
   CTA_CLICK: "Browser tracker, on links marked with data-beacon-cta.",
-  SIGNUP: "Server event when an account is created.",
+  PRODUCT_VIEWED: "Browser or server event when a product or pricing page is viewed.",
+  SIGNUP_STARTED: "Browser or server event when the signup form is started.",
+  SIGNUP_COMPLETED: "Server event when an account is created.",
   TRIAL_STARTED: "Server event when a trial begins.",
-  ACTIVATED: "Server event when the user reaches the product’s activation milestone.",
+  ACTIVATION_COMPLETED: "Server event when the user reaches the product’s activation milestone.",
   CHECKOUT_STARTED: "Server event when checkout is opened.",
-  SUBSCRIBED: "Server event when a paid subscription starts.",
-  UPGRADED: "Server event on plan upgrade (not part of the acquisition funnel).",
-  CANCELLED: "Server event on cancellation (not part of the acquisition funnel).",
+  SUBSCRIPTION_STARTED: "Server event when a paid subscription starts.",
+  SUBSCRIPTION_UPGRADED: "Server event on plan upgrade (not part of the acquisition funnel).",
+  SUBSCRIPTION_CANCELLED: "Server event on cancellation (not part of the acquisition funnel).",
 };
+
+const MODEL_LABEL: Record<AttributionModel, string> = { FIRST_TOUCH: "First touch", LAST_TOUCH: "Last non-direct touch", LINEAR: "Linear", POSITION_BASED: "Position-based (40/20/40)" };
+const PAGE_SIZE = 25;
 
 const rate = (a: number, b: number) => (b > 0 ? a / b : null);
 
@@ -60,6 +69,8 @@ export default async function ConversionsPage({ searchParams }: { searchParams: 
   const days = daysParam(sp);
   const rawChannel = sp1(sp, "channel");
   const f = { product: sp1(sp, "product"), channel: CHANNELS.includes(rawChannel as ChannelValue) ? (rawChannel as ChannelValue) : undefined };
+  const rawModel = sp1(sp, "model");
+  const page = Math.max(1, Math.min(10_000, Number(sp1(sp, "page")) || 1));
 
   const { data, ctx } = await pageData(async (tx, ctx) => {
     const org = ctx.org.id;
@@ -79,12 +90,25 @@ export default async function ConversionsPage({ searchParams }: { searchParams: 
       group by 1, 2 order by 3 desc limit 20`)
     ).rows.map((r) => ({ ...r, clicks: Number(r.clicks) }));
     const content = (await contentPerformance(tx, org, days)).filter((c) => !product || c.product === product.slug);
-    return { prods, product, anyEvents, funnel: buildFunnel(counts as Partial<Record<FunnelStep, number>>), byChannel, ctas, content };
+    const model: AttributionModel = ATTRIBUTION_MODELS.includes(rawModel as AttributionModel) ? (rawModel as AttributionModel) : (ctx.org.settings.attribution?.model ?? DEFAULT_ATTRIBUTION.model);
+    const credited = await creditedTotals(tx, org, { days, productId: product?.id ?? null, model });
+    const list = await conversionList(tx, org, { days, productId: product?.id ?? null, model, page, pageSize: PAGE_SIZE });
+    const paths = await journey(tx, org, { days, productId: product?.id ?? null, limit: 20 });
+    return { paths, prods, product, anyEvents, funnel: buildFunnel(counts as Partial<Record<FunnelStep, number>>), byChannel, ctas, content, model, credited, list };
   });
 
   const qs = new URLSearchParams(Object.entries({ product: f.product, channel: f.channel }).filter(([, v]) => v) as [string, string][]).toString();
   const base = qs ? `/conversions?${qs}` : "/conversions";
   const rules = ctx.org.settings.attribution ?? DEFAULT_ATTRIBUTION;
+  const model = data.model;
+  const withParams = (extra: Record<string, string | number | undefined>) => {
+    const q = new URLSearchParams(Object.entries({ product: f.product, channel: f.channel, days: String(days), model, ...extra }).filter(([, v]) => v !== undefined && v !== "").map(([k, v]) => [k, String(v)]));
+    return `/conversions?${q.toString()}`;
+  };
+  const money = (cents: number, currency: string) => formatValue(cents, "money", currency, intl);
+  const when = (iso: string) => new Date(iso).toLocaleString(intl, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  const linkLabel = (l: LinkLabel) => t(l);
+  const touchLabel = (x: { channel: string; referrerHost: string | null; source: string | null } | null) => (x ? [ch(x.channel), x.source ?? x.referrerHost].filter(Boolean).join(" · ") : t("n/a"));
   const trackingHref = data.product ? `/products/${data.product.slug}/tracking` : data.prods[0] ? `/products/${data.prods[0].slug}/tracking` : "/products";
 
   const best = data.content.reduce<(typeof data.content)[number] | null>((b, c) => (c.views > 0 && (!b || c.signups > b.signups || (c.signups === b.signups && c.cta > b.cta)) ? c : b), null);
@@ -115,7 +139,7 @@ export default async function ConversionsPage({ searchParams }: { searchParams: 
           <div className="grid gap-6 xl:grid-cols-[1fr_24rem]">
             <Panel eyebrow={t("Funnel · last {days} days", { days })} title={`${data.product?.name ?? t("All products")} · ${f.channel ? ch(f.channel) : t("all channels")}`}>
               <FunnelBars steps={data.funnel.map((s) => ({ ...s, step: enumLabel(t, s.step) }))} />
-              <p className="mt-4 text-[11px] text-muted">{t("Unique people per step (identity when known, otherwise visitor). Right column: conversion from the previous step.")}</p>
+              <p className="mt-4 text-[11px] text-muted">{t("Cohort: people first seen in the last {days} days, and how many of them reached each step since. With a channel filter, the cohort is people whose first event came from that channel.", { days })}</p>
             </Panel>
             <Panel eyebrow={t("Funnel")} title={t("Conversion from first page view")} pad={false}>
               <Table>
@@ -202,6 +226,160 @@ export default async function ConversionsPage({ searchParams }: { searchParams: 
         </>
       )}
 
+      {data.anyEvents && (
+        <>
+          <Panel
+            eyebrow={t("Attribution model: {model}", { model: t(MODEL_LABEL[model]) })}
+            title={t("Credited conversions and revenue by channel · last {days} days", { days })}
+            className="mt-6"
+            pad={false}
+            actions={
+              <nav aria-label={t("Attribution model")} className="flex flex-wrap gap-1">
+                {ATTRIBUTION_MODELS.map((m) => (
+                  <Link key={m} href={withParams({ model: m, page: undefined })} aria-current={m === model ? "page" : undefined} className={`border px-2 py-1 text-[11px] ${m === model ? "border-blue-bright text-platinum" : "border-line text-muted hover:text-chrome"}`}>
+                    {t(MODEL_LABEL[m])}
+                  </Link>
+                ))}
+              </nav>
+            }
+          >
+            {data.credited.length ? (
+              <Table>
+                <thead>
+                  <tr>
+                    <Th>{t("Channel")}</Th>
+                    <Th className="text-right">{t("Credited conversions")}</Th>
+                    <Th className="text-right">{t("Credited revenue")}</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.credited.map((r) => (
+                    <tr key={r.channel}>
+                      <Td>
+                        <Badge tone={r.channel === "UNATTRIBUTED" ? "muted" : "neutral"}>{ch(r.channel)}</Badge>
+                      </Td>
+                      <Td className="num text-right text-platinum">{formatValue(r.conversions, "count", undefined, intl)}</Td>
+                      <Td className="num text-right text-xs">{r.revenue.length ? r.revenue.map((v) => money(v.cents, v.currency)).join(" · ") : t("n/a")}</Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+            ) : (
+              <p className="p-4 text-sm text-muted">{t("No conversion credited in this period.")}</p>
+            )}
+            <p className="border-t border-line px-4 py-2 text-[11px] text-muted">
+              {t(MODEL_RULES[model])} {t("Fractional values are shares of conversions split across touches. Attribution shows which touches preceded a conversion: correlation, not causation.")}
+            </p>
+          </Panel>
+
+          <Panel eyebrow={t("Attribution model: {model}", { model: t(MODEL_LABEL[model]) })} title={t("Conversions · {n} in the last {days} days", { n: data.list.total, days })} className="mt-6" pad={false}>
+            {data.list.items.length ? (
+              <Table>
+                <thead>
+                  <tr>
+                    <Th>{t("When")}</Th>
+                    <Th>{t("Event")}</Th>
+                    <Th>{t("Source / medium / campaign")}</Th>
+                    <Th>{t("Landing page")}</Th>
+                    <Th>{t("First touch")}</Th>
+                    <Th>{t("Credited touch (rule)")}</Th>
+                    <Th>{t("Model credit")}</Th>
+                    <Th className="text-right">{t("Value")}</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.list.items.map((r) => (
+                    <tr key={r.id}>
+                      <Td className="num text-xs">{when(r.occurredAt)}</Td>
+                      <Td className="text-xs">
+                        {enumLabel(t, r.type)}
+                        <div className="text-[11px] text-muted">{r.product ?? t("n/a")}</div>
+                      </Td>
+                      <Td className="num text-xs">
+                        {[r.source, r.medium, r.campaign].some(Boolean) ? [r.source ?? "-", r.medium ?? "-", r.campaign ?? "-"].join(" / ") : (r.referrerHost ?? t("n/a"))}
+                        {r.campaignName && <div className="text-[11px] text-muted">{t("Campaign: {name}", { name: r.campaignName })}</div>}
+                      </Td>
+                      <Td className="num max-w-56 truncate text-xs" title={r.landingUrl ?? undefined}>
+                        {r.landingUrl ? r.landingUrl.replace(/^https?:\/\//, "") : t("n/a")}
+                      </Td>
+                      <Td className="text-xs">
+                        {touchLabel(r.firstTouch)}
+                        {r.firstTouch && <div className="text-[11px] text-muted">{when(r.firstTouch.at)}</div>}
+                      </Td>
+                      <Td className="text-xs">
+                        {r.channel ? ch(r.channel) : t("n/a")}
+                        <div className="text-[11px] text-muted">{r.rule ? t(r.rule) : t("n/a")}</div>
+                      </Td>
+                      <Td className="text-[11px]">{r.credits.length ? r.credits.map((c) => `${ch(c.channel)} ${formatValue(c.weight, "percent", undefined, intl)}`).join(", ") : t("n/a")}</Td>
+                      <Td className="num text-right text-xs">{r.value.length ? r.value.map((v) => money(v.cents, v.currency)).join(" · ") : t("n/a")}</Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+            ) : (
+              <p className="p-4 text-sm text-muted">{t("No conversion (signup, trial, activation, checkout or subscription) in this period.")}</p>
+            )}
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-4 py-2 text-[11px] text-muted">
+              <span>{t("Value: measured revenue of the same customer in the same product, per currency. Credited touch: the persisted single-touch decision (organisation model and referral precedence).")}</span>
+              {data.list.pages > 1 && (
+                <span className="flex items-center gap-3">
+                  {page > 1 && (
+                    <Link href={withParams({ page: page - 1 })} className="text-blue-bright hover:text-cyan">
+                      {t("← Newer")}
+                    </Link>
+                  )}
+                  <span className="num">{t("Page {page} of {pages}", { page, pages: data.list.pages })}</span>
+                  {page < data.list.pages && (
+                    <Link href={withParams({ page: page + 1 })} className="text-blue-bright hover:text-cyan">
+                      {t("Older →")}
+                    </Link>
+                  )}
+                </span>
+              )}
+            </div>
+          </Panel>
+        </>
+      )}
+
+      {data.paths.length > 0 && (
+        <Panel eyebrow={t("Journey · last {days} days", { days })} title={t("Search → visit → conversion, by landing page")} className="mt-6" pad={false}>
+          <Table>
+            <thead>
+              <tr>
+                <Th>{t("Landing page")}</Th>
+                <Th className="text-right">{t("Search clicks")}</Th>
+                <Th className="text-right">{t("GA4 sessions")}</Th>
+                <Th className="text-right">{t("Beacon visitors")}</Th>
+                <Th className="text-right">{t("Signups")}</Th>
+                <Th>{t("Links")}</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.paths.map((r) => (
+                <tr key={r.path}>
+                  <Td className="num max-w-56 truncate text-xs" title={r.path}>
+                    {r.path}
+                  </Td>
+                  <Td className="num text-right text-xs">{r.search ? num(r.search.clicks) : t("n/a")}</Td>
+                  <Td className="num text-right text-xs">{r.analytics ? num(r.analytics.sessions) : t("n/a")}</Td>
+                  <Td className="num text-right text-xs">{r.beacon ? num(r.beacon.visitors) : t("n/a")}</Td>
+                  <Td className="num text-right text-xs">{r.beacon ? num(r.beacon.signups) : t("n/a")}</Td>
+                  <Td className="text-[11px]">
+                    <span title={t("Search Console page ↔ GA4 landing page")}>{t("Search ↔ GA4: {label}", { label: linkLabel(r.links.searchToAnalytics) })}</span>
+                    <span className="block" title={t("Beacon landing page → Beacon conversion of the same visitor")}>
+                      {t("Visit → conversion: {label}", { label: linkLabel(r.links.beaconToConversion) })}
+                    </span>
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+          <p className="border-t border-line px-4 py-2 text-[11px] text-muted">
+            {t("MEASURED: same system and same visitor. MODELLED: joined on the page path only (the people behind the numbers may differ). UNKNOWN: one side has no data. Search Console, GA4 and Beacon count differently; their numbers are shown side by side, never added.")}
+          </p>
+        </Panel>
+      )}
+
       <Panel eyebrow={t("Content performance · last {days} days", { days })} title={t("Published content → CTA clicks → signups")} className="mt-6" pad={false}>
         {data.content.length ? (
           <Table>
@@ -256,7 +434,7 @@ export default async function ConversionsPage({ searchParams }: { searchParams: 
         <Panel eyebrow={t("Attribution rules")} title={t("How conversions are credited")}>
           <KV
             items={[
-              [t("Model"), rules.model === "LAST_TOUCH" ? t("Last non-direct touch") : t("First touch")],
+              [t("Model"), t(MODEL_LABEL[rules.model])],
               [t("Lookback window"), t("{n} days", { n: rules.lookbackDays })],
               [t("Referral precedence"), rules.referralPrecedence ? t("On: the most recent referral/affiliate touch wins") : t("Off")],
               [t("Source"), ctx.org.settings.attribution ? t("Organisation settings") : t("Default rules (not customised)")],
@@ -271,15 +449,24 @@ export default async function ConversionsPage({ searchParams }: { searchParams: 
               </li>
             ))}
           </ol>
-          <p className="mt-3 text-[11px] text-muted">{t("Only touches inside the lookback window count. DIRECT touches never override a non-direct touch under last-touch. No qualifying touch → DIRECT.")}</p>
+          <p className="mt-3 text-[11px] text-muted">{t("Only touches inside the lookback window count. DIRECT touches never override a non-direct touch under last-touch. No qualifying touch → UNATTRIBUTED.")}</p>
         </Panel>
         <Panel eyebrow={t("Setup")} title={t("Supported event types")} pad={false}>
           <Table>
             <tbody>
-              {conversionEventEnum.enumValues.map((ev) => (
+              {CANONICAL_EVENTS.map((ev) => (
                 <tr key={ev}>
                   <Th>{ev}</Th>
-                  <Td className="text-xs">{EVENT_HELP[ev] ? t(EVENT_HELP[ev]) : t("n/a")}</Td>
+                  <Td className="text-xs">
+                    {EVENT_HELP[ev] ? t(EVENT_HELP[ev]) : t("n/a")}
+                    {Object.entries(LEGACY_ALIASES)
+                      .filter(([, c]) => c === ev)
+                      .map(([l]) => (
+                        <span key={l} className="ml-1 text-muted">
+                          {t("(also accepted as {alias})", { alias: l })}
+                        </span>
+                      ))}
+                  </Td>
                 </tr>
               ))}
             </tbody>

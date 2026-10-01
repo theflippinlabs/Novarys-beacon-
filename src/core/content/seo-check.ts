@@ -1,10 +1,10 @@
 import { tokens } from "@/core/util/text";
-import { EDITOR_TODO, type ContentType } from "./generate";
+import { EDITOR_TODO } from "./markers";
+import { WEB_CONTENT_TYPES as WEB_TYPES, type ContentType } from "./types";
 
 export type SeoCheck = { rule: string; ok: boolean; message: string };
 
 const MIN_WORDS: Partial<Record<ContentType, number>> = { LANDING_PAGE: 250, ARTICLE: 400, TUTORIAL: 300, COMPARISON: 200, FAQ: 150 };
-const WEB_TYPES = new Set<ContentType>(["LANDING_PAGE", "ARTICLE", "TUTORIAL", "COMPARISON", "FAQ", "RELEASE_ANNOUNCEMENT"]);
 
 /** On-page SEO/GEO checks for a draft. Social formats only get length and TODO checks. */
 export function seoCheck(input: { type: ContentType; body: string; metaTitle: string | null; metaDescription: string | null; targetQuery?: string | null; structuredData: unknown[]; brandTerms?: string[] }): { passed: boolean; checks: SeoCheck[] } {

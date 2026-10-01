@@ -1,9 +1,9 @@
 import { afterAll, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { asSystem, closeDb } from "@/db";
 import { memberships, organizations, sessions, users } from "@/db/schema";
-import { authenticate, createOrganizationWithOwner, createSession, destroySession, resolveSession } from "@/lib/auth/service";
-import { sha256 } from "@/lib/security/crypto";
+import { authenticate, LOGIN_FREE_FAILURES, createOrganizationWithOwner, createSession, destroySession, resolveSession } from "@/lib/auth/service";
+import { hmac, sha256 } from "@/lib/security/crypto";
 import { newOrg, PASSWORD, uid } from "./helpers";
 
 afterAll(closeDb);
@@ -29,29 +29,37 @@ describe("auth service", () => {
 
   it("authenticate succeeds with the right password (case-insensitive email) and fails otherwise", async () => {
     const { user, email } = await newOrg("authn");
-    expect(await authenticate(email.toUpperCase(), PASSWORD)).toEqual({ ok: true, userId: user.id });
-    expect(await authenticate(email, "wrong password 123")).toEqual({ ok: false, reason: "invalid" });
-    expect(await authenticate(`nobody-${uid()}@example.test`, PASSWORD)).toEqual({ ok: false, reason: "invalid" });
-    const u = await asSystem((tx) => tx.query.users.findFirst({ where: eq(users.id, user.id) }));
-    expect(u!.failedLoginCount).toBe(1);
-    // A successful login resets the counter.
-    expect((await authenticate(email, PASSWORD)).ok).toBe(true);
+    expect(await authenticate(email.toUpperCase(), PASSWORD, { ipHash: "ip-1" })).toEqual({ ok: true, userId: user.id });
+    expect(await authenticate(email, "wrong password 123", { ipHash: "ip-1" })).toEqual({ ok: false, reason: "invalid" });
+    expect(await authenticate(`nobody-${uid()}@example.test`, PASSWORD, { ipHash: "ip-1" })).toEqual({ ok: false, reason: "invalid" });
+    expect((await authenticate(email, PASSWORD, { ipHash: "ip-1" })).ok).toBe(true);
     const u2 = await asSystem((tx) => tx.query.users.findFirst({ where: eq(users.id, user.id) }));
-    expect(u2!.failedLoginCount).toBe(0);
     expect(u2!.lastLoginAt).toBeInstanceOf(Date);
   });
 
-  it("locks the account after 10 failures, even for the correct password", async () => {
+  it("backs off exponentially per (email, ip) instead of locking the account", async () => {
     const { user, email } = await newOrg("lock");
-    for (let i = 0; i < 9; i++) expect(await authenticate(email, `bad password ${i}`)).toEqual({ ok: false, reason: "invalid" });
-    expect(await authenticate(email, "bad password 10")).toEqual({ ok: false, reason: "invalid" });
-    const u = await asSystem((tx) => tx.query.users.findFirst({ where: eq(users.id, user.id) }));
-    expect(u!.failedLoginCount).toBe(10);
-    expect(u!.lockedUntil!.getTime()).toBeGreaterThan(Date.now() + 14 * 60_000);
-    expect(await authenticate(email, PASSWORD)).toEqual({ ok: false, reason: "locked" });
-    // Once the lock expires, the right password works again.
-    await asSystem((tx) => tx.update(users).set({ lockedUntil: new Date(Date.now() - 1000) }).where(eq(users.id, user.id)));
-    expect(await authenticate(email, PASSWORD)).toEqual({ ok: true, userId: user.id });
+    for (let i = 0; i < LOGIN_FREE_FAILURES; i++) expect(await authenticate(email, `bad password ${i}`, { ipHash: "attacker" })).toEqual({ ok: false, reason: "invalid" });
+    expect(await authenticate(email, "bad password 5", { ipHash: "attacker" })).toEqual({ ok: false, reason: "invalid" });
+    // The attacker's address now waits, even with the right password...
+    const throttled = await authenticate(email, PASSWORD, { ipHash: "attacker" });
+    expect(throttled).toMatchObject({ ok: false, reason: "throttled" });
+    // ...but the member signs in from their own address: no account lockout.
+    expect(await authenticate(email, PASSWORD, { ipHash: "member" })).toEqual({ ok: true, userId: user.id });
+    // Unknown emails are throttled the same way (no account enumeration).
+    const ghost = `ghost-${uid()}@example.test`;
+    for (let i = 0; i <= LOGIN_FREE_FAILURES; i++) await authenticate(ghost, "x", { ipHash: "attacker" });
+    expect(await authenticate(ghost, "x", { ipHash: "attacker" })).toMatchObject({ ok: false, reason: "throttled" });
+    // Once the back-off expires, the right password works again and clears the counter.
+    await asSystem((tx) => tx.execute(sql`update login_throttle set blocked_until = now() - interval '1 second'`));
+    expect(await authenticate(email, PASSWORD, { ipHash: "attacker" })).toEqual({ ok: true, userId: user.id });
+  });
+
+  it("counts parallel failures atomically", async () => {
+    const { email } = await newOrg("atomic");
+    await Promise.all(Array.from({ length: 8 }, (_, i) => authenticate(email, `bad ${i}`, { ipHash: "burst" })));
+    const r = await asSystem((tx) => tx.execute<{ failures: number }>(sql`select failures from login_throttle where key = ${hmac(`${email}|burst`, "login")}`));
+    expect(r.rows[0].failures).toBe(8);
   });
 
   it("createSession + resolveSession returns user, org and role; stores only the token hash", async () => {

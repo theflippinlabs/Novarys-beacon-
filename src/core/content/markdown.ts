@@ -13,8 +13,14 @@ import { mediaIdFromUrl } from "@/core/media/image";
  */
 export type MarkdownOptions = { imageOrigins?: readonly string[] };
 
-const safeHref = (raw: string) => {
+/**
+ * http(s) or site-relative targets only. Backslashes, control characters and
+ * whitespace are refused outright: browsers treat a backslash like a slash,
+ * so a slash followed by a backslash becomes a protocol-relative URL.
+ */
+export const safeHref = (raw: string) => {
   const h = raw.replace(/&amp;/g, "&");
+  if (/[\\\u0000-\u0020\u007f]/.test(h)) return "#";
   return /^(https?:\/\/|\/(?!\/))/i.test(h) ? escapeHtml(h) : "#";
 };
 

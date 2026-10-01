@@ -3,9 +3,10 @@ import type { Tx } from "@/db";
 import { beaconScores, integrations } from "@/db/schema";
 import { computeCompleteness } from "@/core/knowledge/completeness";
 import { loadProductGraph } from "@/core/knowledge/load";
-import { computeBeaconScore, type BeaconScore, type ScoreInput } from "@/core/score/beacon-score";
+import { computeBeaconScore, diffScores, normalizeScore, type BeaconScore, type ScoreInput } from "@/core/score/beacon-score";
 import { isVerified } from "@/core/knowledge/types";
 import { latestAudit, openIssueCounts } from "./seo";
+import { availableProviders } from "@/ai/registry";
 
 export async function scoreInput(tx: Tx, organizationId: string, productId: string): Promise<ScoreInput> {
   const g = await loadProductGraph(tx, organizationId, productId);
@@ -34,12 +35,15 @@ export async function scoreInput(tx: Tx, organizationId: string, productId: stri
     from conversion_events where product_id = ${productId} and occurred_at >= now() - interval '30 days'`)
   ).rows[0];
   const rev = (await tx.execute<{ n: number }>(sql`select count(*)::int as n from revenue_events where product_id = ${productId}`)).rows[0];
+  // Product-scoped AI mention rate: only tests of this product's own prompts count.
   const ai = (
-    await tx.execute<{ tests: number; mentions: number }>(sql`
-    select count(distinct t.id)::int as tests, count(distinct m.id)::int as mentions
-    from ai_visibility_tests t left join ai_mentions m on m.test_id = t.id and m.product_id = ${productId}
-    where t.organization_id = ${organizationId} and t.ran_at >= now() - interval '90 days'`)
+    await tx.execute<{ tests: number; mentioning: number }>(sql`
+    select count(*)::int as tests,
+      count(*) filter (where exists (select 1 from ai_mentions m where m.test_id = t.id and m.product_id = ${productId}))::int as mentioning
+    from ai_visibility_tests t join ai_visibility_prompts pr on pr.id = t.prompt_id
+    where t.organization_id = ${organizationId} and pr.product_id = ${productId} and t.ran_at >= now() - interval '90 days'`)
   ).rows[0];
+  const providers = await availableProviders(tx, organizationId);
   const refDomains = (
     await tx.execute<{ v: number | null }>(sql`
     select value::float as v from visibility_metrics where product_id = ${productId} and metric = 'referring_domains' order by day desc limit 1`)
@@ -50,7 +54,7 @@ export async function scoreInput(tx: Tx, organizationId: string, productId: stri
     .where(and(eq(integrations.organizationId, organizationId), eq(integrations.status, "CONNECTED")));
   const has = (p: string, product = true) => integ.some((i) => i.provider === p && (!product || i.productId === productId));
   return {
-    completeness: computeCompleteness(g).score,
+    completeness: computeCompleteness(g).score, // verification-weighted
     audit: audit ? { openIssues: await openIssueCounts(tx, audit.id), pagesCrawled: audit.pagesCrawled, ageDays: Math.floor((Date.now() - (audit.finishedAt ?? audit.createdAt).getTime()) / 86_400_000) } : null,
     pages: {
       planned: Number(pageStats?.planned ?? 0),
@@ -64,8 +68,7 @@ export async function scoreInput(tx: Tx, organizationId: string, productId: stri
       verifiedProofs: g.proofs.filter((p) => p.publishable && isVerified(p)).length,
       sources: g.sources.length,
       referringDomains: refDomains?.v ?? null,
-      aiMentions90d: Number(ai?.mentions ?? 0),
-      aiTests90d: Number(ai?.tests ?? 0),
+      ai: { providerConfigured: providers.length > 0, tests90d: Number(ai?.tests ?? 0), testsMentioning90d: Number(ai?.mentioning ?? 0) },
     },
     queries: { active: Number(q?.active ?? 0), weightedCovered: Number(q?.covered ?? 0), weightedTotal: Number(q?.total ?? 0) },
     conversion: {
@@ -75,7 +78,9 @@ export async function scoreInput(tx: Tx, organizationId: string, productId: stri
       hasTrialOrDemo: Boolean(g.product.freeTrial) || g.pricing.some((p) => (p.trialDays ?? 0) > 0) || g.product.conversionUrls.some((c) => ["TRY_FREE", "VIEW_DEMO", "BOOK_DEMO"].includes(c.kind)),
     },
     measurement: {
-      searchConsole: has("GOOGLE_SEARCH_CONSOLE") || has("BING_WEBMASTER"),
+      // Provider-accurate: Bing is reported on its own, never counted as Search Console.
+      searchConsole: has("GOOGLE_SEARCH_CONSOLE"),
+      bingWebmaster: has("BING_WEBMASTER"),
       analytics: has("GOOGLE_ANALYTICS"),
       eventsReceived30d: Number(ev?.any ?? 0) > 0,
       revenueSource: has("STRIPE", false) || Number(rev?.n ?? 0) > 0,
@@ -106,5 +111,23 @@ export async function latestScores(tx: Tx, organizationId: string) {
 
 export async function latestScoreDetail(tx: Tx, organizationId: string, productId: string) {
   const row = await tx.query.beaconScores.findFirst({ where: and(eq(beaconScores.organizationId, organizationId), eq(beaconScores.productId, productId)), orderBy: desc(beaconScores.computedAt) });
-  return row ? { ...row, components: row.components as BeaconScore } : null;
+  return row ? { ...row, components: normalizeScore(row.components) } : null;
+}
+
+/**
+ * The stored score (single source of truth for the product overview and the
+ * command center) with its computation time and the per-line diff against the
+ * previous stored computation.
+ */
+export async function storedScoreWithDiff(tx: Tx, organizationId: string, productId: string) {
+  const rows = await tx
+    .select()
+    .from(beaconScores)
+    .where(and(eq(beaconScores.organizationId, organizationId), eq(beaconScores.productId, productId)))
+    .orderBy(desc(beaconScores.computedAt))
+    .limit(2);
+  if (!rows.length) return null;
+  const score = normalizeScore(rows[0].components);
+  const prev = rows[1] ? normalizeScore(rows[1].components) : null;
+  return { score, computedAt: rows[0].computedAt, previousAt: rows[1]?.computedAt ?? null, diff: diffScores(prev, score) };
 }

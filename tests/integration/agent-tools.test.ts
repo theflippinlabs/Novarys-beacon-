@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { and, eq, sql } from "drizzle-orm";
 import { asSystem, closeDb, withOrg } from "@/db";
-import { auditLogs, contentAssets, media, memberships, organizations, productFacets, productFaqs, productPricing, products } from "@/db/schema";
+import { auditLogs, contentAssets, media, memberships, organizations, productFacets, productFaqs, productPricing, products, verifiedDomains } from "@/db/schema";
 import { AGENT_TOOLS } from "@/agent/tools";
 import type { AgentToolContext } from "@/agent/types";
 import { makeT } from "@/i18n/core";
@@ -168,6 +168,10 @@ describe("agent tools: write flow", () => {
     expect(pages.items.length).toBeGreaterThan(0);
     const score = await run<{ total: number }>(a, "recompute_beacon_score", { product: seededSlug });
     expect(score.total).toBeGreaterThan(0);
+    // Unverified domain: refused with the reason and a link to the verification page (verification stays human).
+    const refused = await run<{ queued: null; reason: string; link: string }>(a, "queue_seo_audit", { product: seededSlug });
+    expect(refused).toMatchObject({ queued: null, reason: "DOMAIN_NOT_VERIFIED", link: "/discovery/domains" });
+    await withOrg(a.org.id, (tx) => tx.insert(verifiedDomains).values({ organizationId: a.org.id, domain: "agent-seeded.example", token: "t", verifiedAt: new Date() }));
     const audit = await run<{ queued: { auditId: string } }>(a, "queue_seo_audit", { product: seededSlug });
     expect(audit.queued.auditId).toBeTruthy();
   });

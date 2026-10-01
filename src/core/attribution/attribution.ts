@@ -1,4 +1,5 @@
-export type Channel = "ORGANIC_SEARCH" | "AI_REFERRAL" | "REFERRAL" | "AFFILIATE" | "SOCIAL" | "EMAIL" | "PAID" | "DIRECT" | "CROSS_SELL" | "OTHER";
+/** UNATTRIBUTED = no qualifying touch at all; DIRECT = a measured direct visit (no referrer, no UTM). */
+export type Channel = "ORGANIC_SEARCH" | "AI_REFERRAL" | "REFERRAL" | "AFFILIATE" | "SOCIAL" | "EMAIL" | "PAID" | "DIRECT" | "CROSS_SELL" | "OTHER" | "UNATTRIBUTED";
 
 export const AI_REFERRER_HOSTS = [
   "chatgpt.com",
@@ -56,23 +57,32 @@ export function classifyChannel(input: { referrerHost?: string | null; utm?: Rec
 }
 
 export type Touch = { id: string; channel: Channel; occurredAt: Date; referralCodeId?: string | null; campaignId?: string | null };
-export type AttributionRules = { model: "LAST_TOUCH" | "FIRST_TOUCH"; lookbackDays: number; referralPrecedence: boolean };
+export const ATTRIBUTION_MODELS = ["FIRST_TOUCH", "LAST_TOUCH", "LINEAR", "POSITION_BASED"] as const;
+export type AttributionModel = (typeof ATTRIBUTION_MODELS)[number];
+export type AttributionRules = { model: AttributionModel; lookbackDays: number; referralPrecedence: boolean };
 export const DEFAULT_ATTRIBUTION: AttributionRules = { model: "LAST_TOUCH", lookbackDays: 30, referralPrecedence: true };
 
 export type Attribution = { channel: Channel; touchId: string | null; referralCodeId: string | null; campaignId: string | null; rule: string };
 
+/** Touches inside the lookback window before the conversion, oldest first. */
+export function touchesInWindow(touches: Touch[], conversionAt: Date, lookbackDays: number): Touch[] {
+  const from = conversionAt.getTime() - lookbackDays * 86_400_000;
+  return touches.filter((t) => t.occurredAt.getTime() <= conversionAt.getTime() && t.occurredAt.getTime() >= from).sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime());
+}
+
 /**
- * Single-touch attribution with explicit rules:
+ * Single-touch attribution with explicit rules (the decision persisted on the
+ * conversion and used for commissions):
  * - only touches within `lookbackDays` before the conversion count
  * - if `referralPrecedence`, the most recent referral/affiliate touch wins
- * - otherwise FIRST_TOUCH or LAST_TOUCH over the remaining touches
- * - DIRECT touches never override a non-direct touch under LAST_TOUCH
- * - no qualifying touch → DIRECT
+ * - FIRST_TOUCH takes the oldest touch; every other model (LAST_TOUCH and,
+ *   for the single persisted decision, LINEAR / POSITION_BASED) takes the
+ *   last non-direct touch, falling back to the last (DIRECT) touch
+ * - no qualifying touch → UNATTRIBUTED (never silently DIRECT)
  */
 export function attribute(touches: Touch[], conversionAt: Date, rules: AttributionRules = DEFAULT_ATTRIBUTION): Attribution {
-  const from = conversionAt.getTime() - rules.lookbackDays * 86_400_000;
-  const window = touches.filter((t) => t.occurredAt.getTime() <= conversionAt.getTime() && t.occurredAt.getTime() >= from).sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime());
-  if (!window.length) return { channel: "DIRECT", touchId: null, referralCodeId: null, campaignId: null, rule: "no-touch-in-window" };
+  const window = touchesInWindow(touches, conversionAt, rules.lookbackDays);
+  if (!window.length) return { channel: "UNATTRIBUTED", touchId: null, referralCodeId: null, campaignId: null, rule: "no-touch-in-window" };
   if (rules.referralPrecedence) {
     const ref = [...window].reverse().find((t) => t.referralCodeId);
     if (ref) return { channel: ref.channel, touchId: ref.id, referralCodeId: ref.referralCodeId ?? null, campaignId: ref.campaignId ?? null, rule: "referral-precedence" };
@@ -82,6 +92,61 @@ export function attribute(touches: Touch[], conversionAt: Date, rules: Attributi
   else chosen = [...window].reverse().find((t) => t.channel !== "DIRECT") ?? window[window.length - 1];
   return { channel: chosen.channel, touchId: chosen.id, referralCodeId: chosen.referralCodeId ?? null, campaignId: chosen.campaignId ?? null, rule: rules.model === "FIRST_TOUCH" ? "first-touch" : "last-non-direct-touch" };
 }
+
+export type Credit = { touchId: string | null; channel: Channel; campaignId: string | null; weight: number };
+
+/**
+ * Credits for one conversion under one model. Weights always sum to 1.
+ * - FIRST_TOUCH: 100% to the oldest touch in the window
+ * - LAST_TOUCH: 100% to the last non-direct touch (last touch if all are direct)
+ * - LINEAR: equal split across every touch in the window
+ * - POSITION_BASED: 40% first, 40% last, 20% split across the middle touches
+ *   (one touch: 100%; two touches: 50/50)
+ * - no touch in the window: one credit to UNATTRIBUTED
+ * Referral precedence applies to the persisted single-touch decision
+ * (`attribute`), not to these model comparisons.
+ */
+export function creditsFor(touches: Touch[], conversionAt: Date, model: AttributionModel, lookbackDays: number): Credit[] {
+  const w = touchesInWindow(touches, conversionAt, lookbackDays);
+  const c = (t: Touch, weight: number): Credit => ({ touchId: t.id, channel: t.channel, campaignId: t.campaignId ?? null, weight });
+  if (!w.length) return [{ touchId: null, channel: "UNATTRIBUTED", campaignId: null, weight: 1 }];
+  if (model === "FIRST_TOUCH") return [c(w[0], 1)];
+  if (model === "LAST_TOUCH") return [c([...w].reverse().find((t) => t.channel !== "DIRECT") ?? w[w.length - 1], 1)];
+  if (model === "LINEAR") return w.map((t) => c(t, 1 / w.length));
+  if (w.length === 1) return [c(w[0], 1)];
+  if (w.length === 2) return [c(w[0], 0.5), c(w[1], 0.5)];
+  const mid = 0.2 / (w.length - 2);
+  return w.map((t, i) => c(t, i === 0 || i === w.length - 1 ? 0.4 : mid));
+}
+
+/**
+ * Split an amount in minor units by weights so the parts add up exactly to
+ * the amount (largest remainder method; sign preserved for refunds).
+ */
+export function allocateCents(amount: number, weights: number[]): number[] {
+  if (!weights.length) return [];
+  const sign = amount < 0 ? -1 : 1;
+  const abs = Math.abs(amount);
+  const total = weights.reduce((s, w) => s + w, 0) || 1;
+  const raw = weights.map((w) => (abs * w) / total);
+  const floor = raw.map(Math.floor);
+  let rest = abs - floor.reduce((s, v) => s + v, 0);
+  const order = raw.map((v, i) => [v - floor[i], i] as const).sort((a, b) => b[0] - a[0] || a[1] - b[1]);
+  for (const [, i] of order) {
+    if (rest <= 0) break;
+    floor[i] += 1;
+    rest -= 1;
+  }
+  return floor.map((v) => v * sign);
+}
+
+/** Human explanation of a model (shown next to every credited number). */
+export const MODEL_RULES: Record<AttributionModel, string> = {
+  FIRST_TOUCH: "100% of the credit goes to the first touch in the lookback window.",
+  LAST_TOUCH: "100% of the credit goes to the last non-direct touch in the lookback window (the last touch if every touch was direct).",
+  LINEAR: "The credit is split equally across every touch in the lookback window.",
+  POSITION_BASED: "40% to the first touch, 40% to the last touch, 20% split across the touches in between.",
+};
 
 /** Commission for one revenue event. Refunds/churn produce negative or zero amounts. */
 export function commissionFor(input: { amountCents: number; commissionBps: number; monthsSinceStart: number; commissionMonths: number; type: string }): number {

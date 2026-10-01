@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { getI18n, getT } from "@/i18n/server";
+import type { Kpi } from "@/services/metrics";
 
 export function cx(...xs: (string | false | null | undefined)[]) {
   return xs.filter(Boolean).join(" ");
@@ -39,8 +40,12 @@ export function Panel({ title, eyebrow, actions, children, className, pad = true
 type Fmt = "count" | "money" | "percent";
 
 /** Locale-aware number formatting; pass `intl` from `getI18n()` (defaults to en-GB). */
-export function formatValue(v: number, fmt: Fmt = "count", currency = "EUR", intl = "en-GB") {
-  if (fmt === "money") return new Intl.NumberFormat(intl, { style: "currency", currency, maximumFractionDigits: 0 }).format(v / 100);
+/** Money without a known currency is shown as a plain amount (Beacon never assumes a currency). */
+export function formatValue(v: number, fmt: Fmt = "count", currency?: string | null, intl = "en-GB") {
+  if (fmt === "money")
+    return currency
+      ? new Intl.NumberFormat(intl, { style: "currency", currency, maximumFractionDigits: 0 }).format(v / 100)
+      : new Intl.NumberFormat(intl, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v / 100);
   if (fmt === "percent") return new Intl.NumberFormat(intl, { style: "percent", minimumFractionDigits: v < 0.1 ? 2 : 1, maximumFractionDigits: v < 0.1 ? 2 : 1 }).format(v);
   return new Intl.NumberFormat(intl, { maximumFractionDigits: v < 10 && v % 1 ? 1 : 0 }).format(v);
 }
@@ -58,30 +63,62 @@ export async function Delta({ now, prev }: { now: number | null; prev: number | 
   );
 }
 
-/** KPI tile. `value === null` renders an explicit "not connected" state, never a fake zero. */
-export async function Stat({ label, value, prev, fmt = "count", currency, source, href }: { label: string; value: number | null; prev?: number | null; fmt?: Fmt; currency?: string; source?: string; href?: string }) {
+/**
+ * KPI tile. With `kpi`, renders its three states: NOT_CONNECTED ("Not
+ * connected", links to the connect page), NO_DATA_YET ("No data yet") and
+ * OK (the value; a measured 0 is a real 0, a rate without denominator is
+ * "n/a"). Money in several currencies is listed per currency, never summed.
+ * Without `kpi`, `value === null` renders "Not connected" (never a fake zero).
+ */
+export async function Stat({ label, value, prev, fmt = "count", currency, source, href, kpi }: { label: string; value?: number | null; prev?: number | null; fmt?: Fmt; currency?: string | null; source?: string; href?: string; kpi?: Kpi }) {
   const { t, intl } = await getI18n();
+  const state = kpi?.state ?? (value === null || value === undefined ? "NOT_CONNECTED" : "OK");
+  const v = kpi ? kpi.now : (value ?? null);
+  const p = kpi ? kpi.prev : (prev ?? null);
+  const cur = kpi?.currency ?? currency ?? undefined;
+  const src = source ?? (kpi ? t(kpi.source) : undefined);
+  const multi = kpi?.byCurrency && kpi.byCurrency.length > 1 ? kpi.byCurrency : null;
+  const link = state === "OK" ? href : (kpi?.href ?? href);
   const body = (
-    <div className="flex h-full min-w-0 flex-col justify-between gap-3 border border-line bg-panel p-4 transition-colors hover:border-line-strong">
+    <div className="flex h-full min-w-0 flex-col justify-between gap-3 border border-line bg-panel p-4 transition-colors hover:border-line-strong" data-kpi-state={state}>
       <div className="eyebrow">{label}</div>
-      {value === null ? (
+      {state !== "OK" ? (
         <div>
-          <div className="text-lg text-muted">{t("Not connected")}</div>
-          {source && <div className="mt-1 text-[11px] text-muted">{source}</div>}
+          <div className="text-lg text-muted">{state === "NOT_CONNECTED" ? t("Not connected") : t("No data yet")}</div>
+          {src && <div className="mt-1 text-[11px] text-muted">{src}</div>}
+          {state === "NOT_CONNECTED" && link && <div className="mt-1 text-[11px] text-blue-bright">{t("Connect →")}</div>}
+        </div>
+      ) : multi ? (
+        <div>
+          <ul className="flex flex-col gap-0.5">
+            {multi.map((c) => (
+              <li key={c.currency} className="flex items-baseline justify-between gap-2">
+                <span className="num text-base font-medium text-platinum">{formatValue(c.now, fmt, c.currency, intl)}</span>
+                <Delta now={c.now} prev={c.prev} />
+              </li>
+            ))}
+          </ul>
+          <div className="mt-1 text-[11px] text-muted">{t("Multiple currencies, not converted or added")}</div>
+          {src && <span className="line-clamp-2 text-[11px] text-muted">{src}</span>}
+        </div>
+      ) : v === null ? (
+        <div>
+          <div className="num text-2xl font-medium tracking-tight text-muted">{t("n/a")}</div>
+          {src && <div className="mt-1 line-clamp-2 text-[11px] text-muted">{src}</div>}
         </div>
       ) : (
         <div>
-          <div className="num text-2xl font-medium tracking-tight text-platinum">{formatValue(value, fmt, currency, intl)}</div>
+          <div className="num text-2xl font-medium tracking-tight text-platinum">{formatValue(v, fmt, cur, intl)}</div>
           <div className="mt-1 flex flex-col gap-0.5">
-            <Delta now={value} prev={prev ?? null} />
-            {source && <span className="line-clamp-2 text-[11px] text-muted">{source}</span>}
+            <Delta now={v} prev={p} />
+            {src && <span className="line-clamp-2 text-[11px] text-muted">{src}</span>}
           </div>
         </div>
       )}
     </div>
   );
-  return href ? (
-    <Link href={href} className="block h-full">
+  return link ? (
+    <Link href={link} className="block h-full">
       {body}
     </Link>
   ) : (
@@ -150,6 +187,7 @@ const STATUS_TONE: Record<string, keyof typeof TONES> = {
   PAID: "ok",
   VOID: "muted",
   DISABLED: "muted",
+  EXPIRED: "warn",
   CANCELLED: "muted",
   CONCLUDED: "ok",
   ABANDONED: "muted",

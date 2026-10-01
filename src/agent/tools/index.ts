@@ -3,7 +3,7 @@ import type { AgentTool } from "../types";
 import { addCompetitorTool, addComparisonFactTool, addPricingPlanTool, addProductFacet, addProductFaq, addProductSource } from "./knowledge";
 import { addDistributionTargetTool, listDistributionTargets, setDistributionTargetStatus } from "./distribution";
 import { addQueryTool, generateQuerySuggestions, getSeoAudits, listPlannedPages, listQueries, queueSeoAudit, syncPagePlanTool } from "./discovery";
-import { createContentDraft, getContent, listContent, regenerateContentDraft } from "./content";
+import { createContentDraft, getContent, listContent, regenerateContentDraft, repurposeContent } from "./content";
 import { generateOpportunities, getOpportunity, listOpportunities, setOpportunityStatusTool } from "./opportunities";
 import { getAiVisibility, getAutopilot, getConversionsSummary, getRevenueSummary, queueAiVisibilityTests } from "./growth";
 import { createProductTool, getProduct, listProductPhotos, listProducts, recomputeBeaconScore, setProductLogoTool, updateProductTool } from "./products";
@@ -54,6 +54,7 @@ export const AGENT_TOOLS: AgentTool[] = [
   setOpportunityStatusTool,
   createContentDraft,
   regenerateContentDraft,
+  repurposeContent,
   // Write: distribution (never submits externally) & AI visibility
   addDistributionTargetTool,
   setDistributionTargetStatus,

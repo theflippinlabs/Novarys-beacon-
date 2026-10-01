@@ -1,11 +1,12 @@
 import Link from "next/link";
-import { EmptyState, LinkButton, PageHeader, Panel, Stat, Table, Td, Th, formatValue } from "@/components/ui";
+import { EmptyState, HiddenBack, LinkButton, PageHeader, Panel, Stat, Table, Td, Th, formatValue } from "@/components/ui";
 import { LineChart } from "@/components/charts/line-chart";
 import { RangePicker } from "@/components/shell/product-tabs";
 import { prioritizeAttention, type AttentionItem } from "@/core/command/attention";
 import { BEACON_CHANNELS } from "@/services/metrics";
 import { attentionItems, commandCenterData } from "@/services/overview";
 import { daysParam, pageData, type SP } from "@/lib/page";
+import { recomputeScoreAction } from "@/app/actions/knowledge";
 import { enumLabel } from "@/i18n/core";
 import { getI18n, getT } from "@/i18n/server";
 import type { Metadata } from "next";
@@ -18,7 +19,7 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function CommandCenter({ searchParams }: { searchParams: Promise<SP> }) {
   const sp = await searchParams;
   const days = daysParam(sp);
-  const { data, ctx } = await pageData((tx, ctx) => commandCenterData(tx, ctx.org.id, days));
+  const { data, ctx, can } = await pageData((tx, ctx) => commandCenterData(tx, ctx.org.id, days));
   const { t, intl, locale } = await getI18n();
   const c = data.counts;
   const n = (v: unknown) => Number(v ?? 0);
@@ -26,7 +27,6 @@ export default async function CommandCenter({ searchParams }: { searchParams: Pr
 
   const items: AttentionItem[] = attentionItems(data, t);
   const attention = prioritizeAttention(items);
-  const mrr7 = n(c.beacon_mrr_7d);
   const channelLabel = (v: string) => (locale === "fr" ? enumLabel(t, v) : v).toLocaleLowerCase(intl);
   const today = new Date().toLocaleDateString(intl, { weekday: "long", day: "numeric", month: "long" });
 
@@ -64,8 +64,8 @@ export default async function CommandCenter({ searchParams }: { searchParams: Pr
             )}
           </Panel>
           <div className="flex flex-col gap-3">
-            <Stat label={t("New attributed MRR · 7d")} value={k.revenue.beaconNewMrr.now === null ? null : mrr7} fmt="money" currency={(c.currency as string) ?? "EUR"} source={t("Beacon channels")} href="/revenue" />
-            <Stat label={t("MRR attributable to Beacon")} value={k.revenue.beaconMrr.now} fmt="money" currency={k.currency} source={t(k.revenue.beaconMrr.source)} href="/revenue" />
+            <Stat label={t("New attributed MRR · {days}d", { days })} kpi={k.revenue.beaconNewMrr} fmt="money" source={t("Beacon channels")} href="/revenue" />
+            <Stat label={t("MRR attributable to Beacon")} kpi={k.revenue.beaconMrr} fmt="money" href="/revenue" />
             <Panel eyebrow={t("Products")} title={t("Beacon scores")} pad={false}>
               <ul>
                 {data.products.map((p) => (
@@ -73,7 +73,25 @@ export default async function CommandCenter({ searchParams }: { searchParams: Pr
                     <Link href={`/products/${p.slug}`} className="text-sm text-chrome hover:text-platinum">
                       {p.name}
                     </Link>
-                    <span className="num text-sm text-platinum">{data.scores.has(p.id) ? Math.round(data.scores.get(p.id)!.total) : <span className="text-xs text-muted">{t("n/a")}</span>}</span>
+                    <span className="flex items-center gap-2">
+                      {data.scores.has(p.id) ? (
+                        <>
+                          <span className="num text-[10px] text-muted">{t("computed {date}", { date: new Date(data.scores.get(p.id)!.computedAt).toISOString().slice(0, 10) })}</span>
+                          <span className="num text-sm text-platinum">{Math.round(data.scores.get(p.id)!.total)}</span>
+                        </>
+                      ) : (
+                        <span className="text-xs text-muted">{t("Not computed yet")}</span>
+                      )}
+                      {can("job:run") && (
+                        <form action={recomputeScoreAction}>
+                          <HiddenBack path="/" />
+                          <input type="hidden" name="productId" value={p.id} />
+                          <button className="eyebrow hover:text-chrome" title={t("Recompute")} aria-label={t("Recompute the Beacon Score of {name}", { name: p.name })}>
+                            ↻
+                          </button>
+                        </form>
+                      )}
+                    </span>
                   </li>
                 ))}
               </ul>
@@ -84,14 +102,15 @@ export default async function CommandCenter({ searchParams }: { searchParams: Pr
 
       <section className="mt-10">
         <div className="eyebrow mb-3">{t("Discovery · last {days} days vs previous {days}", { days })}</div>
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
-          <Stat label={t("Organic impressions")} value={k.discovery.organicImpressions.now} prev={k.discovery.organicImpressions.prev} source={t(k.discovery.organicImpressions.source)} />
-          <Stat label={t("Organic clicks")} value={k.discovery.organicClicks.now} prev={k.discovery.organicClicks.prev} source={t(k.discovery.organicClicks.source)} />
-          <Stat label={t("Indexable pages")} value={k.discovery.indexedPages.now} source={t(k.discovery.indexedPages.source)} />
-          <Stat label={t("Covered queries")} value={k.discovery.coveredQueries.now} source={t(k.discovery.coveredQueries.source)} href="/queries" />
-          <Stat label={t("Branded impressions")} value={k.discovery.brandedImpressions.now} prev={k.discovery.brandedImpressions.prev} source={t(k.discovery.brandedImpressions.source)} />
-          <Stat label={t("AI referrals")} value={k.discovery.aiReferrals.now} prev={k.discovery.aiReferrals.prev} source={t(k.discovery.aiReferrals.source)} />
-          <Stat label={t("Observed AI mentions")} value={k.discovery.aiMentions.now} prev={k.discovery.aiMentions.prev} source={t(k.discovery.aiMentions.source)} href="/ai-visibility" />
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <Stat label={t("Organic impressions")} kpi={k.discovery.organicImpressions} />
+          <Stat label={t("Organic clicks")} kpi={k.discovery.organicClicks} />
+          <Stat label={t("Indexable pages")} kpi={k.discovery.indexedPages} />
+          <Stat label={t("Covered queries")} kpi={k.discovery.coveredQueries} href="/queries" />
+          <Stat label={t("Branded impressions")} kpi={k.discovery.brandedImpressions} />
+          <Stat label={t("AI referrals (Beacon tracker)")} kpi={k.discovery.aiReferrals} />
+          <Stat label={t("AI referral sessions (GA4)")} kpi={k.discovery.aiReferralSessionsGa4} />
+          <Stat label={t("Observed AI mentions")} kpi={k.discovery.aiMentions} href="/ai-visibility" />
         </div>
       </section>
 
@@ -99,19 +118,19 @@ export default async function CommandCenter({ searchParams }: { searchParams: Pr
         <div>
           <div className="eyebrow mb-3">{t("Acquisition")}</div>
           <div className="grid grid-cols-2 gap-3">
-            <Stat label={t("Visitors")} value={k.acquisition.visitors.now} prev={k.acquisition.visitors.prev} source={t(k.acquisition.visitors.source)} href="/conversions" />
-            <Stat label={t("Signups")} value={k.acquisition.signups.now} prev={k.acquisition.signups.prev} source={t(k.acquisition.signups.source)} />
-            <Stat label={t("Trials")} value={k.acquisition.trials.now} prev={k.acquisition.trials.prev} source={t(k.acquisition.trials.source)} />
-            <Stat label={t("Activations")} value={k.acquisition.activations.now} prev={k.acquisition.activations.prev} source={t(k.acquisition.activations.source)} />
+            <Stat label={t("Visitors")} kpi={k.acquisition.visitors} href="/conversions" />
+            <Stat label={t("Signups")} kpi={k.acquisition.signups} />
+            <Stat label={t("Trials")} kpi={k.acquisition.trials} />
+            <Stat label={t("Activations")} kpi={k.acquisition.activations} />
           </div>
         </div>
         <div>
           <div className="eyebrow mb-3">{t("Revenue")}</div>
           <div className="grid grid-cols-2 gap-3">
-            <Stat label={t("New subscriptions")} value={k.revenue.newSubscriptions.now} prev={k.revenue.newSubscriptions.prev} source={t(k.revenue.newSubscriptions.source)} href="/revenue" />
-            <Stat label={t("ARR")} value={k.revenue.arr.now} fmt="money" currency={k.currency} source={t(k.revenue.arr.source)} />
-            <Stat label={t("Conversion rate")} value={k.revenue.conversionRate.now} prev={k.revenue.conversionRate.prev} fmt="percent" source={t(k.revenue.conversionRate.source)} />
-            <Stat label={t("Revenue in period")} value={k.revenue.revenue.now} prev={k.revenue.revenue.prev} fmt="money" currency={k.currency} source={t(k.revenue.revenue.source)} />
+            <Stat label={t("New subscriptions")} kpi={k.revenue.newSubscriptions} href="/revenue" />
+            <Stat label={t("ARR")} kpi={k.revenue.arr} fmt="money" />
+            <Stat label={t("Conversion rate")} kpi={k.revenue.conversionRate} fmt="percent" />
+            <Stat label={t("Revenue in period")} kpi={k.revenue.revenue} fmt="money" />
           </div>
         </div>
       </section>
@@ -120,17 +139,17 @@ export default async function CommandCenter({ searchParams }: { searchParams: Pr
         <div>
           <div className="eyebrow mb-3">{t("Ecosystem")}</div>
           <div className="grid grid-cols-2 gap-3">
-            <Stat label={t("Cross-sell conversion")} value={k.ecosystem.crossSellRate.now} prev={k.ecosystem.crossSellRate.prev} fmt="percent" source={t(k.ecosystem.crossSellRate.source)} href="/autopilot#cross-sell" />
-            <Stat label={t("Multi-product users")} value={k.ecosystem.multiProductUsers.now} source={t(k.ecosystem.multiProductUsers.source)} />
-            <Stat label={t("Referral conversions")} value={k.ecosystem.referralConversions.now} prev={k.ecosystem.referralConversions.prev} source={t(k.ecosystem.referralConversions.source)} href="/referrals" />
-            <Stat label={t("Affiliate revenue")} value={k.ecosystem.affiliateRevenue.now} prev={k.ecosystem.affiliateRevenue.prev} fmt="money" currency={k.currency} source={t(k.ecosystem.affiliateRevenue.source)} />
+            <Stat label={t("Cross-sell conversion")} kpi={k.ecosystem.crossSellRate} fmt="percent" href="/autopilot#cross-sell" />
+            <Stat label={t("Multi-product users")} kpi={k.ecosystem.multiProductUsers} />
+            <Stat label={t("Referral conversions")} kpi={k.ecosystem.referralConversions} href="/referrals" />
+            <Stat label={t("Affiliate revenue")} kpi={k.ecosystem.affiliateRevenue} fmt="money" />
           </div>
         </div>
         <div>
           <div className="eyebrow mb-3">{t("Content")}</div>
           <div className="grid grid-cols-2 gap-3">
-            <Stat label={t("Published assets")} value={k.content.published.now} source={t(k.content.published.source)} href="/content" />
-            <Stat label={t("Published this period")} value={k.content.publishedInPeriod.now} prev={k.content.publishedInPeriod.prev} source={t(k.content.publishedInPeriod.source)} />
+            <Stat label={t("Published assets")} kpi={k.content.published} href="/content" />
+            <Stat label={t("Published this period")} kpi={k.content.publishedInPeriod} />
           </div>
         </div>
       </section>

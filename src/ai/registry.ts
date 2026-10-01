@@ -12,7 +12,7 @@ const PROVIDER_INTEGRATION = { anthropic: "ANTHROPIC", openai: "OPENAI", perplex
 export function buildProvider(id: ProviderId, creds: ProviderCredentials): LlmProvider {
   switch (id) {
     case "anthropic":
-      return new AnthropicProvider(creds);
+      return new AnthropicProvider({ ...creds, webSearch: env().BEACON_ANTHROPIC_WEB_SEARCH !== "false" });
     case "openai":
       return new OpenAICompatibleProvider("openai", "OpenAI", creds, { baseUrl: "https://api.openai.com/v1", model: "gpt-5" });
     case "perplexity":

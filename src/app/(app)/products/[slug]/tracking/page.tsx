@@ -8,6 +8,7 @@ import { env } from "@/lib/env";
 import { pageData, productOr404, type SP } from "@/lib/page";
 import { enumLabel } from "@/i18n/core";
 import { getI18n, getT } from "@/i18n/server";
+import { IP_HASH_RETENTION_DAYS } from "@/services/tracking";
 import type { Metadata } from "next";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -112,17 +113,40 @@ export default async function TrackingPage({ params, searchParams }: { params: P
       </div>
 
       <Panel title={t("Install")} eyebrow={t("Snippets")} className="mt-6">
-        <div className="eyebrow mb-2">{t("Browser: page views & CTA clicks (add data-beacon-cta to CTA links)")}</div>
+        <div className="eyebrow mb-2">{t("Browser: page views (including SPA navigation) & CTA clicks (add data-beacon-cta to CTA links)")}</div>
         <pre className="overflow-x-auto border border-line bg-obsidian p-3 text-[12px] text-chrome">{`<script async src="${base}/beacon.js" data-key="${pk ? `bpk_${pk.prefix}_…` : "YOUR_PUBLISHABLE_KEY"}" data-product="${slug}"></script>
-<a href="/signup" data-beacon-cta="TRY_FREE">Try free</a>`}</pre>
+<a href="/signup" data-beacon-cta="TRY_FREE">Try free</a>
+<script>/* optional browser events */ beacon.track("SIGNUP_STARTED")</script>`}</pre>
+        <p className="mt-2 text-[11px] text-muted">{t("A publishable key may send PAGE_VIEW, CTA_CLICK, PRODUCT_VIEWED and SIGNUP_STARTED only, and never identityRef, emailHashInput, consent or traits (rejected with 403). Identity linking and consent are server-side.")}</p>
+        <div className="eyebrow mb-2 mt-5">{t("Server: identity and consent (secret key with identity:write)")}</div>
+        <pre className="overflow-x-auto border border-line bg-obsidian p-3 text-[12px] text-chrome">{`curl -X POST ${base}/api/v1/identify \\
+  -H "authorization: Bearer $BEACON_SECRET_KEY" -H "content-type: application/json" \\
+  -d '{"identityRef":"user_123","consent":{"analytics":true,"marketing":false,"crossProduct":false}}'`}</pre>
         <div className="eyebrow mb-2 mt-5">{t("Server: lifecycle events (signup → subscription)")}</div>
         <pre className="overflow-x-auto border border-line bg-obsidian p-3 text-[12px] text-chrome">{`curl -X POST ${base}/api/v1/events \\
   -H "authorization: Bearer $BEACON_SECRET_KEY" -H "content-type: application/json" \\
-  -d '{"type":"SIGNUP","identityRef":"user_123","visitorId":"<from beacon cookie bcn_vid>","consent":{"analytics":true,"marketing":false,"crossProduct":false}}'`}</pre>
+  -d '{"type":"SIGNUP_COMPLETED","identityRef":"user_123","visitorId":"<from beacon cookie bcn_vid>","sessionId":"<beacon.session()>","idempotencyKey":"signup:user_123"}'`}</pre>
+        <p className="mt-2 text-[11px] text-muted">
+          {t("Event types: {types}. Legacy names stay accepted: SIGNUP, ACTIVATED, SUBSCRIBED, UPGRADED, CANCELLED.", { types: "PAGE_VIEW, CTA_CLICK, PRODUCT_VIEWED, SIGNUP_STARTED, SIGNUP_COMPLETED, TRIAL_STARTED, ACTIVATION_COMPLETED, CHECKOUT_STARTED, SUBSCRIPTION_STARTED, SUBSCRIPTION_UPGRADED, SUBSCRIPTION_CANCELLED" })}
+        </p>
+        <div className="eyebrow mb-2 mt-5">{t("Server: batch (up to 100 events per request)")}</div>
+        <pre className="overflow-x-auto border border-line bg-obsidian p-3 text-[12px] text-chrome">{`curl -X POST ${base}/api/v1/events/batch -H "authorization: Bearer $BEACON_SECRET_KEY" -H "content-type: application/json" \\
+  -d '{"events":[{"type":"TRIAL_STARTED","identityRef":"user_123","idempotencyKey":"trial:user_123"},{"type":"ACTIVATION_COMPLETED","identityRef":"user_123"}]}'`}</pre>
         <div className="eyebrow mb-2 mt-5">{t("Server: revenue (or connect Stripe webhooks in Settings → Integrations)")}</div>
         <pre className="overflow-x-auto border border-line bg-obsidian p-3 text-[12px] text-chrome">{`curl -X POST ${base}/api/v1/revenue -H "authorization: Bearer $BEACON_SECRET_KEY" -H "content-type: application/json" \\
   -d '{"externalId":"inv_001","type":"NEW","amountCents":4900,"mrrDeltaCents":4900,"currency":"EUR","identityRef":"user_123",
        "subscription":{"externalId":"sub_001","plan":"Pro","status":"ACTIVE","mrrCents":4900}}'`}</pre>
+      </Panel>
+
+      <Panel title={t("What Beacon stores")} eyebrow={t("Privacy")} className="mt-6">
+        <ul className="flex list-disc flex-col gap-1.5 pl-5 text-xs text-chrome">
+          <li>{t("Visitor: a random id in a first-party cookie (bcn_vid, 1 year) and a session id in sessionStorage (new after 30 minutes of inactivity). No fingerprinting.")}</li>
+          <li>{t("Per event: type, page URL without query string, landing page, UTM parameters (source, medium, campaign, term, content), referrer host, CTA id, the attribution decision and its touches.")}</li>
+          <li>{t("IP address: never stored. A keyed hash of it is kept on acquisition touches for fraud checks and rate limiting, and cleared after {days} days.", { days: IP_HASH_RETENTION_DAYS })}</li>
+          <li>{t("Identity: only the identityRef your server sends, a keyed hash of the email (never the email) and consent. Browsers cannot send them.")}</li>
+          <li>{t("Consent: when your server records analytics consent as refused, events are still counted but stored without visitor, session, identity, touch or IP linkage.")}</li>
+          <li>{t("Do-Not-Track and Global Privacy Control: the tracker sends nothing.")}</li>
+        </ul>
       </Panel>
 
       <Panel title={t("Latest events")} eyebrow={t("Live")} className="mt-6" pad={false}>

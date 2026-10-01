@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { computeBeaconScore, type ScoreInput } from "@/core/score/beacon-score";
+import { computeBeaconScore, diffScores, normalizeScore, type ScoreInput } from "@/core/score/beacon-score";
 import { generateOpportunities, priority, type OpportunitySignals } from "@/core/opportunities/engine";
 
 const EMPTY: ScoreInput = {
   completeness: 0,
   audit: null,
   pages: { planned: 0, published: 0, productPagePublished: false, answerPagesPublished: 0, comparisonPlanned: 0, comparisonPublished: 0 },
-  authority: { verifiedProofs: 0, sources: 0, referringDomains: null, aiMentions90d: 0, aiTests90d: 0 },
+  authority: { verifiedProofs: 0, sources: 0, referringDomains: null, ai: { providerConfigured: false, tests90d: 0, testsMentioning90d: 0 } },
   queries: { active: 0, weightedCovered: 0, weightedTotal: 0 },
   conversion: { conversionUrls: 0, ctaEvents30d: 0, pricingPlans: 0, hasTrialOrDemo: false },
   measurement: { searchConsole: false, analytics: false, eventsReceived30d: false, revenueSource: false },
@@ -16,7 +16,7 @@ const PERFECT: ScoreInput = {
   completeness: 1,
   audit: { openIssues: { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0, INFO: 0 }, pagesCrawled: 50, ageDays: 1 },
   pages: { planned: 10, published: 10, productPagePublished: true, answerPagesPublished: 5, comparisonPlanned: 2, comparisonPublished: 2 },
-  authority: { verifiedProofs: 4, sources: 5, referringDomains: 10_000, aiMentions90d: 10, aiTests90d: 10 },
+  authority: { verifiedProofs: 4, sources: 5, referringDomains: 10_000, ai: { providerConfigured: true, tests90d: 10, testsMentioning90d: 10 } },
   queries: { active: 40, weightedCovered: 100, weightedTotal: 100 },
   conversion: { conversionUrls: 2, ctaEvents30d: 50, pricingPlans: 3, hasTrialOrDemo: true },
   measurement: { searchConsole: true, analytics: true, eventsReceived30d: true, revenueSource: true },
@@ -25,19 +25,21 @@ const PERFECT: ScoreInput = {
 const allLines = (s: ReturnType<typeof computeBeaconScore>) => s.components.flatMap((c) => c.lines);
 
 describe("computeBeaconScore", () => {
-  it("has seven components, each summing its lines", () => {
+  it("has seven Phase 2 dimensions, each summing its measurable lines", () => {
     const s = computeBeaconScore(PERFECT);
     expect(s.components.map((c) => c.key)).toEqual(["technical", "content", "entity", "authority", "queries", "conversion", "measurement"]);
-    for (const c of s.components) expect(c.max).toBe(c.lines.reduce((a, l) => a + l.max, 0));
+    expect(s.components.map((c) => c.label)).toEqual(["Technical discovery", "Content coverage", "Entity completeness", "Authority / citation signals", "Query coverage", "Conversion readiness", "Measurement readiness"]);
+    for (const c of s.components) expect(c.max).toBe(c.lines.filter((l) => l.measurable).reduce((a, l) => a + l.max, 0));
     // Documented component maxima.
-    expect(Object.fromEntries(s.components.map((c) => [c.key, c.max]))).toMatchObject({ technical: 20, content: 20, entity: 15, authority: 15, queries: 15, conversion: 10, measurement: 5 });
+    expect(Object.fromEntries(s.components.map((c) => [c.key, c.fullMax]))).toMatchObject({ technical: 20, content: 20, entity: 15, authority: 15, queries: 15, conversion: 10, measurement: 5 });
   });
 
-  // BUG: documented as a 0 to 100 score, but the component maxima are
-  // 20+20+20+15+15+10+5 = 105, so a perfect input scores 105.
-  it("component maxima sum to 100", () => {
+  it("component maxima sum to 100 and a fully measurable input has full coverage", () => {
     const s = computeBeaconScore(PERFECT);
-    expect(s.components.reduce((a, c) => a + c.max, 0)).toBe(100);
+    expect(s.components.reduce((a, c) => a + c.fullMax, 0)).toBe(100);
+    expect(s.measuredMax).toBe(100);
+    expect(s.coverage).toBe(1);
+    expect(s.notMeasured).toEqual([]);
   });
 
   it("total never exceeds 100", () => {
@@ -47,25 +49,49 @@ describe("computeBeaconScore", () => {
   it("a perfect input earns every point available", () => {
     const s = computeBeaconScore(PERFECT);
     for (const l of allLines(s)) expect(l.earned).toBe(l.max);
-    expect(s.total).toBe(s.components.reduce((a, c) => a + c.max, 0));
+    expect(s.total).toBe(100);
     expect(s.pathTo.tasks).toEqual([]);
     expect(s.pathTo.target).toBe(100);
     expect(allLines(s).every((l) => l.fix === undefined)).toBe(true);
   });
 
-  it("an empty input scores low and explains why", () => {
+  it("an empty input scores 0: no free points, unmeasurable lines excluded and explained", () => {
     const s = computeBeaconScore(EMPTY);
-    // Only "Comparisons" (nothing required) earns points.
-    expect(s.total).toBe(3);
+    expect(s.total).toBe(0);
+    // Comparisons (not applicable), referring domains and AI mentions (not connected) are excluded.
+    expect(s.measuredMax).toBe(90);
+    expect(s.coverage).toBe(0.9);
+    expect(s.notMeasured.map((n) => n.label)).toEqual(["Comparisons", "Referring domains", "AI mention rate"]);
     const reasons = allLines(s).map((l) => l.reason);
     expect(reasons).toContain("No technical audit has been run.");
-    expect(reasons).toContain("Backlink data not connected: cannot be scored.");
-    expect(reasons).toContain("No AI visibility tests run.");
+    expect(reasons).toContain("Not measured: connect Bing Webmaster Tools (backlink data).");
+    expect(reasons).toContain("Not applicable: no sourced comparison pages are planned.");
     expect(reasons.filter((r) => r === "Not connected.")).toHaveLength(2);
     for (const l of allLines(s)) {
       expect(l.earned).toBeGreaterThanOrEqual(0);
       expect(l.earned).toBeLessThanOrEqual(l.max);
     }
+  });
+
+  it("rescales over the measurable maximum", () => {
+    // Everything perfect except backlinks and AI providers, which are not connected: still 100.
+    const s = computeBeaconScore({ ...PERFECT, authority: { ...PERFECT.authority, referringDomains: null, ai: { providerConfigured: false, tests90d: 0, testsMentioning90d: 0 } } });
+    expect(s.measuredMax).toBe(93);
+    expect(s.total).toBe(100);
+    // Half of a 90-point measurable set = 50.
+    const half = computeBeaconScore({ ...EMPTY, audit: { openIssues: { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0, INFO: 0 }, pagesCrawled: 1, ageDays: 1 }, queries: { active: 40, weightedCovered: 100, weightedTotal: 100 }, completeness: 2 / 3 });
+    // 20 + 15 + 10 = 45 of 90.
+    expect(half.total).toBe(50);
+  });
+
+  it("AI mentions are a product-scoped rate; a connected provider without tests is measurable and earns 0", () => {
+    const rate = computeBeaconScore({ ...PERFECT, authority: { ...PERFECT.authority, ai: { providerConfigured: true, tests90d: 4, testsMentioning90d: 1 } } });
+    const line = rate.components[3].lines.find((l) => l.label === "AI mention rate")!;
+    expect(line).toMatchObject({ earned: 0.8, max: 3, measurable: true });
+    expect(line.reason).toBe("Mentioned in 1 of 4 sampled AI answers to this product's prompts (90 days).");
+    const none = computeBeaconScore({ ...PERFECT, authority: { ...PERFECT.authority, ai: { providerConfigured: true, tests90d: 0, testsMentioning90d: 0 } } });
+    expect(none.components[3].lines.find((l) => l.label === "AI mention rate")).toMatchObject({ earned: 0, measurable: true });
+    expect(none.total).toBe(97);
   });
 
   it("clamps penalties so heavy issue counts never go negative", () => {
@@ -76,19 +102,43 @@ describe("computeBeaconScore", () => {
     expect(medium.components[0].lines.map((l) => l.earned)).toEqual([5, 3, 1]);
   });
 
-  it("pathTo tasks are sorted by points per effort and reach the next milestone", () => {
+  it("pathTo tasks are sorted by points per effort and reach the next milestone (rescaled points)", () => {
     const s = computeBeaconScore(EMPTY);
     expect(s.pathTo.target).toBe(10);
     const ratios = s.pathTo.tasks.map((t) => t.points / t.effort);
     for (let i = 1; i < ratios.length; i++) expect(ratios[i]).toBeLessThanOrEqual(ratios[i - 1]);
     expect(s.total + s.pathTo.tasks.reduce((a, t) => a + t.points, 0)).toBeGreaterThanOrEqual(s.pathTo.target);
-    // Stops as soon as the target is reached: dropping the last task falls short.
     expect(s.total + s.pathTo.tasks.slice(0, -1).reduce((a, t) => a + t.points, 0)).toBeLessThan(s.pathTo.target);
-    expect(s.pathTo.tasks[0]).toMatchObject({ task: "Run a technical SEO audit of the product website.", points: 20, component: "Technical Discovery", effort: 1 });
+    expect(s.pathTo.tasks[0]).toMatchObject({ task: "Run a technical SEO audit of the product website.", points: 22.2, component: "Technical discovery", effort: 1 });
 
     const mid = computeBeaconScore({ ...EMPTY, completeness: 0.5, measurement: { ...EMPTY.measurement, searchConsole: true } });
-    expect(mid.total).toBe(13);
+    // (7.5 + 2) / 90 = 10.6 %
+    expect(mid.total).toBe(11);
     expect(mid.pathTo.target).toBe(20);
+  });
+});
+
+describe("diffScores / normalizeScore", () => {
+  it("reports per-line changes since the previous computation", () => {
+    const prev = computeBeaconScore(EMPTY);
+    const next = computeBeaconScore({ ...EMPTY, measurement: { ...EMPTY.measurement, searchConsole: true }, authority: { ...EMPTY.authority, referringDomains: 9 } });
+    const d = diffScores(prev, next);
+    expect(d.totalDelta).toBe(next.total - prev.total);
+    expect(d.lines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: "Search Console", before: 0, after: 2, delta: 2 }),
+        expect.objectContaining({ label: "Referring domains", measurableBefore: false, measurableAfter: true, delta: 2 }),
+      ]),
+    );
+    expect(d.lines.find((l) => l.label === "Technical audit")).toBeUndefined();
+    expect(diffScores(null, next)).toEqual({ totalDelta: null, lines: [] });
+  });
+
+  it("reads v1 stored scores (no measurable flags) as fully measurable", () => {
+    const v1 = { total: 40, components: [{ key: "entity", label: "Entity Completeness", earned: 6, max: 15, lines: [{ label: "Knowledge graph completeness", earned: 6, max: 15, reason: "40%", effort: 1 }] }], pathTo: { target: 50, tasks: [] } };
+    const n = normalizeScore(v1);
+    expect(n).toMatchObject({ version: 2, total: 40, measuredMax: 15, notMeasured: [] });
+    expect(n.components[0].lines[0].measurable).toBe(true);
   });
 });
 

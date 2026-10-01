@@ -1,23 +1,29 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { asSystem, withOrg, type Tx } from "@/db";
 import { aiVisibilityPrompts, integrations, organizations } from "@/db/schema";
 import { availableProviders, resolveProvider } from "@/ai/registry";
-import { generateVersion } from "@/services/content";
+import { generateQueued } from "@/services/content";
+import type { ContentStatus } from "@/core/content/workflow";
 import { syncPagePlan } from "@/services/discovery";
-import { generateQueryUniverse } from "@/services/queries";
-import { executeAudit } from "@/services/seo";
-import { syncIntegration } from "@/services/visibility";
+import { generateQueryUniverse, importQueriesAfterSync } from "@/services/queries";
+import { createScheduledAudit, executeAudit, productsWithVerifiedDomain } from "@/services/seo";
+import { backfillSearch, syncIntegration } from "@/services/visibility";
+import { isSyncableProvider } from "@/integrations/registry";
+import { syncScheduleDecision } from "@/core/integrations/health";
 import { runPromptTests } from "@/services/ai-visibility";
 import { allProductIds, generateProductOpportunities } from "@/services/opportunities";
 import { computeAndStoreScore } from "@/services/score";
+import { checkOrganizationSources, type SourceFetcher } from "@/services/provenance";
+import { safeFetch } from "@/lib/security/ssrf";
 import { generateGrowthReport } from "@/services/autopilot";
 import { analyzeProduct } from "@/services/onboarding";
+import { purgeTrackingIpHashes } from "@/services/tracking";
 import { purgeRateLimitBuckets } from "@/lib/security/rate-limit";
-import { purgeExpiredSessions } from "@/lib/auth/service";
+import { purgeExpiredSessions, purgeLoginThrottle } from "@/lib/auth/service";
 import { isoDay } from "@/core/util/text";
-import { enqueue, NonRetryableError, type Job, type JobType } from "./queue";
+import { enqueue, NonRetryableError, purgeFinishedJobs, type Job, type JobContext, type JobType } from "./queue";
 
-type Handler = (job: Job) => Promise<unknown>;
+type Handler = (job: Job, ctx: JobContext) => Promise<unknown>;
 
 const orgOf = (job: Job) => {
   if (!job.organizationId) throw new NonRetryableError("Job has no organization");
@@ -29,11 +35,26 @@ const str = (job: Job, key: string) => {
   return v;
 };
 const runner = (orgId: string) => <T>(fn: (tx: Tx) => Promise<T>) => withOrg(orgId, fn);
+/** Like `runner`, but every step also refreshes the job heartbeat (long, multi-step handlers). */
+const beatingRunner = (orgId: string, ctx: JobContext) => async <T>(fn: (tx: Tx) => Promise<T>) => {
+  await ctx.heartbeat();
+  return withOrg(orgId, fn);
+};
+
+/** Source liveness: SSRF-safe, small body cap; HEAD then GET fallback lives in checkUrl. */
+const sourceFetcher: SourceFetcher = async (url, method) => ({ status: (await safeFetch(url, { method, maxBytes: 64 * 1024, timeoutMs: 10_000, maxRedirects: 5, userAgent: "NovarysBeacon/1.0 (+source-check)" })).status });
 
 export const HANDLERS: Record<JobType, Handler> = {
-  "seo.audit": async (job) => {
+  "seo.audit": async (job, ctx) => {
     const orgId = orgOf(job);
-    const res = await executeAudit(runner(orgId), str(job, "auditId"));
+    // Weekly recurring audits are enqueued without an audit row: create it now (skipped when not allowed).
+    let auditId = typeof job.payload.auditId === "string" ? job.payload.auditId : null;
+    if (!auditId && job.payload.scheduled === true) {
+      const created = await withOrg(orgId, (tx) => createScheduledAudit(tx, orgId, str(job, "productId")));
+      if ("skipped" in created) return created;
+      auditId = created.auditId;
+    }
+    const res = await executeAudit(beatingRunner(orgId, ctx), auditId ?? str(job, "auditId"), undefined, { onProgress: () => void ctx.heartbeat().catch(() => undefined) });
     const productId = job.payload.productId as string | undefined;
     if (productId) {
       await enqueue("opportunities.generate", { productId }, { organizationId: orgId, idempotencyKey: `opps:${productId}:${job.id}` });
@@ -44,15 +65,17 @@ export const HANDLERS: Record<JobType, Handler> = {
   "discovery.plan": async (job) => withOrg(orgOf(job), (tx) => syncPagePlan(tx, job.organizationId!, str(job, "productId"))),
   "queries.generate": async (job) => withOrg(orgOf(job), (tx) => generateQueryUniverse(tx, job.organizationId!, str(job, "productId"))),
   "content.generate": async (job) => {
+    // Read in one transaction, call the LLM with no transaction open, persist in a second one.
     const orgId = orgOf(job);
-    return withOrg(orgId, async (tx) => {
-      const llm = job.payload.useLlm ? await resolveProvider(tx, orgId, "anthropic") : null;
-      const org = await tx.query.organizations.findFirst({ where: eq(organizations.id, orgId) });
-      const r = await generateVersion(tx, { organizationId: orgId, userId: (job.payload.userId as string) ?? null, actorType: "SYSTEM" }, str(job, "assetId"), llm, org?.branding.displayName ?? org?.name);
-      return { status: r.status, version: r.version.version, generatedBy: r.generatedBy };
+    const p = job.payload;
+    const base = typeof p.baseVersion === "number" && typeof p.baseStatus === "string" ? { version: p.baseVersion, status: p.baseStatus as ContentStatus } : null;
+    const r = await generateQueued(runner(orgId), { organizationId: orgId, userId: (p.userId as string) ?? null, actorType: "SYSTEM" }, str(job, "assetId"), {
+      resolveLlm: p.useLlm ? (tx) => resolveProvider(tx, orgId, "anthropic") : undefined,
+      base,
     });
+    return r.aborted ? { aborted: true, note: r.note } : { status: r.status, version: r.version.version, generatedBy: r.generatedBy };
   },
-  "ai_visibility.run": async (job) => {
+  "ai_visibility.run": async (job, ctx) => {
     const orgId = orgOf(job);
     const providers = await withOrg(orgId, (tx) => availableProviders(tx, orgId));
     if (!providers.length) throw new NonRetryableError("No AI provider configured (Settings → Integrations)");
@@ -60,10 +83,17 @@ export const HANDLERS: Record<JobType, Handler> = {
       ? [str(job, "promptId")]
       : (await withOrg(orgId, (tx) => tx.select({ id: aiVisibilityPrompts.id }).from(aiVisibilityPrompts).where(and(eq(aiVisibilityPrompts.organizationId, orgId), eq(aiVisibilityPrompts.active, true))))).map((p) => p.id);
     const out = [];
-    for (const id of promptIds) out.push(await runPromptTests(runner(orgId), orgId, id, providers));
+    for (const id of promptIds) out.push(await runPromptTests(beatingRunner(orgId, ctx), orgId, id, providers));
     return { prompts: promptIds.length, results: out.flat().length };
   },
-  "integration.sync": async (job) => syncIntegration(runner(orgOf(job)), str(job, "integrationId"), Number(job.payload.days ?? 28)),
+  "integration.sync": async (job) => {
+    const res = await syncIntegration(runner(orgOf(job)), str(job, "integrationId"), job.payload.days ? Number(job.payload.days) : undefined);
+    // Real demand: measured search queries become CANDIDATE queries (never blocks or fails the sync).
+    await importQueriesAfterSync(runner(orgOf(job)), orgOf(job), str(job, "integrationId")).catch(() => null);
+    return res;
+  },
+  "search.backfill": async (job, ctx) =>
+    backfillSearch(beatingRunner(orgOf(job), ctx), str(job, "integrationId"), { since: typeof job.payload.since === "string" ? job.payload.since : null, runId: typeof job.payload.runId === "string" ? job.payload.runId : undefined }),
   "opportunities.generate": async (job) => {
     const orgId = orgOf(job);
     return withOrg(orgId, async (tx) => {
@@ -73,6 +103,7 @@ export const HANDLERS: Record<JobType, Handler> = {
       return res;
     });
   },
+  "sources.check": async (job) => checkOrganizationSources(runner(orgOf(job)), orgOf(job), sourceFetcher),
   "score.compute": async (job) => {
     const orgId = orgOf(job);
     return withOrg(orgId, async (tx) => {
@@ -91,11 +122,16 @@ export const HANDLERS: Record<JobType, Handler> = {
     await enqueue("score.compute", { productId }, { organizationId: orgId, idempotencyKey: `score:${productId}:${job.id}` });
     return res;
   },
-  "metrics.rollup": async () => ({ ok: true }),
   "maintenance.cleanup": async () => {
     await purgeRateLimitBuckets();
     await purgeExpiredSessions();
-    return { ok: true };
+    await purgeLoginThrottle();
+    // Retention: finished jobs are deleted after 30 days. Audit logs are kept
+    // (compliance record of every mutation); they are never purged here.
+    const jobsPurged = await purgeFinishedJobs(30);
+    // Privacy: keyed IP hashes on tracking touches are cleared after 90 days.
+    const ipHashesCleared = await purgeTrackingIpHashes();
+    return { ok: true, jobsPurged, ipHashesCleared };
   },
 };
 
@@ -109,11 +145,20 @@ export async function scheduleRecurring(now = new Date()) {
   await enqueue("maintenance.cleanup", {}, { idempotencyKey: `cleanup:${day}` });
   const orgs = await asSystem((tx) => tx.select({ id: organizations.id }).from(organizations));
   for (const o of orgs) {
-    const integ = await asSystem((tx) => tx.select().from(integrations).where(and(eq(integrations.organizationId, o.id), eq(integrations.status, "CONNECTED"))));
-    for (const i of integ) if (["GOOGLE_SEARCH_CONSOLE", "GOOGLE_ANALYTICS", "BING_WEBMASTER"].includes(i.provider)) await enqueue("integration.sync", { integrationId: i.id }, { organizationId: o.id, idempotencyKey: `sync:${i.id}:${day}` });
+    // CONNECTED daily; ERROR again after a back-off; DISABLED and EXPIRED wait for a human (see core/integrations/health).
+    const integ = await asSystem((tx) => tx.select().from(integrations).where(and(eq(integrations.organizationId, o.id), inArray(integrations.status, ["CONNECTED", "ERROR"]))));
+    for (const i of integ) {
+      if (!isSyncableProvider(i.provider)) continue;
+      const decision = syncScheduleDecision(i, now);
+      if (decision.enqueue) await enqueue("integration.sync", { integrationId: i.id }, { organizationId: o.id, idempotencyKey: decision.key! });
+    }
     await enqueue("opportunities.generate", {}, { organizationId: o.id, idempotencyKey: `opps:${o.id}:${day}` });
     await enqueue("score.compute", {}, { organizationId: o.id, idempotencyKey: `score:${o.id}:${day}` });
     await enqueue("autopilot.report", { days: 7 }, { organizationId: o.id, idempotencyKey: `autopilot:${o.id}:${week}` });
+    await enqueue("sources.check", {}, { organizationId: o.id, idempotencyKey: `sources:${o.id}:${week}` });
+    // Weekly technical audit of every product whose own domain is verified.
+    for (const productId of await asSystem((tx) => productsWithVerifiedDomain(tx, o.id)))
+      await enqueue("seo.audit", { productId, scheduled: true }, { organizationId: o.id, idempotencyKey: `audit-weekly:${productId}:${week}` });
     const hasPrompts = await asSystem((tx) => tx.query.aiVisibilityPrompts.findFirst({ where: and(eq(aiVisibilityPrompts.organizationId, o.id), eq(aiVisibilityPrompts.active, true)) }));
     const hasProvider = await asSystem((tx) => availableProviders(tx, o.id));
     if (hasPrompts && hasProvider.length) await enqueue("ai_visibility.run", {}, { organizationId: o.id, idempotencyKey: `aivis:${o.id}:${week}` });

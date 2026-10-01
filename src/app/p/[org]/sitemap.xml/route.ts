@@ -1,20 +1,31 @@
 import { asSystem } from "@/db";
-import { canonicalUrl } from "@/core/discovery/urls";
 import { buildSitemap } from "@/core/seo/sitemap";
-import { env } from "@/lib/env";
-import { orgBySlug, publishedPages } from "@/services/public";
+import { ipHashOf } from "@/lib/http";
+import { rateLimit } from "@/lib/security/rate-limit";
+import { orgBySlug } from "@/services/public";
+import { hostedSitemapEntries } from "@/services/sitemaps";
 
 export const dynamic = "force-dynamic";
 
-/** XML sitemap of published discovery pages (canonical URLs on product domains when known). */
-export async function GET(_req: Request, { params }: { params: Promise<{ org: string }> }) {
+/**
+ * XML sitemap of published discovery pages (canonical URLs on product domains
+ * when known). Deprecated products are excluded. The generation date (most
+ * recent lastmod) is exposed in Last-Modified and X-Beacon-Generated-At.
+ */
+export async function GET(req: Request, { params }: { params: Promise<{ org: string }> }) {
   const { org: slug } = await params;
-  const body = await asSystem(async (tx) => {
+  const rl = await rateLimit(`sitemap:${ipHashOf(req)}`, 120, 60);
+  if (!rl.allowed) return new Response("Too many requests", { status: 429, headers: { "retry-after": String(Math.max(1, Math.ceil((rl.resetAt.getTime() - Date.now()) / 1000))) } });
+  const out = await asSystem(async (tx) => {
     const org = await orgBySlug(tx, slug);
     if (!org) return null;
-    const rows = await publishedPages(tx, org.id);
-    return buildSitemap(rows.map((r) => ({ loc: canonicalUrl(r.product.domain, r.page.path) ?? `${env().BEACON_BASE_URL}/p/${slug}${r.page.path}`, lastmod: (r.page.publishedAt ?? r.page.updatedAt).toISOString().slice(0, 10) })));
+    return hostedSitemapEntries(tx, org.id, slug);
   });
-  if (!body) return new Response("Not found", { status: 404 });
-  return new Response(body, { headers: { "content-type": "application/xml; charset=utf-8", "cache-control": "public, max-age=600" } });
+  if (!out) return new Response("Not found", { status: 404 });
+  const headers: Record<string, string> = { "content-type": "application/xml; charset=utf-8", "cache-control": "public, max-age=600" };
+  if (out.generatedAt) {
+    headers["last-modified"] = new Date(out.generatedAt).toUTCString();
+    headers["x-beacon-generated-at"] = out.generatedAt;
+  }
+  return new Response(buildSitemap(out.entries), { headers });
 }

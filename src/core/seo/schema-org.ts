@@ -21,7 +21,8 @@ export function softwareApplicationJsonLd(g: ProductGraph, opts: { url: string; 
     opts.visibleOffers === false
       ? []
       : g.pricing
-          .filter((plan) => plan.priceCents !== null && isVerified(plan))
+          // An Offer needs a known price and currency; unknown values are never defaulted.
+          .filter((plan) => plan.priceCents !== null && plan.currency && isVerified(plan))
           .map((plan) =>
             compact({
               "@type": "Offer",

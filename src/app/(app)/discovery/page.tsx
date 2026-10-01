@@ -10,6 +10,8 @@ import { QUALITY_THRESHOLDS } from "@/core/discovery/quality";
 import { enumLabel } from "@/i18n/core";
 import { getI18n, getT } from "@/i18n/server";
 import { pageData, sp1, type SP } from "@/lib/page";
+import { verifiedDomainNames } from "@/services/seo";
+import { sitemapOverview } from "@/services/sitemaps";
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getT();
@@ -28,7 +30,7 @@ export default async function DiscoveryPage({ searchParams }: { searchParams: Pr
   const { data, can, ctx } = await pageData(async (tx, ctx) => {
     const prods = await tx.select().from(products).where(eq(products.organizationId, ctx.org.id)).orderBy(products.name);
     const product = slug ? prods.find((p) => p.slug === slug) ?? null : prods[0] ?? null;
-    if (!product) return { prods, product: null, list: [], audits: [], sitemapCount: 0 };
+    if (!product) return { prods, product: null, list: [], audits: [], sitemapCount: 0, sitemaps: null, domains: [] as string[] };
     const list = await tx
       .select()
       .from(pages)
@@ -36,7 +38,9 @@ export default async function DiscoveryPage({ searchParams }: { searchParams: Pr
       .orderBy(pages.type, pages.path);
     const audits = await tx.select().from(seoAudits).where(eq(seoAudits.productId, product.id)).orderBy(desc(seoAudits.createdAt)).limit(8);
     const sm = await tx.execute<{ n: number }>(sql`select count(*)::int as n from pages where product_id = ${product.id} and status = 'PUBLISHED'`);
-    return { prods, product, list, audits, sitemapCount: Number(sm.rows[0]?.n ?? 0) };
+    const sitemaps = await sitemapOverview(tx, ctx.org.id, ctx.org.slug, product.id);
+    const domains = await verifiedDomainNames(tx, ctx.org.id);
+    return { prods, product, list, audits, sitemapCount: Number(sm.rows[0]?.n ?? 0), sitemaps, domains };
   });
   const { product } = data;
   const back = `/discovery?product=${product?.slug ?? ""}`;
@@ -151,6 +155,12 @@ export default async function DiscoveryPage({ searchParams }: { searchParams: Pr
                     <div>
                       <Button variant="gold">{t("Run audit")}</Button>
                     </div>
+                    <p className="text-[11px] text-muted">
+                      {data.domains.length ? t("Verified domains: {list}", { list: data.domains.join(", ") }) : t("No verified domain yet: audits of public sites need one.")}{" "}
+                      <Link className="text-blue-bright underline underline-offset-4" href="/discovery/domains">
+                        {t("Manage domains")}
+                      </Link>
+                    </p>
                   </form>
                 ) : (
                   <p className="text-sm text-muted">{t("Analyst role required to run audits.")}</p>
@@ -167,6 +177,16 @@ export default async function DiscoveryPage({ searchParams }: { searchParams: Pr
                   ))}
                   {!data.audits.length && <li className="text-xs text-muted">{t("No audits yet.")}</li>}
                 </ul>
+                {data.audits.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-3 text-xs">
+                    <Link className="text-blue-bright underline underline-offset-4" href={`/discovery/history?product=${product.slug}`}>
+                      {t("Crawl history")}
+                    </Link>
+                    <Link className="text-blue-bright underline underline-offset-4" href={`/discovery/links?product=${product.slug}`}>
+                      {t("Internal links")}
+                    </Link>
+                  </div>
+                )}
               </Panel>
               <Panel title={t("Publication gate")} eyebrow={t("Thresholds")}>
                 <ul className="flex flex-col gap-1 text-xs text-chrome">
@@ -178,6 +198,48 @@ export default async function DiscoveryPage({ searchParams }: { searchParams: Pr
               </Panel>
               <Panel title={t("Sitemaps & machine-readable")} eyebrow={t("Published output")}>
                 <p className="text-xs text-chrome">{t("{n} published page(s) are included in the Beacon-hosted sitemap and llms.txt index.", { n: data.sitemapCount })}</p>
+                {data.sitemaps && (
+                  <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <dt className="eyebrow">{t("Last generated")}</dt>
+                      <dd className="num text-chrome">{data.sitemaps.hosted.generatedAt ? data.sitemaps.hosted.generatedAt.slice(0, 10) : t("n/a")}</dd>
+                    </div>
+                    <div>
+                      <dt className="eyebrow">{t("Last verified")}</dt>
+                      <dd className="num text-chrome">
+                        {data.sitemaps.lastVerifiedAt && data.sitemaps.latestAuditId ? (
+                          <Link className="text-blue-bright" href={`/discovery/audits/${data.sitemaps.latestAuditId}?category=SITEMAP`}>
+                            {data.sitemaps.lastVerifiedAt.slice(0, 10)}
+                          </Link>
+                        ) : (
+                          t("Not crawled yet")
+                        )}
+                      </dd>
+                    </div>
+                  </dl>
+                )}
+                {data.sitemaps && data.sitemaps.snapshots.length > 0 && (
+                  <ul className="mt-3 flex flex-col gap-1 border-t border-line pt-2 text-[11px]">
+                    {data.sitemaps.snapshots.slice(0, 8).map((s) => (
+                      <li key={s.id} className="flex items-baseline justify-between gap-2">
+                        <span className="min-w-0 truncate text-chrome" title={s.sitemapUrl}>
+                          {s.sitemapUrl}
+                        </span>
+                        <span className={`num shrink-0 ${s.errors.length ? "text-warn" : "text-muted"}`}>{s.errors.length ? t("error") : t("{n} URLs", { n: s.urlCount })}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {data.sitemaps && data.sitemaps.issueCounts.length > 0 && (
+                  <ul className="mt-2 flex flex-col gap-0.5 text-[11px]">
+                    {data.sitemaps.issueCounts.map((c) => (
+                      <li key={c.rule} className="flex justify-between gap-2">
+                        <span className="num text-muted">{c.rule}</span>
+                        <span className="num text-warn">{c.count}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
                 <ul className="mt-2 flex flex-col gap-1 text-xs">
                   <li>
                     <a className="text-blue-bright underline underline-offset-4" href={`/p/${ctx.org.slug}/sitemap.xml`}>

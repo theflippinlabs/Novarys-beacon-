@@ -25,7 +25,10 @@ Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS 4 · PostgreSQ
 pnpm install
 cp .env.example .env.local            # set DATABASE_URL, BEACON_ENCRYPTION_KEY, BEACON_HASH_SECRET
 createdb beacon                        # with a NON-superuser role (superusers bypass RLS)
+# One-time per Postgres cluster: the BYPASSRLS system role used by asSystem (dev password: beacon_system)
+sudo -u postgres psql -c "create role beacon_system login bypassrls password 'beacon_system'"
 pnpm db:migrate
+psql "$DATABASE_URL" -c "grant usage on schema public to beacon_system; grant select, insert, update, delete on all tables in schema public to beacon_system"
 pnpm dev                               # http://localhost:3000 → /setup creates the first org + owner
 pnpm worker                            # background jobs (or BEACON_EMBEDDED_WORKER=true)
 ```
@@ -58,7 +61,7 @@ Then: verify facts in the **Knowledge graph** tab, create tracking keys in **Tra
 | `POST /api/v1/recommend` · `/ask/{org}` | none (rate-limited) | AI sales agent (verified facts only) |
 | `GET /api/v1/entity/{org}/{product}` | none | machine-readable entity profile |
 | `GET /api/v1/published/{org}/{product}` · `/p/{org}/sitemap.xml` · `/p/{org}/llms.txt` | none | published discovery content |
-| `GET /api/health` | none | liveness/readiness |
+| `GET /api/health` | none (details: admin session or `x-beacon-health-secret`) | liveness/readiness |
 
 ## Quality gates
 
@@ -74,4 +77,29 @@ pnpm audit:deps
 
 ## Deployment
 
-Run the web app (`pnpm start`) and at least one worker (`pnpm worker`) against PostgreSQL 16 using a non-superuser role; run `pnpm db:migrate` on release. A `Dockerfile` and `docker-compose.yml` (db, migrate, web, worker) are included. Required in production: `DATABASE_URL`, `BEACON_BASE_URL`, `BEACON_ENCRYPTION_KEY`, `BEACON_HASH_SECRET`. Never set `BEACON_SSRF_ALLOW_PRIVATE` in production (the app refuses to start).
+Beacon runs as two services from the same image plus a release step:
+
+| Service | Command | Notes |
+|---|---|---|
+| web | `pnpm start` | health check `GET /api/health` (anonymous: `{status}` only) |
+| worker | `pnpm worker` | background jobs; refuses to start in production on an unsafe database role |
+| release (pre-deploy) | `pnpm release` | `db:provision` (roles) then `db:migrate` |
+
+**Railway.** Two services from this repository, configured in the Railway dashboard (no `railway.json`: a config file at the repository root would apply to both services and override the worker). Web service: Dockerfile build, start `pnpm start`, pre-deploy command `pnpm release`, health check `/api/health`, restart on failure. Worker service: start `pnpm worker`, no pre-deploy command, no health check, no public domain, the same variables.
+
+**Database roles.** The provider's superuser URL goes in `DATABASE_ADMIN_URL` and is used only by the release step, which creates:
+
+- the application role (`BEACON_DB_APP_USER`, default `beacon_app`, NOSUPERUSER NOBYPASSRLS): `DATABASE_URL` must connect as it; it runs migrations and every tenant query, so row-level security always applies;
+- the system role (`BEACON_DB_SYSTEM_USER`, default `beacon_system`, BYPASSRLS, DML only): used by `asSystem` (authentication, the worker, key-resolved public APIs). The app connects as it with `BEACON_DB_SYSTEM_PASSWORD` (or `DATABASE_SYSTEM_URL`).
+
+In production the release fails when the application role is a superuser/BYPASSRLS or the system role is missing, and web and worker refuse to start in the same situations. There is no session setting that bypasses RLS.
+
+Required in production: `DATABASE_URL`, `BEACON_BASE_URL` (https), `BEACON_ENCRYPTION_KEY` (or `BEACON_ENCRYPTION_KEYS`), `BEACON_HASH_SECRET`, `BEACON_DB_SYSTEM_PASSWORD`, and for the release `DATABASE_ADMIN_URL` + `BEACON_DB_APP_PASSWORD`. `BEACON_SETUP_TOKEN` is needed while no user exists. Never set `BEACON_SSRF_ALLOW_PRIVATE` in production (the app refuses to start). See `.env.example` for every variable.
+
+**Key rotation.** Prepend a new key to `BEACON_ENCRYPTION_KEYS` (`newkid:key,oldkid:key`; the legacy `BEACON_ENCRYPTION_KEY` is key id `v1`), deploy, run `pnpm secrets:rotate`, then remove the old key.
+
+**docker-compose.** `docker-compose.yml` runs Postgres (superuser `postgres`), the release step, web and worker; set `POSTGRES_PASSWORD`, `BEACON_DB_APP_PASSWORD` and `BEACON_DB_SYSTEM_PASSWORD` in `.env`. The image has a Docker `HEALTHCHECK` and contains production dependencies only (`tsx` is a runtime dependency for the worker and release scripts).
+
+**Tests and roles.** The integration global setup creates the system role once per cluster through `TEST_DATABASE_ADMIN_URL` (default `postgres://postgres:postgres@localhost:5432/<db>`; locally: `sudo -u postgres psql -c "alter role postgres password 'postgres'"`, or create `beacon_system` yourself as above) and grants it on the freshly migrated test database.
+
+Security review: `docs/SECURITY_AUDIT.md`.

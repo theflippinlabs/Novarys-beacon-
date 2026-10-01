@@ -40,8 +40,8 @@ export const addPricingPlanTool = defineTool({
     product: productRef(),
     planName: z.string().trim().min(1).max(80).describe("Plan name, e.g. \"Pro\"."),
     priceMinorUnits: z.number().int().min(0).max(100_000_000).optional().describe("Price in minor units (cents), e.g. 2900 for 29.00. Omit if not public."),
-    currency: z.string().trim().regex(/^[A-Za-z]{3}$/).optional().describe("ISO currency code (default EUR)."),
-    interval: z.enum(INTERVALS).optional().describe("Billing interval (default MONTH)."),
+    currency: z.string().trim().regex(/^[A-Za-z]{3}$/).optional().describe("ISO currency code. Omit when unknown (never guess; it is stored as unknown)."),
+    interval: z.enum(INTERVALS).optional().describe("Billing interval. Omit when unknown (never guess; it is stored as unknown). Use CUSTOM for \"contact sales\" plans."),
     trialDays: z.number().int().min(0).max(365).optional().describe("Free-trial length in days, if any."),
     description: z.string().trim().max(1000).optional().describe("What the plan includes."),
     sourceId: sourceIdInput,
@@ -52,13 +52,13 @@ export const addPricingPlanTool = defineTool({
     const row = await addPricingPlan(c.tx, agentActor(c), p.id, {
       planName: i.planName,
       priceCents: i.priceMinorUnits ?? null,
-      currency: i.currency ?? "EUR",
-      interval: i.interval ?? "MONTH",
+      currency: i.currency ?? null,
+      interval: i.interval ?? null,
       trialDays: i.trialDays ?? null,
       description: i.description ?? null,
       sourceId: i.sourceId,
     });
-    return { added: { id: row.id, planName: row.planName, price: row.priceCents ?? "not public", currency: row.currency, interval: row.interval, verification: row.verification }, note: DRAFT_NOTE, link: `/products/${p.slug}/knowledge` };
+    return { added: { id: row.id, planName: row.planName, price: row.priceCents ?? "not public", currency: row.currency ?? "unknown", interval: row.interval ?? "unknown", verification: row.verification }, note: DRAFT_NOTE, link: `/products/${p.slug}/knowledge` };
   },
 });
 

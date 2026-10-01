@@ -47,7 +47,11 @@ describe("kpis", () => {
     // Internal counts are real zeros.
     expect(k.discovery.coveredQueries.now).toBe(0);
     expect(k.content.published.now).toBe(0);
-    expect(k.currency).toBe("EUR");
+    // No currency is ever assumed; nothing connected means NOT_CONNECTED, not a zero.
+    expect(k.currency).toBeNull();
+    expect(k.acquisition.visitors.state).toBe("NOT_CONNECTED");
+    expect(k.revenue.revenue.state).toBe("NOT_CONNECTED");
+    expect(k.discovery.coveredQueries.state).toBe("OK");
   });
 
   it("returns real counts once events, revenue and search data exist", async () => {

@@ -1,8 +1,9 @@
 import { facetsOf, type ProductGraph } from "@/core/knowledge/types";
 import { normalizeQuery, tokens } from "@/core/util/text";
-import { classifyQuery, type Intent } from "./classify";
+import { brandTermIn, classifyQuery, type Intent, type TopicType } from "./classify";
 
-export type QueryCandidate = { query: string; intent: Intent; clusterName: string; rationale: string };
+/** `topicType` comes from generation provenance (which graph fact produced the query). */
+export type QueryCandidate = { query: string; intent: Intent; clusterName: string; rationale: string; topicType: TopicType; branded: boolean };
 
 /**
  * Builds a structured query universe from the knowledge graph. Every
@@ -26,37 +27,37 @@ export function expandQueryUniverse(g: ProductGraph, opts: { max?: number; seedT
 
   const out: QueryCandidate[] = [];
   const seen = new Set<string>();
-  const push = (query: string, clusterName: string, rationale: string) => {
+  const push = (query: string, clusterName: string, rationale: string, topicType: TopicType) => {
     const norm = normalizeQuery(query);
     const key = [...new Set(tokens(norm, { keepStop: true }))].sort().join(" ");
     if (!key || seen.has(key) || out.length >= max) return;
     seen.add(key);
-    out.push({ query: norm, intent: classifyQuery(norm, [p.name]).intent, clusterName, rationale });
+    out.push({ query: norm, intent: classifyQuery(norm, [p.name]).intent, clusterName, rationale, topicType, branded: brandTermIn(norm, [p.name]) !== null });
   };
 
   // Brand / navigational & transactional
-  push(p.name, "Brand", "Product name");
-  push(`what is ${p.name}`, "Brand", "Entity definition question");
-  if (g.pricing.length) push(`${p.name} pricing`, "Brand", "Pricing plans exist in the graph");
+  push(p.name, "Brand", "Product name", "BRAND");
+  push(`what is ${p.name}`, "Brand", "Entity definition question", "BRAND");
+  if (g.pricing.length) push(`${p.name} pricing`, "Brand", "Pricing plans exist in the graph", "BRAND");
   for (const c of competitors) {
-    push(`${p.name} vs ${c}`, "Comparisons", `Competitor ${c} is linked to the product`);
-    push(`${c} alternatives`, "Alternatives", `Competitor ${c} is linked to the product`);
+    push(`${p.name} vs ${c}`, "Comparisons", `Competitor ${c} is linked to the product`, "COMPETITOR");
+    push(`${c} alternatives`, "Alternatives", `Competitor ${c} is linked to the product`, "COMPETITOR");
   }
 
   for (const topic of topics) {
-    push(topic, topic, "Category / declared keyword");
-    push(`${topic} software`, topic, "Category / declared keyword");
-    push(`best ${topic} tools`, topic, "Category / declared keyword");
-    for (const a of audiences) push(`${topic} for ${a}`, `${topic} for audiences`, `Audience "${a}" in the graph`);
-    for (const i of industries) push(`${topic} for ${i}`, `${topic} by industry`, `Industry "${i}" in the graph`);
-    for (const integ of integrations) push(`${topic} ${integ} integration`, "Integrations", `Integration "${integ}" in the graph`);
+    push(topic, topic, "Category / declared keyword", "CATEGORY");
+    push(`${topic} software`, topic, "Category / declared keyword", "CATEGORY");
+    push(`best ${topic} tools`, topic, "Category / declared keyword", "CATEGORY");
+    for (const a of audiences) push(`${topic} for ${a}`, `${topic} for audiences`, `Audience "${a}" in the graph`, "AUDIENCE");
+    for (const i of industries) push(`${topic} for ${i}`, `${topic} by industry`, `Industry "${i}" in the graph`, "INDUSTRY");
+    for (const integ of integrations) push(`${topic} ${integ} integration`, "Integrations", `Integration "${integ}" in the graph`, "INTEGRATION");
   }
   for (const pr of problems) {
-    push(`how to ${pr.replace(/^(how to\s+)/i, "")}`, "Problems", `Problem "${pr}" in the graph`);
-    push(pr, "Problems", `Problem "${pr}" in the graph`);
+    push(`how to ${pr.replace(/^(how to\s+)/i, "")}`, "Problems", `Problem "${pr}" in the graph`, "PROBLEM");
+    push(pr, "Problems", `Problem "${pr}" in the graph`, "PROBLEM");
   }
-  for (const f of features) push(category ? `${category} ${f}` : f, "Features", `Feature "${f}" in the graph`);
-  for (const u of useCases) push(u, "Use cases", `Use case "${u}" in the graph`);
+  for (const f of features) push(category ? `${category} ${f}` : f, "Features", `Feature "${f}" in the graph`, "FEATURE");
+  for (const u of useCases) push(u, "Use cases", `Use case "${u}" in the graph`, "USE_CASE");
 
   return out;
 }

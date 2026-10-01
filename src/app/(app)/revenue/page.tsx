@@ -58,7 +58,7 @@ export default async function RevenuePage({ searchParams }: { searchParams: Prom
   const money = (v: number, c = currency) => formatValue(v, "money", c, intl);
   const subsHint = (amount: string, n: number, beacon = false) => [t("{amount} · {n} subscription(s)", { amount, n }), ...(beacon ? [t("Beacon channel")] : [])].join(" · ");
   const eventsHint = (amount: string, n: number) => t("{amount} · {n} event(s)", { amount, n });
-  const connected = k.revenue.revenue.now !== null;
+  const connected = k.revenue.revenue.state === "OK";
   const mixed = data.currencies.length > 1;
   const trackingHref = data.firstSlug ? `/products/${data.firstSlug}/tracking` : "/products";
 
@@ -72,23 +72,23 @@ export default async function RevenuePage({ searchParams }: { searchParams: Prom
       />
 
       <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <Stat label={t("MRR")} value={k.revenue.mrr.now} fmt="money" currency={currency} source={t(k.revenue.mrr.source)} />
-        <Stat label={t("MRR attributable to Beacon")} value={k.revenue.beaconMrr.now} fmt="money" currency={currency} source={t("Beacon channels")} />
-        <Stat label={t("ARR")} value={k.revenue.arr.now} fmt="money" currency={currency} source={t(k.revenue.arr.source)} />
-        <Stat label={t("New subscriptions")} value={k.revenue.newSubscriptions.now} prev={k.revenue.newSubscriptions.prev} source={t("Last {days} days", { days })} />
-        <Stat label={t("Revenue in period")} value={k.revenue.revenue.now} prev={k.revenue.revenue.prev} fmt="money" currency={currency} source={t("Last {days} days", { days })} />
-        <Stat label={t("New MRR via Beacon")} value={k.revenue.beaconNewMrr.now} prev={k.revenue.beaconNewMrr.prev} fmt="money" currency={currency} source={t("Last {days} days", { days })} />
+        <Stat label={t("MRR")} kpi={k.revenue.mrr} fmt="money" />
+        <Stat label={t("MRR attributable to Beacon")} kpi={k.revenue.beaconMrr} fmt="money" source={t("Beacon channels")} />
+        <Stat label={t("ARR")} kpi={k.revenue.arr} fmt="money" />
+        <Stat label={t("New subscriptions")} kpi={k.revenue.newSubscriptions} source={t("Last {days} days", { days })} />
+        <Stat label={t("Revenue in period")} kpi={k.revenue.revenue} fmt="money" source={t("Last {days} days", { days })} />
+        <Stat label={t("New MRR via Beacon")} kpi={k.revenue.beaconNewMrr} fmt="money" source={t("Last {days} days", { days })} />
       </div>
 
       {mixed && (
         <div role="status" className="mb-6 border border-warn/40 px-4 py-3 text-sm text-warn">
-          {t("Multiple currencies recorded ({currencies}). The tiles and per-channel/per-product totals above add amounts without conversion and label them in {currency}; use the per-event table below for exact per-currency figures.", { currencies: data.currencies.join(", "), currency })}
+          {t("Multiple currencies recorded ({currencies}). Every amount is shown in its own currency; amounts in different currencies are never converted or added together.", { currencies: data.currencies.join(", ") })}
         </div>
       )}
 
       {!connected ? (
         <EmptyState
-          title={t("No revenue data connected")}
+          title={k.revenue.revenue.state === "NO_DATA_YET" ? t("Revenue source connected, no revenue received yet") : t("No revenue data connected")}
           action={
             <div className="flex flex-wrap gap-2">
               <LinkButton variant="gold" href="/settings/integrations">
@@ -198,7 +198,7 @@ export default async function RevenuePage({ searchParams }: { searchParams: Prom
             </tr>
             <tr>
               <Th>{t("Currencies")}</Th>
-              <Td>{t("Money is stored in minor units (cents) in each event’s own currency and is never converted. Totals are labelled in the organisation’s primary currency ({currency}); check the currency column when more than one currency is recorded.", { currency })}</Td>
+              <Td>{t("Money is stored in minor units (cents) in each event’s own currency and is never converted. Totals are computed per currency; tiles list each currency separately when more than one is recorded.")}</Td>
             </tr>
           </tbody>
         </Table>

@@ -4,6 +4,7 @@ import { regenerateOpportunitiesAction, setOpportunityStatusAction } from "@/app
 import { Badge, Button, EmptyState, Flash, HiddenBack, PageHeader, Panel, PotentialBadge, StatusBadge } from "@/components/ui";
 import { FilterBar, SelectFilter } from "@/components/shell/filters";
 import { opportunities, products } from "@/db/schema";
+import { OPPORTUNITY_CATEGORIES, OPPORTUNITY_TYPES } from "@/core/opportunities/engine";
 import { pageData, sp1, type SP } from "@/lib/page";
 import { enumLabel } from "@/i18n/core";
 import { getI18n, getT } from "@/i18n/server";
@@ -17,7 +18,7 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function OpportunitiesPage({ searchParams }: { searchParams: Promise<SP> }) {
   const sp = await searchParams;
   const { t } = await getI18n();
-  const f = { product: sp1(sp, "product"), potential: sp1(sp, "potential"), status: sp1(sp, "status") ?? "OPEN", type: sp1(sp, "type") };
+  const f = { product: sp1(sp, "product"), potential: sp1(sp, "potential"), status: sp1(sp, "status") ?? "OPEN", category: sp1(sp, "category"), type: sp1(sp, "type") };
   const { data, can } = await pageData(async (tx, ctx) => {
     const prods = await tx.select().from(products).where(eq(products.organizationId, ctx.org.id)).orderBy(products.name);
     const product = f.product ? prods.find((p) => p.slug === f.product) : undefined;
@@ -31,6 +32,7 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
           product ? eq(opportunities.productId, product.id) : undefined,
           f.potential ? eq(opportunities.potential, f.potential as never) : undefined,
           f.status !== "ALL" ? eq(opportunities.status, f.status as never) : undefined,
+          f.category ? eq(opportunities.category, f.category) : undefined,
           f.type ? eq(opportunities.type, f.type) : undefined,
         ),
       )
@@ -59,8 +61,9 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
       <FilterBar action="/opportunities">
         <SelectFilter name="product" label={t("Product")} value={f.product} options={data.prods.map((p) => ({ value: p.slug, label: p.name }))} />
         <SelectFilter name="potential" label={t("Potential")} value={f.potential} options={["HIGH", "MEDIUM", "LOW"].map((v) => ({ value: v, label: enumLabel(t, v) }))} />
-        <SelectFilter name="type" label={t("Type")} value={f.type} options={["CONTENT_GAP", "STRIKING_DISTANCE", "LOW_CTR", "AI_VISIBILITY_GAP", "TECHNICAL", "ENTITY_COMPLETENESS", "COMPARISON_FACTS", "INTERNAL_LINKING", "CONVERSION", "VISIBILITY_DROP"].map((v) => ({ value: v, label: enumLabel(t, v) }))} />
-        <SelectFilter name="status" label={t("Status")} value={f.status} all={enumLabel(t, "OPEN")} options={["ACCEPTED", "IN_PROGRESS", "DONE", "DISMISSED", "ALL"].map((v) => ({ value: v, label: enumLabel(t, v) }))} />
+        <SelectFilter name="category" label={t("Category")} value={f.category} options={OPPORTUNITY_CATEGORIES.map((v) => ({ value: v, label: enumLabel(t, v) }))} />
+        <SelectFilter name="type" label={t("Type")} value={f.type} options={OPPORTUNITY_TYPES.map((v) => ({ value: v, label: enumLabel(t, v) }))} />
+        <SelectFilter name="status" label={t("Status")} value={f.status} all={enumLabel(t, "OPEN")} options={["ACCEPTED", "IN_PROGRESS", "DONE", "DISMISSED", "OBSOLETE", "ALL"].map((v) => ({ value: v, label: enumLabel(t, v) }))} />
       </FilterBar>
       {data.rows.length === 0 ? (
         <EmptyState title={t("No opportunities")}>{t("Opportunities appear after product analysis, audits, AI-visibility tests and data syncs. Nothing is shown without evidence.")}</EmptyState>
@@ -72,6 +75,7 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <PotentialBadge potential={o.potential} />
+                    <Badge>{enumLabel(t, o.category)}</Badge>
                     <Badge tone="muted">{enumLabel(t, o.type)}</Badge>
                     <StatusBadge status={o.status} />
                     <span className="text-xs text-muted">{productName}</span>
@@ -81,6 +85,11 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
                   </Link>
                   <p className="mt-1 text-sm text-chrome">{t(o.problem)}</p>
                   {o.competitors.length > 0 && <p className="mt-1 text-xs text-muted">{t("Competitors appearing: {list}", { list: o.competitors.join(" / ") })}</p>}
+                  {o.nextAction && (
+                    <Link href={o.nextAction.href} className="mt-2 inline-block text-xs text-blue-bright hover:underline">
+                      {t("Next action: {label}", { label: t(o.nextAction.label) })} →
+                    </Link>
+                  )}
                 </div>
                 <div className="flex flex-col items-start gap-2 md:items-end">
                   <div className="num text-2xl text-gold" title={t("priority = impact × confidence × urgency ÷ effort")}>

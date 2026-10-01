@@ -4,6 +4,7 @@ import { productFacets, products } from "@/db/schema";
 import { POST as recommendPOST } from "@/app/api/v1/recommend/route";
 import { GET as entityGET } from "@/app/api/v1/entity/[org]/[product]/route";
 import { GET as healthGET } from "@/app/api/health/route";
+import { resetEnvCache } from "@/lib/env";
 import { ipHeader, jsonRequest, newOrg, params, seedCompleteProduct, uid } from "./helpers";
 
 let orgSlug: string;
@@ -140,11 +141,25 @@ describe("GET /api/v1/entity/{org}/{product}", () => {
 });
 
 describe("GET /api/health", () => {
-  it("reports database health without tenant data", async () => {
-    const res = await healthGET();
+  it("returns only the status to anonymous callers", async () => {
+    const res = await healthGET(new Request("http://localhost/api/health"));
     expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.db.ok).toBe(true);
-    expect(Object.keys(body).sort()).toEqual(["db", "queue", "status", "time"]);
+    expect(Object.keys(await res.json())).toEqual(["status"]);
+  });
+
+  it("returns database and queue details with the monitoring secret", async () => {
+    process.env.BEACON_HEALTH_SECRET = "health-secret-for-tests-0123456789";
+    resetEnvCache();
+    try {
+      const wrong = await healthGET(new Request("http://localhost/api/health", { headers: { "x-beacon-health-secret": "nope" } }));
+      expect(Object.keys(await wrong.json())).toEqual(["status"]);
+      const res = await healthGET(new Request("http://localhost/api/health", { headers: { "x-beacon-health-secret": "health-secret-for-tests-0123456789" } }));
+      const body = await res.json();
+      expect(body.db.ok).toBe(true);
+      expect(Object.keys(body).sort()).toEqual(["db", "queue", "status", "time"]);
+    } finally {
+      delete process.env.BEACON_HEALTH_SECRET;
+      resetEnvCache();
+    }
   });
 });

@@ -3,9 +3,10 @@ import type { Metadata } from "next";
 import { retryJobAction } from "@/app/actions/settings";
 import { Button, Flash, HiddenBack, KV, PageHeader, Panel, StatusBadge, Table, Td, Th } from "@/components/ui";
 import { SettingsTabs } from "@/components/shell/settings-tabs";
-import { db } from "@/db";
+import { withOrg } from "@/db";
 import { integrations, jobs } from "@/db/schema";
 import { snapshot } from "@/lib/metrics";
+import { isStaleSync } from "@/core/integrations/health";
 import { systemHealth } from "@/services/health";
 import { pageData, type SP } from "@/lib/page";
 import { getI18n, getT } from "@/i18n/server";
@@ -20,13 +21,15 @@ export default async function HealthPage({ searchParams }: { searchParams: Promi
   const { t, intl } = await getI18n();
   const { ctx, data, can } = await pageData(async (tx, ctx) => tx.select().from(integrations).where(eq(integrations.organizationId, ctx.org.id)));
   const health = await systemHealth();
-  // Jobs table is not RLS-protected (system queue); always scope to the current org explicitly.
-  const recent = await db().select().from(jobs).where(eq(jobs.organizationId, ctx.org.id)).orderBy(desc(jobs.createdAt)).limit(40);
-  const failing = await db().select().from(jobs).where(and(eq(jobs.organizationId, ctx.org.id), sql`${jobs.status} in ('DEAD','QUEUED') and ${jobs.lastError} is not null`)).orderBy(desc(jobs.createdAt)).limit(20);
-  const byType = await db().execute<{ type: string; ok: number; dead: number; avg_s: number | null }>(sql`
+  // Jobs are RLS-protected per organisation: read them inside the tenant scope.
+  const { recent, failing, byType } = await withOrg(ctx.org.id, async (tx) => ({
+    recent: await tx.select().from(jobs).where(eq(jobs.organizationId, ctx.org.id)).orderBy(desc(jobs.createdAt)).limit(40),
+    failing: await tx.select().from(jobs).where(and(eq(jobs.organizationId, ctx.org.id), sql`${jobs.status} in ('DEAD','QUEUED') and ${jobs.lastError} is not null`)).orderBy(desc(jobs.createdAt)).limit(20),
+    byType: await tx.execute<{ type: string; ok: number; dead: number; avg_s: number | null }>(sql`
     select type, count(*) filter (where status = 'SUCCEEDED')::int as ok, count(*) filter (where status = 'DEAD')::int as dead,
       avg(extract(epoch from finished_at - started_at)) filter (where status = 'SUCCEEDED')::float as avg_s
-    from jobs where organization_id = ${ctx.org.id} and created_at >= now() - interval '7 days' group by type order by type`);
+    from jobs where organization_id = ${ctx.org.id} and created_at >= now() - interval '7 days' group by type order by type`),
+  }));
   const metrics = snapshot();
   const back = "/settings/health";
   return (
@@ -69,10 +72,14 @@ export default async function HealthPage({ searchParams }: { searchParams: Promi
         <Panel title={t("Integration health")} eyebrow={t("Sync")}>
           <ul className="flex flex-col gap-2">
             {data.map((i) => (
-              <li key={i.id} className="flex items-center justify-between gap-2 text-xs">
-                <span className="text-chrome">{i.provider.replace(/_/g, " ")}</span>
-                <span className="num text-muted">{i.lastSyncAt?.toISOString().slice(0, 16).replace("T", " ") ?? t("never")}</span>
-                <StatusBadge status={i.status} />
+              <li key={i.id} className="flex flex-col gap-1 text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-chrome">{i.provider.replace(/_/g, " ")}</span>
+                  <span className="num text-muted">{(i.lastSuccessAt ?? i.lastSyncAt)?.toISOString().slice(0, 16).replace("T", " ") ?? t("never")}</span>
+                  <StatusBadge status={i.status} />
+                </div>
+                {isStaleSync(i) && <span className="text-warn">◐ {t("Stale: no successful sync for more than 36 hours.")}</span>}
+                {i.status === "EXPIRED" && <span className="text-warn">◐ {t("Access expired: reconnect in Settings, Integrations.")}</span>}
               </li>
             ))}
             {!data.length && <li className="text-sm text-muted">{t("No integrations.")}</li>}

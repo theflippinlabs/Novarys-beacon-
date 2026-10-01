@@ -3,7 +3,7 @@ import { EDITOR_TODO, generateDraft, type ContentType } from "@/core/content/gen
 import { factCheck, graphFacts } from "@/core/content/fact-check";
 import { seoCheck } from "@/core/content/seo-check";
 import { canTransition, assertTransition, statusAfterChecks, PIPELINE, HUMAN_ONLY } from "@/core/content/workflow";
-import { completeGraph, makeFacet, makeGraph } from "./fixtures/graph";
+import { completeGraph, FIXED_DATE, makeFacet, makeGraph } from "./fixtures/graph";
 
 const unsupported = (type: ContentType) => {
   const g = completeGraph();
@@ -129,9 +129,9 @@ describe("factCheck", () => {
   });
 
   it("accepts prices that exist in the graph", () => {
-    expect(factCheck("Pro: €29 / month (14-day trial).", g).claims[0].status).toBe("SUPPORTED");
-    // A price that is not in the graph is an unsupported numeric claim.
-    expect(factCheck("Pro: €19 / month (14-day trial).", g).claims[0].status).toBe("UNSUPPORTED");
+    expect(factCheck("Pro: €29 / month (14-day trial).", g, { now: FIXED_DATE }).claims[0].status).toBe("SUPPORTED");
+    // A price that is not in the graph is wrong pricing (blocks approval).
+    expect(factCheck("Pro: €19 / month (14-day trial).", g, { now: FIXED_DATE }).claims[0]).toMatchObject({ status: "WRONG_PRICING", kind: "PRICING", severity: "HIGH" });
   });
 
   it("flags invented statistics as UNSUPPORTED", () => {

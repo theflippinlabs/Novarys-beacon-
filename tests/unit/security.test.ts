@@ -65,7 +65,7 @@ describe("crypto", () => {
     const a = encryptSecret("s3cret-value ✓", "org:1");
     const b = encryptSecret("s3cret-value ✓", "org:1");
     expect(a).not.toBe(b);
-    expect(a.startsWith("v1:")).toBe(true);
+    expect(a.startsWith("v2:v1:")).toBe(true); // envelope v2, legacy key id "v1"
     expect(a).not.toContain("s3cret");
     expect(decryptSecret(a, "org:1")).toBe("s3cret-value ✓");
   });

@@ -1,16 +1,21 @@
 import "server-only";
+import { cache } from "react";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { hmac } from "@/lib/security/crypto";
+import { ipHashOf } from "@/lib/http";
 import { can, ForbiddenError, type Permission } from "./rbac";
 import { resolveSession, type AuthContext } from "./service";
 
 export const SESSION_COOKIE = "beacon_session";
 
-export async function getAuthContext(): Promise<AuthContext | null> {
+/**
+ * The signed-in member for this request. Memoized per request with React
+ * `cache()`, so a layout, a page and its actions resolve the session once.
+ */
+export const getAuthContext = cache(async (): Promise<AuthContext | null> => {
   const store = await cookies();
   return resolveSession(store.get(SESSION_COOKIE)?.value);
-}
+});
 
 /** For pages/layouts: redirects to /login when unauthenticated. */
 export async function requireAuth(): Promise<AuthContext> {
@@ -28,7 +33,5 @@ export async function requirePermission(permission: Permission): Promise<AuthCon
 }
 
 export async function clientIpHash(): Promise<string> {
-  const h = await headers();
-  const ip = h.get("x-forwarded-for")?.split(",")[0]?.trim() || h.get("x-real-ip") || "unknown";
-  return hmac(ip, "ip");
+  return ipHashOf(await headers());
 }

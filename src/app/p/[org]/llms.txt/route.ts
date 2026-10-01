@@ -2,12 +2,15 @@ import { asSystem } from "@/db";
 import { canonicalUrl } from "@/core/discovery/urls";
 import { buildLlmsTxt } from "@/core/geo/entity";
 import { env } from "@/lib/env";
+import { ipHashOf, limited } from "@/lib/http";
 import { orgBySlug, publicGraphs, publishedPages } from "@/services/public";
 
 export const dynamic = "force-dynamic";
 
 /** llms.txt index of verified product summaries and published pages. */
-export async function GET(_req: Request, { params }: { params: Promise<{ org: string }> }) {
+export async function GET(req: Request, { params }: { params: Promise<{ org: string }> }) {
+  const rl = await limited(`llms:ip:${ipHashOf(req)}`, 60, 60);
+  if (rl) return rl;
   const { org: slug } = await params;
   const body = await asSystem(async (tx) => {
     const org = await orgBySlug(tx, slug);

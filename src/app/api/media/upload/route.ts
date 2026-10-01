@@ -3,7 +3,7 @@ import { withOrg } from "@/db";
 import { products } from "@/db/schema";
 import { getAuthContext } from "@/lib/auth/session";
 import { can } from "@/lib/auth/rbac";
-import { err, ipHashOf, json, limited } from "@/lib/http";
+import { err, ipHashOf, json, limited, sameOrigin } from "@/lib/http";
 import { ingestImage, MAX_UPLOAD_BYTES, mediaUrl } from "@/services/media";
 
 export const dynamic = "force-dynamic";
@@ -14,9 +14,7 @@ export const dynamic = "force-dynamic";
  * then holds until the form is saved.
  */
 export async function POST(req: Request) {
-  const origin = req.headers.get("origin");
-  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
-  if (!origin || !host || new URL(origin).host !== host) return err(403, "Cross-origin request refused");
+  if (!sameOrigin(req)) return err(403, "Cross-origin request refused");
   const ctx = await getAuthContext();
   if (!ctx) return err(401, "Not signed in");
   if (!can(ctx.role, "product:write")) return err(403, "You do not have permission to do that.");

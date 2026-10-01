@@ -96,7 +96,7 @@ export default async function ReferralsPage({ searchParams }: { searchParams: Pr
       where organization_id = ${org} and referral_code_id is not null group by 1`);
     const signups = await tx.execute<{ id: string; n: number }>(sql`
       select referral_code_id::text as id, count(*)::int as n from conversion_events
-      where organization_id = ${org} and type = 'SIGNUP' and referral_code_id is not null group by 1`);
+      where organization_id = ${org} and type::text in ('SIGNUP', 'SIGNUP_COMPLETED') and referral_code_id is not null group by 1`);
     const purchases = await tx.execute<{ id: string; n: number }>(sql`
       select referral_code_id::text as id, count(*)::int as n from revenue_events
       where organization_id = ${org} and type = 'NEW' and referral_code_id is not null group by 1`);
@@ -110,11 +110,11 @@ export default async function ReferralsPage({ searchParams }: { searchParams: Pr
       await tx.execute<{ visits: number; signups: number; activations: number; purchases: number }>(sql`
       select
         (select count(*) from attribution_events where organization_id = ${org} and referral_code_id is not null and occurred_at >= now() - make_interval(days => ${PIPELINE_DAYS}))::int as visits,
-        (select count(*) from conversion_events where organization_id = ${org} and type = 'SIGNUP' and referral_code_id is not null and occurred_at >= now() - make_interval(days => ${PIPELINE_DAYS}))::int as signups,
+        (select count(*) from conversion_events where organization_id = ${org} and type::text in ('SIGNUP', 'SIGNUP_COMPLETED') and referral_code_id is not null and occurred_at >= now() - make_interval(days => ${PIPELINE_DAYS}))::int as signups,
         (select count(distinct coalesce(a.identity_id::text, a.visitor_id)) from conversion_events a
-          where a.organization_id = ${org} and a.type = 'ACTIVATED' and a.occurred_at >= now() - make_interval(days => ${PIPELINE_DAYS})
+          where a.organization_id = ${org} and a.type::text in ('ACTIVATED', 'ACTIVATION_COMPLETED') and a.occurred_at >= now() - make_interval(days => ${PIPELINE_DAYS})
             and (a.referral_code_id is not null or a.identity_id in (
-              select s.identity_id from conversion_events s where s.organization_id = ${org} and s.type = 'SIGNUP' and s.referral_code_id is not null and s.identity_id is not null)))::int as activations,
+              select s.identity_id from conversion_events s where s.organization_id = ${org} and s.type::text in ('SIGNUP', 'SIGNUP_COMPLETED') and s.referral_code_id is not null and s.identity_id is not null)))::int as activations,
         (select count(*) from revenue_events where organization_id = ${org} and type = 'NEW' and referral_code_id is not null and occurred_at >= now() - make_interval(days => ${PIPELINE_DAYS}))::int as purchases`)
     ).rows[0];
     const pipeRecurring = await tx.execute<{ currency: string; cents: string }>(sql`

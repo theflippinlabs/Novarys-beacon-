@@ -42,9 +42,10 @@ describe("encrypted credentials", () => {
     const secret = { serviceAccountJson: `{"private_key":"PLAINTEXT-${uid()}"}` };
     const integ = await q((tx) => saveIntegration(tx, ctx.actor, { provider: "GOOGLE_SEARCH_CONSOLE", productId, config: { siteUrl: "sc-domain:example.com" }, secret }));
     const row = (await q((tx) => tx.query.integrations.findFirst({ where: eq(integrations.id, integ.id) })))!;
-    expect(row).toMatchObject({ status: "CONNECTED", config: { siteUrl: "sc-domain:example.com" } });
+    // Saving never marks an integration connected: only a passing connection test or sync does.
+    expect(row).toMatchObject({ status: "NOT_CONNECTED", config: { siteUrl: "sc-domain:example.com" } });
     const cred = (await q((tx) => tx.query.providerCredentials.findFirst({ where: eq(providerCredentials.integrationId, integ.id) })))!;
-    expect(cred.ciphertext).toMatch(/^v1:[^:]+:[^:]+:[^:]+$/);
+    expect(cred.ciphertext).toMatch(/^v2:[A-Za-z0-9_-]+:[^:]+:[^:]+:[^:]+$/);
     expect(cred.ciphertext).not.toContain("PLAINTEXT");
     expect(cred.ciphertext).not.toContain(secret.serviceAccountJson);
     expect(Buffer.from(cred.ciphertext.split(":")[3], "base64").toString("utf8")).not.toContain("PLAINTEXT");
@@ -92,35 +93,32 @@ describe("encrypted credentials", () => {
 describe("visibility adapters (injected fetch)", () => {
   const range = { start: "2026-09-01", end: "2026-09-03" };
 
-  it("Search Console: exchanges a JWT for a token and maps daily/query/page rows", async () => {
+  it("Search Console: exchanges a JWT for a token; fetchMetrics returns daily totals only (no per-query snapshots)", async () => {
     const { f, calls } = fakeFetch((url, init) => {
       if (url.startsWith("https://oauth2.googleapis.com/token")) return { access_token: "tok-gsc" };
       const body = JSON.parse(String(init!.body));
-      if (body.dimensions?.[0] === "date") return { rows: [{ keys: ["2026-09-01"], clicks: 5, impressions: 100, ctr: 0.05, position: 7.5 }, { keys: ["2026-09-02"], clicks: 7, impressions: 120, ctr: 0.06, position: 6.1 }] };
-      if (body.dimensions?.[0] === "query") return { rows: [{ keys: ["tiktok moderation"], clicks: 3, impressions: 40, ctr: 0.075, position: 4.2 }] };
-      if (body.dimensions?.[0] === "page") return { rows: [{ keys: ["https://example.com/"], clicks: 1, impressions: 10 }, { keys: ["https://example.com/x"], clicks: 0, impressions: 0 }] };
+      if (body.dimensions?.length === 1 && body.dimensions[0] === "date") return { rows: [{ keys: ["2026-09-01"], clicks: 5, impressions: 100, ctr: 0.05, position: 7.5 }, { keys: ["2026-09-02"], clicks: 7, impressions: 120, ctr: 0.06, position: 6.1 }] };
       return { rows: [] };
     });
-    const rows = await createSearchConsoleAdapter(f).fetchMetrics({ siteUrl: "sc-domain:example.com" }, { serviceAccountJson }, range);
+    const rows = await createSearchConsoleAdapter(f, { delayMs: 0 }).fetchMetrics({ siteUrl: "sc-domain:example.com" }, { serviceAccountJson }, range);
     const tokenCall = calls[0];
     expect(tokenCall.url).toBe("https://oauth2.googleapis.com/token");
     const assertion = new URLSearchParams(String(tokenCall.init!.body)).get("assertion")!;
     expect(assertion.split(".")).toHaveLength(3);
     const apiCalls = calls.slice(1);
-    expect(apiCalls).toHaveLength(3);
-    for (const c of apiCalls) {
-      expect(c.url).toBe("https://www.googleapis.com/webmasters/v3/sites/sc-domain%3Aexample.com/searchAnalytics/query");
-      expect((c.init!.headers as Record<string, string>).authorization).toBe("Bearer tok-gsc");
-    }
-    expect(rows).toEqual(
-      expect.arrayContaining([
-        { metric: "search_impressions", day: "2026-09-01", value: 100 },
-        { metric: "search_clicks", day: "2026-09-02", value: 7 },
-        { metric: "search_position", day: "2026-09-01", value: 7.5, weight: 100 },
-        { metric: "query_impressions", day: "2026-09-03", dimension: "tiktok moderation", value: 40 },
-        { metric: "indexed_pages_with_impressions", day: "2026-09-03", value: 1 },
-      ]),
-    );
+    expect(apiCalls).toHaveLength(1);
+    expect(apiCalls[0].url).toBe("https://www.googleapis.com/webmasters/v3/sites/sc-domain%3Aexample.com/searchAnalytics/query");
+    expect((apiCalls[0].init!.headers as Record<string, string>).authorization).toBe("Bearer tok-gsc");
+    expect(JSON.parse(String(apiCalls[0].init!.body))).toMatchObject({ dataState: "final", dimensions: ["date"], rowLimit: 25000, startRow: 0 });
+    expect(rows).toEqual([
+      { metric: "search_impressions", day: "2026-09-01", value: 100 },
+      { metric: "search_clicks", day: "2026-09-01", value: 5 },
+      { metric: "search_position", day: "2026-09-01", value: 7.5, weight: 100 },
+      { metric: "search_impressions", day: "2026-09-02", value: 120 },
+      { metric: "search_clicks", day: "2026-09-02", value: 7 },
+      { metric: "search_position", day: "2026-09-02", value: 6.1, weight: 120 },
+    ]);
+    expect(rows.some((r) => r.metric.startsWith("query_"))).toBe(false);
   });
 
   it("Search Console surfaces HTTP errors", async () => {

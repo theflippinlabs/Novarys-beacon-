@@ -2,7 +2,7 @@ import { z } from "zod";
 import { runAgentTurn, type AgentEvent } from "@/agent/loop";
 import { getLocale } from "@/i18n/server";
 import { getAuthContext } from "@/lib/auth/session";
-import { err, ipHashOf, limited, readJson } from "@/lib/http";
+import { err, ipHashOf, limited, readJson, sameOrigin } from "@/lib/http";
 import { log } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
@@ -13,18 +13,7 @@ const Body = z.object({
   mediaIds: z.array(z.string().uuid()).max(4).default([]),
 });
 
-/** Same-origin only: the session cookie authenticates, the Origin check blocks cross-site use. */
-function sameOrigin(req: Request) {
-  const origin = req.headers.get("origin");
-  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
-  if (!origin || !host) return false;
-  try {
-    return new URL(origin).host === host;
-  } catch {
-    return false;
-  }
-}
-
+/** Same-origin only (`sameOrigin`): the session cookie authenticates, the Origin check blocks cross-site use. */
 /** Runs one agent turn and streams events as NDJSON. */
 export async function POST(req: Request) {
   if (!sameOrigin(req)) return err(403, "Cross-origin request refused");

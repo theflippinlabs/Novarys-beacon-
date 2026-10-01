@@ -6,6 +6,8 @@ const securityHeaders = [
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "Permissions-Policy", value: "camera=(), microphone=(self), geolocation=()" },
   { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+  // HSTS for every response in production (the proxy also sets it on documents).
+  ...(process.env.NODE_ENV === "production" ? [{ key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" }] : []),
 ];
 
 const nextConfig: NextConfig = {

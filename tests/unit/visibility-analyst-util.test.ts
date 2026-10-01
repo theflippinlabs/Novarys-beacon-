@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { analyzeAiResponse } from "@/core/visibility/ai-response";
+import { analyzeAiResponse, mentionOffsets, snippetAround } from "@/core/visibility/ai-response";
 import { analyzeGrowth, type MetricPair } from "@/core/autopilot/analyst";
 import { prioritizeAttention, attentionPriority, type AttentionItem } from "@/core/command/attention";
 import { escapeHtml, formatMoney, jaccard, normalizeQuery, shingles, slugify, textSimilarity, tokens } from "@/core/util/text";
@@ -14,11 +14,12 @@ describe("analyzeAiResponse", () => {
 
   it("detects entities with positions by order of first appearance", () => {
     const r = analyzeAiResponse("Popular tools: Maltego, then SpiderFoot. Iris is newer. Maltego again.", [], products, competitors);
-    expect(r.competitorsMentioned).toEqual([
-      { competitorId: "c1", name: "Maltego", position: 1 },
-      { competitorId: "c2", name: "SpiderFoot", position: 2 },
+    expect(r.competitorsMentioned).toMatchObject([
+      { competitorId: "c1", name: "Maltego", position: 1, offset: 15, offsets: [15, 56] },
+      { competitorId: "c2", name: "SpiderFoot", position: 2, offset: 29 },
     ]);
-    expect(r.productsMentioned).toEqual([{ productId: "p1", name: "Iris", position: 3 }]);
+    expect(r.productsMentioned).toMatchObject([{ productId: "p1", name: "Iris", position: 3, offset: 41 }]);
+    expect(r.productsMentioned[0].snippet).toContain("Iris is newer");
     expect(r.position).toBe(3);
     expect(r.orgMentioned).toBe(true);
   });
@@ -40,6 +41,18 @@ describe("analyzeAiResponse", () => {
     expect(r.citations).toEqual(["https://other.example/a", "https://docs.iris.example/guide", "https://maltego.example/x"]);
     expect(r.ownDomainCited).toBe(true);
     expect(analyzeAiResponse("text", ["https://notiris.example/", "not a url"], products, []).ownDomainCited).toBe(false);
+  });
+
+  it("keeps a snippet of about 200 characters around the first mention, cut on word boundaries", () => {
+    const filler = "lorem ipsum dolor sit amet ".repeat(20);
+    const text = `${filler}Maltego is a link analysis tool. ${filler}`;
+    const r = analyzeAiResponse(text, [], products, competitors);
+    const m = r.competitorsMentioned[0];
+    expect(m.offset).toBe(filler.length);
+    expect(m.snippet!.length).toBeLessThanOrEqual(205);
+    expect(m.snippet).toMatch(/^….*Maltego is a link analysis tool\..*…$/);
+    expect(snippetAround("short Maltego text", 6, 7)).toBe("short Maltego text");
+    expect(mentionOffsets("ACME and acme.io and acmeish", ["Acme"])).toEqual([0, 9]);
   });
 
   it("uses org names for orgMentioned when no product is mentioned", () => {
@@ -144,8 +157,9 @@ describe("text utils", () => {
     expect(escapeHtml(`<a href="x">Tom & Jerry's</a>`)).toBe("&lt;a href=&quot;x&quot;&gt;Tom &amp; Jerry&#39;s&lt;/a&gt;");
   });
   it("formatMoney", () => {
-    expect(formatMoney(4900)).toBe("€49");
-    expect(formatMoney(4950)).toBe("€49.50");
+    expect(formatMoney(4900, "EUR")).toBe("€49");
+    expect(formatMoney(4950, "EUR")).toBe("€49.50");
+    expect(formatMoney(4950, null)).toBe("49.50 (currency unknown)");
     expect(formatMoney(123456, "USD")).toBe("US$1,234.56");
     expect(formatMoney(0, "GBP")).toBe("£0");
   });

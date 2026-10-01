@@ -1,14 +1,16 @@
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { contentAssets, contentVersions, pages, products, queries } from "@/db/schema";
-import { createAsset, createAssetForPage, createAssetFromOpportunity, generateVersion, getAsset } from "@/services/content";
+import { createAsset, createAssetForPage, createAssetFromOpportunity, derivativesOf, generateVersion, getAsset, repurposeAsset } from "@/services/content";
+import { CONTENT_TYPES, OPPORTUNITY_CONTENT_TYPES, REPURPOSE_LABELS, REPURPOSE_TYPES } from "@/core/content/types";
+import { severityCounts } from "@/core/content/fact-check";
 import { enqueue } from "@/jobs/queue";
 import type { Actor } from "@/lib/audit";
 import type { Tx } from "@/db";
 import { defineTool, type AgentToolContext } from "../types";
 import { agentActor, capped, idRef, iso, limitInput, LIST_CAP, optionalProductRef, requirePermission, resolveOptionalProduct, resolveProduct, trim } from "./util";
 
-const TYPES = z.enum(["LANDING_PAGE", "ARTICLE", "FAQ", "TUTORIAL", "COMPARISON", "RELEASE_ANNOUNCEMENT", "X_POST", "LINKEDIN_POST", "TIKTOK_SCRIPT", "SHORT_VIDEO_SCRIPT", "NEWSLETTER", "DIRECTORY_DESCRIPTION", "OUTREACH"]);
+const TYPES = z.enum(CONTENT_TYPES);
 const STATUSES = z.enum(["IDEA", "GENERATED", "FACT_CHECK", "SEO_CHECK", "HUMAN_APPROVAL", "APPROVED", "PUBLISHED", "REJECTED"]);
 const HUMAN_NOTE = "Approval and publication are human decisions made in the app by a reviewer; the agent never approves or publishes.";
 const BODY_MAX = 6000;
@@ -21,16 +23,17 @@ const BODY_MAX = 6000;
 async function draft(c: AgentToolContext, actor: Actor, assetId: string, useLlm: boolean) {
   if (useLlm) {
     const asset = await getAsset(c.tx, c.ctx.org.id, assetId);
-    await enqueue("content.generate", { assetId, userId: actor.userId ?? null, useLlm: true }, { organizationId: actor.organizationId, idempotencyKey: `gen:${assetId}:${asset.currentVersion + 1}` });
+    await enqueue("content.generate", { assetId, userId: actor.userId ?? null, useLlm: true, baseVersion: asset.currentVersion, baseStatus: asset.status }, { organizationId: actor.organizationId, idempotencyKey: `gen:${assetId}:${asset.currentVersion + 1}` });
     return { generation: "queued (LLM rewrite constrained to the product's facts; the draft appears when the worker finishes)" };
   }
-  const r = await generateVersion(c.tx, actor, assetId, null, c.ctx.org.branding.displayName ?? c.ctx.org.name);
+  const r = await generateVersion(c.tx, actor, assetId, c.ctx.org.branding.displayName ?? c.ctx.org.name);
   return {
     generation: "done",
     version: r.version.version,
     status: r.status,
-    factCheck: { passed: r.fact.passed, unsupportedClaims: r.fact.claims.filter((x) => x.status !== "SUPPORTED").length },
+    factCheck: { passed: r.fact.passed, unsupportedClaims: r.fact.claims.filter((x) => x.status !== "SUPPORTED").length, bySeverity: severityCounts(r.fact.claims) },
     seoCheck: { passed: r.seo.passed, failing: r.seo.checks.filter((x) => !x.ok).map((x) => x.message).slice(0, 8) },
+    qualityCheck: { passed: r.quality.passed, failing: r.quality.checks.filter((x) => !x.ok).map((x) => x.message).slice(0, 8) },
   };
 }
 
@@ -94,13 +97,19 @@ export const getContent = defineTool({
             body: trim(v.body, BODY_MAX),
             bodyTruncated: v.body.length > BODY_MAX,
             editorTodos: (v.body.match(/^> TODO\(editor\):.*$/gm) ?? []).slice(0, 15),
-            factCheck: v.factCheck ? { passed: v.factCheck.passed, flaggedClaims: v.factCheck.claims.filter((x) => x.status !== "SUPPORTED").slice(0, 15).map((x) => ({ claim: trim(x.claim, 200), status: x.status })) } : "not run",
+            factCheck: v.factCheck
+              ? { passed: v.factCheck.passed, bySeverity: severityCounts(v.factCheck.claims), flaggedClaims: v.factCheck.claims.filter((x) => x.status !== "SUPPORTED").slice(0, 15).map((x) => ({ claim: trim(x.claim, 200), status: x.status, kind: x.kind ?? null, severity: x.severity ?? null, reason: x.reason ?? null })) }
+              : "not run",
+            qualityCheck: v.qualityCheck ? { passed: v.qualityCheck.passed, failing: v.qualityCheck.checks.filter((x) => !x.ok).map((x) => ({ rule: x.rule, message: x.message })) } : "not run",
             seoCheck: v.seoCheck ? { passed: v.seoCheck.passed, failing: v.seoCheck.checks.filter((x) => !x.ok).map((x) => ({ rule: x.rule, message: x.message })).slice(0, 15) } : "not run",
             createdAt: iso(v.createdAt),
           }
         : "no version generated yet",
       approvedAt: iso(a.approvedAt),
       publishedAt: iso(a.publishedAt),
+      liveVersion: a.publishedVersionId ? (await tx.query.contentVersions.findFirst({ where: eq(contentVersions.id, a.publishedVersionId) }))?.version ?? null : null,
+      repurposedFrom: a.sourceAssetId ? { assetId: a.sourceAssetId, stale: Boolean(a.sourceStaleAt), link: `/content/${a.sourceAssetId}` } : null,
+      derivatives: (await derivativesOf(tx, a)).slice(0, 15).map((d) => ({ id: d.id, type: d.type, status: d.status, stale: d.stale, link: `/content/${d.id}` })),
       note: HUMAN_NOTE,
       link: `/content/${a.id}`,
     };
@@ -132,8 +141,9 @@ export const createContentDraft = defineTool({
     let assetId: string;
     if (i.opportunityId) {
       const type = i.type ?? "ARTICLE";
-      if (!["LANDING_PAGE", "ARTICLE", "FAQ", "TUTORIAL", "COMPARISON"].includes(type)) throw new Error("From an opportunity, type must be LANDING_PAGE, ARTICLE, FAQ, TUTORIAL or COMPARISON.");
-      assetId = (await createAssetFromOpportunity(c.tx, actor, i.opportunityId, type)).id;
+      const allowed = OPPORTUNITY_CONTENT_TYPES.find((x) => x === type);
+      if (!allowed) throw new Error(`From an opportunity, type must be one of ${OPPORTUNITY_CONTENT_TYPES.join(", ")}.`);
+      assetId = (await createAssetFromOpportunity(c.tx, actor, i.opportunityId, allowed)).id;
     } else if (i.pageId) {
       const a = await createAssetForPage(c.tx, actor, i.pageId);
       if (a.status !== "IDEA") return { existing: await assetSummary(c.tx, c.ctx.org.id, a.id), note: `This page already has a content asset. Use regenerate_content_draft to produce a new version. ${HUMAN_NOTE}`, link: `/content/${a.id}` };
@@ -166,5 +176,27 @@ export const regenerateContentDraft = defineTool({
     const actor = agentActor(c);
     const generation = await draft(c, actor, a.id, Boolean(i.useLlm));
     return { asset: await assetSummary(c.tx, c.ctx.org.id, a.id), ...generation, note: HUMAN_NOTE, link: `/content/${a.id}` };
+  },
+});
+
+export const repurposeContent = defineTool({
+  name: "repurpose_content",
+  label: "Repurposing content",
+  description: `Create derivative drafts from an APPROVED or PUBLISHED content asset: ${REPURPOSE_TYPES.map((t) => `${t} (${REPURPOSE_LABELS[t]})`).join(", ")}. Each derivative uses only the facts of the source version, is fact checked against the knowledge graph and the source text, and stays a draft that a human must approve (derivatives are flagged stale when the source publishes a newer version). Drafts only. ${HUMAN_NOTE}`,
+  permission: "content:write",
+  kind: "write",
+  input: z.object({
+    id: idRef("Source content asset id (must be APPROVED or PUBLISHED)."),
+    types: z.array(z.enum(REPURPOSE_TYPES)).min(1).max(REPURPOSE_TYPES.length).describe("Derivative formats to draft."),
+  }),
+  run: async (c, i) => {
+    requirePermission(c, "content:write");
+    const actor = agentActor(c);
+    const r = await repurposeAsset(c.tx, actor, i.id, i.types, c.ctx.org.branding.displayName ?? c.ctx.org.name);
+    return {
+      source: { id: i.id, version: r.sourceVersion, link: `/content/${i.id}` },
+      derivatives: r.derivatives.map((d) => ({ ...d, link: `/content/${d.id}` })),
+      note: HUMAN_NOTE,
+    };
   },
 });

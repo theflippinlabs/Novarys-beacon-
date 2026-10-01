@@ -1,11 +1,11 @@
 import { z } from "zod";
 import type { Tx } from "@/db";
 import { aiRuns } from "@/db/schema";
-import { factCheck } from "@/core/content/fact-check";
-import { generateDraft, type Draft, type DraftRequest } from "@/core/content/generate";
-import { graphFacts } from "@/core/content/fact-check";
+import { factCheck, type FactCheckOptions } from "@/core/content/fact-check";
+import type { Draft, DraftRequest } from "@/core/content/generate";
+import { guardRewrite, type GuardResult } from "@/core/content/rewrite-guard";
+import { graphFacts } from "@/core/knowledge/facts";
 import type { ProductGraph } from "@/core/knowledge/types";
-import { classifyQuery, type Classification } from "@/core/queries/classify";
 import { recommendProducts, type RecommendationResult } from "@/core/sales/recommend";
 import { analyzeAiResponse, type EntityRef, type ResponseAnalysis } from "@/core/visibility/ai-response";
 import { generateOpportunities, type OpportunitySignals, type OpportunityDraft } from "@/core/opportunities/engine";
@@ -17,15 +17,15 @@ import type { LlmProvider } from "./types";
 /** Versioned prompts/rule-sets. Bump when behaviour changes so outputs stay traceable. */
 export const PROMPT_VERSIONS = {
   generateContent: "content-v1",
-  rewriteContent: "content-rewrite-v2",
-  factCheckDraft: "factcheck-v1",
+  rewriteContent: "content-rewrite-v3",
+  factCheckDraft: "factcheck-v2",
   classifyIntent: "intent-rules-v1",
-  analyzeVisibility: "ai-visibility-parse-v1",
+  analyzeVisibility: "ai-visibility-parse-v2",
   generateOpportunity: "opportunity-rules-v1",
   recommendProduct: "recommend-rules-v1",
 } as const;
 
-type RunMeta = { organizationId: string; task: keyof typeof PROMPT_VERSIONS; provider: string; model: string; input: unknown; output: unknown; confidence?: number | null; sources?: string[]; latencyMs: number; status: "SUCCEEDED" | "FAILED"; error?: string };
+export type RunMeta = { organizationId: string; task: keyof typeof PROMPT_VERSIONS; provider: string; model: string; input: unknown; output: unknown; confidence?: number | null; sources?: string[]; latencyMs: number; status: "SUCCEEDED" | "FAILED"; error?: string };
 
 /** Provenance record for every important AI/engine output (prompt version, provider, model, timestamp, confidence, sources). */
 export async function recordRun(tx: Tx, m: RunMeta): Promise<string> {
@@ -60,48 +60,54 @@ const REWRITE_SYSTEM = `You are an editor for a software company's public produc
 Rewrite the draft for clarity and flow for the stated format.
 Hard rules:
 - Use ONLY the facts provided. Do not add customers, testimonials, statistics, integrations, awards, reviews, prices or claims about competitors that are not in the facts.
-- Keep every URL in the Sources section and every line starting with "> TODO(editor):" unchanged.
+- Keep every URL in the Sources section, every line starting with "> TODO(editor):" and every "{cta:...}" marker unchanged.
 - Keep markdown structure: one H1, H2 sections, lists where helpful. No superlatives such as "best" or "#1".
 - Prefer concise, citation-friendly sentences that an answer engine could quote.
 - Never use em dashes (\u2014) or en dashes (\u2013); use commas, colons, parentheses or full stops instead. Write ranges as "1 to 5".`;
 
+export type GenerationResult = { draft: Draft; run: RunMeta; generatedBy: string; guard?: GuardResult };
+
+/** Provenance of a deterministic, fact-grounded draft (no LLM involved). */
+export function templateGeneration(organizationId: string, req: DraftRequest, draft: Draft, t0 = Date.now()): GenerationResult {
+  return {
+    draft,
+    generatedBy: "beacon-rules",
+    run: { organizationId, task: "generateContent", provider: "beacon-rules", model: "deterministic", input: req, output: { title: draft.title, factRefs: draft.factRefs.length }, confidence: 1, sources: draft.factRefs.map((f) => f.sourceUrl).filter((u): u is string => Boolean(u)), latencyMs: Date.now() - t0, status: "SUCCEEDED" },
+  };
+}
+
 /**
- * generateContent(): deterministic fact-grounded draft; optionally rewritten
- * by an LLM constrained to the same facts. The fact check always runs later
- * against the knowledge graph, so an LLM cannot smuggle in new claims.
+ * Optional LLM rewrite of a deterministic draft, constrained to the VERIFIED
+ * facts. Performs network I/O: never call it inside a database transaction
+ * (the content.generate job reads in one transaction, calls this with no
+ * transaction open, then persists in a second one). The rewrite is kept only
+ * when `guardRewrite` accepts it: no editor TODO line, Sources URL or CTA
+ * marker removed, no new unsupported claim, no higher NEEDS_REVIEW,
+ * UNSUPPORTED or HIGH count than the template.
  */
-export async function generateContent(tx: Tx, organizationId: string, g: ProductGraph, req: DraftRequest, llm?: LlmProvider | null): Promise<{ draft: Draft; aiRunId: string; generatedBy: string }> {
+export async function rewriteDraft(llm: LlmProvider, organizationId: string, g: ProductGraph, req: DraftRequest, draft: Draft, checkOpts: Omit<FactCheckOptions, "metaTitle" | "metaDescription"> = {}): Promise<GenerationResult> {
+  if (!llm.generateObject) return templateGeneration(organizationId, req, draft);
   const t0 = Date.now();
-  const draft = generateDraft(g, req);
-  if (!llm?.generateObject) {
-    const aiRunId = await recordRun(tx, { organizationId, task: "generateContent", provider: "beacon-rules", model: "deterministic", input: req, output: { title: draft.title, factRefs: draft.factRefs.length }, confidence: 1, sources: draft.factRefs.map((f) => f.sourceUrl).filter((u): u is string => Boolean(u)), latencyMs: Date.now() - t0, status: "SUCCEEDED" });
-    return { draft, aiRunId, generatedBy: "beacon-rules" };
-  }
-  const facts = graphFacts(g).map((f) => ({ ref: f.ref, text: f.text, source: f.sourceUrl ?? null }));
+  const facts = graphFacts(g, { verifiedOnly: true }).map((f) => ({ ref: f.ref, text: f.text, source: f.sourceUrl ?? null }));
   const prompt = `FORMAT: ${req.type}${req.targetQuery ? `\nTARGET QUERY: ${req.targetQuery}` : ""}\n\nFACTS (the only allowed source of claims):\n${JSON.stringify(facts, null, 1)}\n\nDRAFT:\n${draft.body}`;
   try {
     const out = await llm.generateObject({ system: REWRITE_SYSTEM, prompt, schema: RewriteSchema });
     // The model is told not to use long dashes; strip any that slip through before storing.
     const rewritten: Draft = { ...draft, title: stripLongDashes(out.title) || draft.title, metaTitle: stripLongDashes(out.metaTitle) || draft.metaTitle, metaDescription: stripLongDashes(out.metaDescription) || draft.metaDescription, body: stripLongDashes(out.body) };
-    // Guard: if the rewrite fails the fact check where the template passed, keep the template draft.
-    const before = factCheck(draft.body, g);
-    const after = factCheck(rewritten.body, g);
-    const keep = after.claims.filter((c) => c.status === "UNSUPPORTED").length <= before.claims.filter((c) => c.status === "UNSUPPORTED").length;
-    const aiRunId = await recordRun(tx, { organizationId, task: "rewriteContent", provider: llm.id, model: llm.model, input: { req, draftHash: sha256(draft.body) }, output: { kept: keep, title: rewritten.title }, confidence: keep ? 0.8 : 0.3, latencyMs: Date.now() - t0, status: "SUCCEEDED" });
-    return { draft: keep ? rewritten : draft, aiRunId, generatedBy: keep ? `${llm.id}:${llm.model}` : "beacon-rules (LLM rewrite rejected by fact check)" };
+    const before = factCheckDraft(draft.body, g, { ...checkOpts, metaTitle: draft.metaTitle, metaDescription: draft.metaDescription });
+    const after = factCheckDraft(rewritten.body, g, { ...checkOpts, metaTitle: rewritten.metaTitle, metaDescription: rewritten.metaDescription });
+    const guard = guardRewrite(draft, rewritten, before, after);
+    const run: RunMeta = { organizationId, task: "rewriteContent", provider: llm.id, model: llm.model, input: { req, draftHash: sha256(draft.body) }, output: { kept: guard.ok, title: rewritten.title, rejectedBecause: guard.reasons }, confidence: guard.ok ? 0.8 : 0.3, latencyMs: Date.now() - t0, status: "SUCCEEDED" };
+    return { draft: guard.ok ? rewritten : draft, run, guard, generatedBy: guard.ok ? `${llm.id}:${llm.model}` : "beacon-rules (LLM rewrite rejected by the rewrite guard)" };
   } catch (e) {
     log.warn("ai.rewrite_failed", { err: e });
-    const aiRunId = await recordRun(tx, { organizationId, task: "rewriteContent", provider: llm.id, model: llm.model, input: req, output: null, latencyMs: Date.now() - t0, status: "FAILED", error: (e as Error).message });
-    return { draft, aiRunId, generatedBy: "beacon-rules (LLM unavailable)" };
+    return { draft, generatedBy: "beacon-rules (LLM unavailable)", run: { organizationId, task: "rewriteContent", provider: llm.id, model: llm.model, input: req, output: null, latencyMs: Date.now() - t0, status: "FAILED", error: (e as Error).message } };
   }
 }
 
-export function factCheckDraft(body: string, g: ProductGraph) {
-  return factCheck(body, g, g.competitors.map((c) => c.competitor.name));
-}
-
-export function classifyIntent(query: string, brandTerms: string[]): Classification {
-  return classifyQuery(query, brandTerms);
+/** Fact check of a draft against the knowledge graph (VERIFIED facts only, competitors from the graph). */
+export function factCheckDraft(body: string, g: ProductGraph, opts: FactCheckOptions = {}) {
+  return factCheck(body, g, { competitorNames: g.competitors.map((c) => c.competitor.name), ...opts });
 }
 
 export function analyzeVisibility(response: string, citations: string[], products: EntityRef[], competitors: EntityRef[], orgNames: string[]): ResponseAnalysis {

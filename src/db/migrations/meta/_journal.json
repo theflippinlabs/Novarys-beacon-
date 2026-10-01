@@ -36,6 +36,62 @@
       "when": 1790830863029,
       "tag": "0004_strip_long_dashes",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790830923029,
+      "tag": "0005_security_hardening",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790830983029,
+      "tag": "0006_search_data",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790831043029,
+      "tag": "0007_measurement",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790831103029,
+      "tag": "0008_knowledge_provenance",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790831163029,
+      "tag": "0009_content_integrity",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790831223029,
+      "tag": "0010_crawl_intelligence",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1790831283029,
+      "tag": "0011_discovery_intelligence",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1790850743335,
+      "tag": "0012_schema_snapshot_sync",
+      "breakpoints": true
     }
   ]
 }

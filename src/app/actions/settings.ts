@@ -4,15 +4,16 @@ import { and, eq, ne } from "drizzle-orm";
 import { z } from "zod";
 import { asSystem } from "@/db";
 import { integrations, memberships, organizations, products, sessions, users } from "@/db/schema";
-import { act, zId, zOptText } from "@/lib/actions";
+import { act, actStaged, zId, zOptText } from "@/lib/actions";
 import { audit } from "@/lib/audit";
 import { canAssignRole, ROLES } from "@/lib/auth/rbac";
 import { hashPassword, verifyPassword } from "@/lib/security/crypto";
 import { normalizeEmail, validatePasswordStrength } from "@/lib/auth/service";
 import { enqueue, retryJob } from "@/jobs/queue";
-import { isVisibilityProvider, VISIBILITY_ADAPTERS } from "@/integrations/registry";
-import { loadSecret, saveIntegration } from "@/services/visibility";
-import { buildProvider } from "@/ai/registry";
+import { catalogEntry, INTEGRATION_CATALOG, INTEGRATION_PROVIDERS, isSyncableProvider } from "@/integrations/registry";
+import { saveIntegration } from "@/services/visibility";
+import { checkIntegration, parseSites } from "@/services/integration-health";
+import { reprocessInbox } from "@/services/stripe";
 
 export async function updateOrgSettingsAction(fd: FormData) {
   return act(
@@ -20,7 +21,7 @@ export async function updateOrgSettingsAction(fd: FormData) {
     "settings:manage",
     z.object({
       displayName: zOptText(80),
-      model: z.enum(["LAST_TOUCH", "FIRST_TOUCH"]),
+      model: z.enum(["LAST_TOUCH", "FIRST_TOUCH", "LINEAR", "POSITION_BASED"]),
       lookbackDays: z.coerce.number().int().min(1).max(180),
       referralPrecedence: z.string().optional(),
       crossSellDailyCap: z.coerce.number().int().min(0).max(10),
@@ -39,6 +40,21 @@ export async function updateOrgSettingsAction(fd: FormData) {
       return { ok: "Settings saved. Attribution rules apply to new events." };
     },
   );
+}
+
+/**
+ * Turn the organisation's public surfaces (hosted pages, sitemap, llms.txt,
+ * entity and published APIs, /ask) on or off. Off answers 404 everywhere.
+ */
+export async function setPublicSiteAction(fd: FormData) {
+  return act(fd, "settings:manage", z.object({ enabled: z.enum(["true", "false"]) }), async ({ tx, actor }, i) => {
+    const org = await tx.query.organizations.findFirst({ where: eq(organizations.id, actor.organizationId) });
+    if (!org) throw new Error("Organisation not found");
+    const enabled = i.enabled === "true";
+    await tx.update(organizations).set({ settings: { ...org.settings, publicSiteEnabled: enabled } }).where(eq(organizations.id, org.id));
+    await audit(tx, actor, enabled ? "org.public_site_enabled" : "org.public_site_disabled", "organization", org.id, { publicSiteEnabled: enabled });
+    return { ok: enabled ? "Public site turned on." : "Public site turned off: public URLs now answer 404." };
+  });
 }
 
 const ROLE = z.enum(ROLES);
@@ -91,77 +107,78 @@ export async function removeMemberAction(fd: FormData) {
   });
 }
 
-const PROVIDER = z.enum(["GOOGLE_SEARCH_CONSOLE", "GOOGLE_ANALYTICS", "BING_WEBMASTER", "STRIPE", "ANTHROPIC", "OPENAI", "PERPLEXITY"]);
+/** Every declared form field of every provider (the registry is the single source). */
+const FIELD_SCHEMA = Object.fromEntries(
+  INTEGRATION_CATALOG.flatMap((c) => [...c.configFields, ...c.secretFields]).map((f) => [f.key, zOptText(f.key === "serviceAccountJson" ? 20000 : 500)]),
+) as Record<string, ReturnType<typeof zOptText>>;
 
 export async function saveIntegrationAction(fd: FormData) {
-  return act(
+  return actStaged(
     fd,
     "integration:manage",
-    z.object({
-      provider: PROVIDER,
-      productId: z.union([zId, z.literal("")]).optional(),
-      siteUrl: zOptText(300),
-      propertyId: zOptText(40),
-      defaultProduct: zOptText(80),
-      model: zOptText(80),
-      serviceAccountJson: zOptText(20000),
-      apiKey: zOptText(500),
-      webhookSecret: zOptText(300),
-    }),
-    async ({ tx, actor }, i) => {
-      const productScoped = ["GOOGLE_SEARCH_CONSOLE", "GOOGLE_ANALYTICS", "BING_WEBMASTER"].includes(i.provider);
+    z.object({ provider: z.enum(INTEGRATION_PROVIDERS), productId: z.union([zId, z.literal("")]).optional(), ...FIELD_SCHEMA }),
+    async ({ actor, run }, input) => {
+      const i = input as { provider: (typeof INTEGRATION_PROVIDERS)[number]; productId?: string } & Record<string, string | null | undefined>;
+      const entry = catalogEntry(i.provider)!;
+      const productScoped = entry.scope === "product";
       if (productScoped && !i.productId) throw new Error("Select a product for this integration.");
-      if (i.productId) {
-        const p = await tx.query.products.findFirst({ where: and(eq(products.id, i.productId), eq(products.organizationId, actor.organizationId)) });
-        if (!p) throw new Error("Product not found");
-      }
       const config: Record<string, string> = {};
       const secret: Record<string, string> = {};
-      if (i.siteUrl) config.siteUrl = i.siteUrl;
-      if (i.propertyId) config.propertyId = i.propertyId;
-      if (i.defaultProduct) config.defaultProduct = i.defaultProduct;
-      if (i.model) config.model = i.model;
-      if (i.serviceAccountJson) secret.serviceAccountJson = i.serviceAccountJson;
-      if (i.apiKey) secret.apiKey = i.apiKey;
-      if (i.webhookSecret) secret.webhookSecret = i.webhookSecret;
-      if (i.provider === "GOOGLE_SEARCH_CONSOLE" && !config.siteUrl) throw new Error("Property is required.");
-      if (i.provider === "GOOGLE_ANALYTICS" && !config.propertyId) throw new Error("Property ID is required.");
-      if (i.provider === "BING_WEBMASTER" && !config.siteUrl) throw new Error("Site URL is required.");
-      await saveIntegration(tx, actor, { provider: i.provider, productId: productScoped ? i.productId! : null, config, secret: Object.keys(secret).length ? secret : null });
-      return { ok: "Integration saved (secrets encrypted at rest)." };
+      for (const f of entry.configFields) {
+        const v = i[f.key];
+        if (v) config[f.key] = v;
+        else if (f.required) throw new Error(`${f.label.replace(/ \(.*\)$/, "")} is required.`);
+      }
+      for (const f of entry.secretFields) if (i[f.key]) secret[f.key] = i[f.key]!;
+      if (config.urlPrefix && !/^https?:\/\/[^\s]+$/i.test(config.urlPrefix)) throw new Error("The page URL prefix must start with https://");
+      // 1. Store (transaction), 2. test the connection (no transaction open), 3. record the result (transaction).
+      const integ = await run(async (tx) => {
+        if (productScoped) {
+          const p = await tx.query.products.findFirst({ where: and(eq(products.id, i.productId!), eq(products.organizationId, actor.organizationId)) });
+          if (!p) throw new Error("Product not found");
+        }
+        return saveIntegration(tx, actor, { provider: i.provider, productId: productScoped ? i.productId! : null, config, secret: Object.keys(secret).length ? secret : null });
+      });
+      const res = await checkIntegration(run, actor, integ.id);
+      if (!res.ok) throw new Error(`Saved, but the connection test failed: ${res.message}`);
+      return { ok: "Integration saved and connected (secrets encrypted at rest)." };
     },
   );
 }
 
+/** Test (or reconnect with the stored credentials): the provider call runs outside any transaction. */
 export async function testIntegrationAction(fd: FormData) {
-  return act(fd, "integration:manage", z.object({ id: zId }), async ({ tx, actor }, i) => {
-    const integ = await tx.query.integrations.findFirst({ where: and(eq(integrations.id, i.id), eq(integrations.organizationId, actor.organizationId)) });
-    if (!integ) throw new Error("Integration not found");
-    const secret = await loadSecret(tx, integ.id);
-    let result: { ok: boolean; message: string };
-    if (isVisibilityProvider(integ.provider)) result = await VISIBILITY_ADAPTERS[integ.provider]().testConnection(integ.config, secret);
-    else if (integ.provider === "ANTHROPIC" || integ.provider === "OPENAI" || integ.provider === "PERPLEXITY") {
-      if (!secret.apiKey) result = { ok: false, message: "No API key stored." };
-      else
-        try {
-          const p = buildProvider(integ.provider.toLowerCase() as "anthropic" | "openai" | "perplexity", { apiKey: secret.apiKey, model: integ.config.model });
-          await p.answer("Reply with the single word: ok");
-          result = { ok: true, message: `${p.label} (${p.model}) responded.` };
-        } catch (e) {
-          result = { ok: false, message: (e as Error).message };
-        }
-    } else result = { ok: Boolean(secret.webhookSecret), message: secret.webhookSecret ? "Webhook secret stored; deliveries are verified on receipt." : "No webhook secret stored." };
-    await tx.update(integrations).set({ status: result.ok ? "CONNECTED" : "ERROR", lastError: result.ok ? null : result.message.slice(0, 500) }).where(eq(integrations.id, integ.id));
-    await audit(tx, actor, "integration.test", "integration", integ.id, { ok: result.ok });
-    if (!result.ok) throw new Error(`Connection test failed: ${result.message}`);
-    return { ok: result.message };
+  return actStaged(fd, "integration:manage", z.object({ id: zId }), async ({ actor, run }, i) => {
+    const res = await checkIntegration(run, actor, i.id);
+    if (!res.ok) throw new Error(`Connection test failed: ${res.message}`);
+    return { ok: res.message };
+  });
+}
+
+/** Pick the Search Console property after "Connect with Google". */
+export async function selectGoogleSiteAction(fd: FormData) {
+  return actStaged(fd, "integration:manage", z.object({ id: zId, siteUrl: z.string().trim().min(1).max(300), urlPrefix: zOptText(500) }), async ({ actor, run }, i) => {
+    if (i.urlPrefix && !/^https?:\/\/[^\s]+$/i.test(i.urlPrefix)) throw new Error("The page URL prefix must start with https://");
+    await run(async (tx) => {
+      const integ = await tx.query.integrations.findFirst({ where: and(eq(integrations.id, i.id), eq(integrations.organizationId, actor.organizationId)) });
+      if (!integ || integ.provider !== "GOOGLE_SEARCH_CONSOLE") throw new Error("Integration not found");
+      const sites = parseSites(integ.config._sites);
+      if (!sites.some((s) => s.siteUrl === i.siteUrl)) throw new Error("Choose one of the properties of the connected Google account.");
+      const config: Record<string, string> = { siteUrl: i.siteUrl };
+      if (i.urlPrefix) config.urlPrefix = i.urlPrefix;
+      await saveIntegration(tx, actor, { provider: "GOOGLE_SEARCH_CONSOLE", productId: integ.productId, config, secret: null });
+    });
+    const res = await checkIntegration(run, actor, i.id);
+    if (!res.ok) throw new Error(`Connection test failed: ${res.message}`);
+    return { ok: "Property selected. History import (16 months) is queued." };
   });
 }
 
 export async function syncIntegrationNowAction(fd: FormData) {
   return act(fd, "job:run", z.object({ id: zId }), async ({ tx, actor }, i) => {
     const integ = await tx.query.integrations.findFirst({ where: and(eq(integrations.id, i.id), eq(integrations.organizationId, actor.organizationId)) });
-    if (!integ) throw new Error("Integration not found");
+    if (!integ || !isSyncableProvider(integ.provider)) throw new Error("Integration not found");
+    if (integ.status === "DISABLED") throw new Error("This integration is disabled. Test it to enable it again.");
     await enqueue("integration.sync", { integrationId: integ.id }, { organizationId: actor.organizationId, idempotencyKey: `sync:manual:${integ.id}:${Math.floor(Date.now() / 60_000)}` });
     return { ok: "Sync queued." };
   });
@@ -199,3 +216,15 @@ export async function changePasswordAction(fd: FormData) {
     return { ok: "Password changed. Other sessions were signed out." };
   });
 }
+
+/** Re-run unmapped or failed Stripe webhook events (after fixing the product mapping). */
+export async function reprocessWebhookInboxAction(fd: FormData) {
+  return act(fd, "integration:manage", z.object({ id: zId }), async ({ tx, actor }, i) => {
+    const integ = await tx.query.integrations.findFirst({ where: and(eq(integrations.id, i.id), eq(integrations.organizationId, actor.organizationId)) });
+    if (!integ) throw new Error("Integration not found");
+    const res = await reprocessInbox(tx, integ.id);
+    await audit(tx, actor, "integration.reprocess", "integration", integ.id, res);
+    return { ok: `Reprocessed ${res.total} event(s): ${res.PROCESSED} processed, ${res.UNMAPPED} unmapped, ${res.FAILED} failed.` };
+  });
+}
+

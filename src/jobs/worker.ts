@@ -1,7 +1,7 @@
 import { hostname } from "node:os";
 import { randomUUID } from "node:crypto";
 import { log, reportError } from "@/lib/logger";
-import { claimNext, completeJob, failJob, NonRetryableError, recoverStaleJobs } from "./queue";
+import { claimNext, completeJob, failJob, heartbeater, NonRetryableError, recoverStaleJobs } from "./queue";
 import { HANDLERS, scheduleRecurring } from "./handlers";
 import { recordJobMetric } from "@/lib/metrics";
 
@@ -15,8 +15,12 @@ export async function processOne(workerId: string): Promise<boolean> {
   const handler = HANDLERS[job.type as keyof typeof HANDLERS];
   try {
     if (!handler) throw new NonRetryableError(`Unknown job type ${job.type}`);
-    const result = await handler(job);
-    await completeJob(job.id, result ?? null);
+    const result = await handler(job, { heartbeat: heartbeater(job) });
+    const owned = await completeJob(job.id, result ?? null, job.lockedBy);
+    if (!owned) {
+      log.warn("job.lost_lock", { jobId: job.id, type: job.type });
+      return true;
+    }
     recordJobMetric(job.type, "SUCCEEDED", Date.now() - t0);
     log.info("job.succeeded", { jobId: job.id, type: job.type, ms: Date.now() - t0 });
   } catch (e) {

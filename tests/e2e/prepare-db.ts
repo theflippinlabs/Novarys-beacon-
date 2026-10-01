@@ -1,5 +1,6 @@
 import { execSync } from "node:child_process";
 import { Client } from "pg";
+import { grantSystemRole, systemUserName } from "../../src/db/roles";
 
 /** Reset the E2E database and apply migrations (runs before the web server starts). */
 async function main() {
@@ -10,6 +11,11 @@ async function main() {
   await c.query("drop schema if exists public cascade; drop schema if exists drizzle cascade; create schema public;");
   await c.end();
   execSync("npx tsx src/db/migrate.ts", { env: { ...process.env, DATABASE_URL: url }, stdio: "inherit" });
+  // The BYPASSRLS system role (asSystem) must exist in the cluster; see tests/support/global-setup.ts.
+  const o = new Client({ connectionString: url });
+  await o.connect();
+  await grantSystemRole(o, systemUserName());
+  await o.end();
 }
 
 main().catch((e) => {

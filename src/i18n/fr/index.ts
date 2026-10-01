@@ -21,7 +21,14 @@ import { fr as messages } from "./messages";
 import { fr as media } from "./media";
 import { fr as agent } from "./agent";
 import { fr as agentui } from "./agentui";
+import { fr as p2sec } from "./p2sec";
+import { fr as p2search } from "./p2search";
+import { fr as p2measure } from "./p2measure";
+import { fr as p2know } from "./p2know";
+import { fr as p2content } from "./p2content";
+import { fr as p2crawl } from "./p2crawl";
+import { fr as p2intel } from "./p2intel";
 
-export const FR_AREAS = { common, shell, overview, products, knowledge, onboarding, discovery, queries, content, distribution, visibility, opportunities, conversions, referrals, revenue, autopilot, settings, publicPages, messages, media, agent, agentui } as const;
+export const FR_AREAS = { common, shell, overview, products, knowledge, onboarding, discovery, queries, content, distribution, visibility, opportunities, conversions, referrals, revenue, autopilot, settings, publicPages, messages, media, agent, agentui, p2sec, p2search, p2measure, p2know, p2content, p2crawl, p2intel } as const;
 
 export const FR: Readonly<Record<string, string>> = Object.freeze(Object.assign({}, ...Object.values(FR_AREAS)));

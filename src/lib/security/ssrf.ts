@@ -14,7 +14,8 @@ import { isIP, BlockList } from "node:net";
  * - private, loopback, link-local, CGNAT, multicast and cloud metadata ranges
  *   are blocked
  * - redirects are followed manually and every hop is re-validated
- * - response size and total time are capped
+ * - response size is capped, and every request has a hard wall-clock
+ *   deadline (a slow server dripping bytes cannot hold a worker forever)
  */
 const blocked = new BlockList();
 for (const [net, prefix] of [
@@ -41,7 +42,11 @@ for (const [net, prefix] of [
   ["fe80::", 10],
   ["ff00::", 8],
   ["64:ff9b::", 96],
+  ["64:ff9b:1::", 48],
   ["2001:db8::", 32],
+  // Tunnelling prefixes that embed an IPv4 address: 6to4 and Teredo.
+  ["2002::", 16],
+  ["2001::", 32],
 ] as const)
   blocked.addSubnet(net, prefix, "ipv6");
 
@@ -58,8 +63,15 @@ export function isBlockedAddress(address: string): boolean {
   const family = isIP(address);
   if (family === 0) return true;
   if (family === 6) {
-    const mapped = address.toLowerCase().match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+    const lower = address.toLowerCase();
+    // IPv4-mapped (::ffff:a.b.c.d) and deprecated IPv4-compatible (::a.b.c.d) addresses, dotted or hex.
+    const mapped = lower.match(/^::(?:ffff:)?(\d+\.\d+\.\d+\.\d+)$/);
     if (mapped) return blocked.check(mapped[1], "ipv4");
+    const hex = lower.match(/^::(?:ffff:)?([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+    if (hex) {
+      const [hi, lo] = [parseInt(hex[1], 16), parseInt(hex[2], 16)];
+      return blocked.check(`${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`, "ipv4");
+    }
     return blocked.check(address, "ipv6");
   }
   return blocked.check(address, "ipv4");
@@ -110,33 +122,39 @@ export type SafeResponse = {
   elapsedMs: number;
   redirects: string[];
   truncated: boolean;
+  /** Status code of each redirect hop (same order as `redirects`). */
+  redirectStatuses?: number[];
+  /** Undecoded response bytes (e.g. gzip sitemaps). */
+  raw?: Buffer;
 };
 
 export async function safeFetch(
   rawUrl: string,
-  opts: { method?: "GET" | "HEAD"; maxBytes?: number; timeoutMs?: number; maxRedirects?: number; userAgent?: string } = {},
+  opts: { method?: "GET" | "HEAD"; maxBytes?: number; timeoutMs?: number; maxRedirects?: number; userAgent?: string; acceptEncoding?: string } = {},
 ): Promise<SafeResponse> {
   const maxBytes = opts.maxBytes ?? 2 * 1024 * 1024;
   const timeoutMs = opts.timeoutMs ?? 15_000;
   const maxRedirects = opts.maxRedirects ?? 5;
   const started = Date.now();
   const redirects: string[] = [];
+  const redirectStatuses: number[] = [];
   let current = rawUrl;
 
   for (let hop = 0; hop <= maxRedirects; hop++) {
     const url = assertSafeUrl(current);
-    const res = await requestOnce(url, opts.method ?? "GET", maxBytes, Math.max(1000, timeoutMs - (Date.now() - started)), opts.userAgent);
+    const res = await requestOnce(url, opts.method ?? "GET", maxBytes, Math.max(1000, timeoutMs - (Date.now() - started)), opts.userAgent, opts.acceptEncoding);
     if (res.status >= 300 && res.status < 400 && res.headers.location) {
       redirects.push(current);
+      redirectStatuses.push(res.status);
       current = new URL(res.headers.location, url).toString();
       continue;
     }
-    return { ...res, url: current, elapsedMs: Date.now() - started, redirects };
+    return { ...res, url: current, elapsedMs: Date.now() - started, redirects, redirectStatuses };
   }
   throw new SsrfError("Too many redirects");
 }
 
-function requestOnce(url: URL, method: string, maxBytes: number, timeoutMs: number, userAgent?: string) {
+function requestOnce(url: URL, method: string, maxBytes: number, timeoutMs: number, userAgent?: string, acceptEncoding = "identity") {
   return new Promise<Omit<SafeResponse, "url" | "elapsedMs" | "redirects">>((resolve, reject) => {
     const mod = url.protocol === "https:" ? https : http;
     const req = mod.request(
@@ -148,7 +166,8 @@ function requestOnce(url: URL, method: string, maxBytes: number, timeoutMs: numb
         headers: {
           "user-agent": userAgent ?? "NovarysBeacon/1.0 (+technical-seo-audit)",
           accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.5",
-          "accept-encoding": "identity",
+          // Only "identity" unless a caller (gzip sitemaps) decodes the raw bytes itself.
+          "accept-encoding": acceptEncoding,
         },
       },
       (res) => {
@@ -164,19 +183,26 @@ function requestOnce(url: URL, method: string, maxBytes: number, timeoutMs: numb
           }
           chunks.push(c);
         });
-        const done = () =>
+        const done = () => {
+          const buf = Buffer.concat(chunks);
           resolve({
             status: res.statusCode ?? 0,
             headers: Object.fromEntries(Object.entries(res.headers).map(([k, v]) => [k, Array.isArray(v) ? v.join(", ") : String(v ?? "")])),
-            body: Buffer.concat(chunks).toString("utf8"),
+            body: buf.toString("utf8"),
+            raw: buf,
             bytes,
             truncated,
           });
+        };
         res.on("end", done);
         res.on("close", done);
         res.on("error", reject);
       },
     );
+    // `timeout` above is an idle timeout; this is the hard per-request deadline.
+    const deadline = setTimeout(() => req.destroy(new Error("Request deadline exceeded")), timeoutMs);
+    deadline.unref?.();
+    req.on("close", () => clearTimeout(deadline));
     req.on("timeout", () => req.destroy(new Error("Request timed out")));
     req.on("error", reject);
     req.end();

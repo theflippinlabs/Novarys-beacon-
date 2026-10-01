@@ -52,8 +52,8 @@ const day = (d: number) => new Date(Date.UTC(2026, 0, d));
 const t = (id: string, channel: Touch["channel"], d: number, extra: Partial<Touch> = {}): Touch => ({ id, channel, occurredAt: day(d), ...extra });
 
 describe("attribute", () => {
-  it("returns DIRECT when there are no touches", () => {
-    expect(attribute([], day(20))).toEqual({ channel: "DIRECT", touchId: null, referralCodeId: null, campaignId: null, rule: "no-touch-in-window" });
+  it("returns UNATTRIBUTED (not DIRECT) when there are no touches", () => {
+    expect(attribute([], day(20))).toEqual({ channel: "UNATTRIBUTED", touchId: null, referralCodeId: null, campaignId: null, rule: "no-touch-in-window" });
   });
 
   it("uses the last non-direct touch (unsorted input)", () => {
@@ -73,7 +73,7 @@ describe("attribute", () => {
   it("excludes touches outside the lookback window or after the conversion", () => {
     const r = attribute([t("old", "SOCIAL", 1), t("future", "SOCIAL", 25), t("in", "EMAIL", 18)], day(20), { ...DEFAULT_ATTRIBUTION, lookbackDays: 7 });
     expect(r.touchId).toBe("in");
-    expect(attribute([t("old", "SOCIAL", 1)], day(20), { ...DEFAULT_ATTRIBUTION, lookbackDays: 7 }).channel).toBe("DIRECT");
+    expect(attribute([t("old", "SOCIAL", 1)], day(20), { ...DEFAULT_ATTRIBUTION, lookbackDays: 7 }).channel).toBe("UNATTRIBUTED");
     // Boundary: exactly lookbackDays before is still inside.
     expect(attribute([t("edge", "SOCIAL", 13)], day(20), { ...DEFAULT_ATTRIBUTION, lookbackDays: 7 }).touchId).toBe("edge");
   });
@@ -114,8 +114,9 @@ describe("commissionFor / fraudFlags", () => {
 
 describe("funnel", () => {
   it("computes step and start conversion rates", () => {
-    const f = buildFunnel({ PAGE_VIEW: 1000, CTA_CLICK: 100, SIGNUP: 20 });
-    expect(f.map((r) => r.step)).toEqual([...FUNNEL_STEPS]);
+    const f = buildFunnel({ PAGE_VIEW: 1000, CTA_CLICK: 100, SIGNUP_COMPLETED: 20 });
+    // Optional steps the product does not send are left out.
+    expect(f.map((r) => r.step)).toEqual(FUNNEL_STEPS.filter((s) => s !== "PRODUCT_VIEWED" && s !== "SIGNUP_STARTED"));
     expect(f[0]).toEqual({ step: "PAGE_VIEW", visitors: 1000, conversionFromPrev: null, conversionFromStart: null });
     expect(f[1]).toMatchObject({ visitors: 100, conversionFromPrev: 0.1, conversionFromStart: 0.1 });
     expect(f[2]).toMatchObject({ conversionFromPrev: 0.2, conversionFromStart: 0.02 });
@@ -125,7 +126,7 @@ describe("funnel", () => {
   });
 
   it("returns null rates everywhere without page views", () => {
-    const f = buildFunnel({ SIGNUP: 5 });
+    const f = buildFunnel({ SIGNUP_COMPLETED: 5 });
     expect(f.every((r) => r.conversionFromStart === null)).toBe(true);
     expect(f[2].conversionFromPrev).toBeNull();
     expect(f[3].conversionFromPrev).toBe(0);
@@ -138,3 +139,14 @@ describe("funnel", () => {
     expect(pctChange(5, 0)).toBeNull();
   });
 });
+
+describe("funnel optional steps", () => {
+  it("keeps PRODUCT_VIEWED and SIGNUP_STARTED when the product sends them, rates follow the shown steps", () => {
+    const f = buildFunnel({ PAGE_VIEW: 100, CTA_CLICK: 50, PRODUCT_VIEWED: 40, SIGNUP_STARTED: 20, SIGNUP_COMPLETED: 10 });
+    expect(f.map((r) => r.step).slice(0, 5)).toEqual(["PAGE_VIEW", "CTA_CLICK", "PRODUCT_VIEWED", "SIGNUP_STARTED", "SIGNUP_COMPLETED"]);
+    expect(f[4]).toMatchObject({ conversionFromPrev: 0.5, conversionFromStart: 0.1 });
+    const g = buildFunnel({ PAGE_VIEW: 100, CTA_CLICK: 50, SIGNUP_COMPLETED: 10 });
+    expect(g[2]).toMatchObject({ step: "SIGNUP_COMPLETED", conversionFromPrev: 0.2 });
+  });
+});
+

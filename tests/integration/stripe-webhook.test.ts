@@ -57,7 +57,7 @@ describe("Stripe webhook", () => {
     expect(await res.json()).toEqual({ received: true, duplicate: false });
     const evs = await withOrg(orgId, (tx) => tx.select().from(revenueEvents).where(and(eq(revenueEvents.provider, "stripe"), eq(revenueEvents.externalId, eventId))));
     expect(evs).toHaveLength(1);
-    expect(evs[0]).toMatchObject({ productId, type: "NEW", amountCents: 2900, mrrDeltaCents: 2900, currency: "EUR", channel: "DIRECT" });
+    expect(evs[0]).toMatchObject({ productId, type: "NEW", amountCents: 2900, mrrDeltaCents: 2900, currency: "EUR", channel: "UNATTRIBUTED" });
     const s = await withOrg(orgId, (tx) => tx.query.subscriptions.findFirst({ where: and(eq(subscriptions.provider, "stripe"), eq(subscriptions.externalId, sub)) }));
     expect(s).toMatchObject({ status: "ACTIVE", mrrCents: 2900, productId });
     const ident = await withOrg(orgId, (tx) => tx.query.identities.findFirst({ where: and(eq(identities.organizationId, orgId), eq(identities.externalRef, `stripe:${customer}`)) }));

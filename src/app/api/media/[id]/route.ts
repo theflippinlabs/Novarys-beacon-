@@ -23,18 +23,19 @@ function cookieValue(req: Request, name: string): string | null {
 
 /**
  * Serves uploaded images. PUBLIC media is served to anyone holding the
- * (unguessable, random UUID) id; PRIVATE media only to an authenticated member
- * of the owning organisation. Lookup by id runs with system privileges because
+ * (unguessable, random UUID) id; PRIVATE media only to the member who uploaded
+ * it, signed in to the owning organisation. Lookup by id runs with system privileges because
  * the tenant is not known until the row is found.
  */
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!isUuid(id)) return notFound();
-  const row = await asSystem(async (tx) => (await tx.select({ organizationId: media.organizationId, visibility: media.visibility, mime: media.mime, bytes: media.bytes }).from(media).where(eq(media.id, id.toLowerCase())).limit(1))[0]);
+  const row = await asSystem(async (tx) => (await tx.select({ organizationId: media.organizationId, createdBy: media.createdBy, visibility: media.visibility, mime: media.mime, bytes: media.bytes }).from(media).where(eq(media.id, id.toLowerCase())).limit(1))[0]);
   if (!row) return notFound();
   if (row.visibility === "PRIVATE") {
     const ctx = await resolveSession(cookieValue(req, SESSION_COOKIE));
-    if (!ctx || ctx.org.id !== row.organizationId) return notFound();
+    // Private photos (agent chat attachments) are visible to their uploader only.
+    if (!ctx || ctx.org.id !== row.organizationId || !row.createdBy || ctx.user.id !== row.createdBy) return notFound();
   }
   const etag = `"${id.toLowerCase()}"`;
   const headers: Record<string, string> = {

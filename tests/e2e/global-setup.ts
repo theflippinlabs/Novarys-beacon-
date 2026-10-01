@@ -41,7 +41,12 @@ function fakeClaude(req: http.IncomingMessage, res: http.ServerResponse) {
   let raw = "";
   req.on("data", (c) => (raw += c));
   req.on("end", () => {
-    const body = JSON.parse(raw) as { messages: { role: string; content: string | { type: string }[] }[]; tools?: { name: string }[] };
+    const body = JSON.parse(raw) as { stream?: boolean; messages: { role: string; content: string | { type: string }[] }[]; tools?: { name: string }[] };
+    if (!body.stream) {
+      // Non-streaming call (e.g. the connection test when the key is saved).
+      res.writeHead(200, { "content-type": "application/json" });
+      return res.end(JSON.stringify({ id: "msg_fake_test", type: "message", role: "assistant", model: "claude-opus-5-5", content: [{ type: "text", text: "ok" }], stop_reason: "end_turn", stop_sequence: null, usage: { input_tokens: 5, output_tokens: 1 } }));
+    }
     const last = body.messages.at(-1)!;
     const gotToolResult = Array.isArray(last.content) && last.content.some((b) => b.type === "tool_result");
     const hasTool = body.tools?.some((t) => t.name === "get_workspace_overview");

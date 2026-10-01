@@ -3,7 +3,7 @@ import { z } from "zod";
 import { pages, products, queries, queryClusters, seoAudits, seoIssues } from "@/db/schema";
 import { syncPagePlan } from "@/services/discovery";
 import { addCuratedQuery, generateQueryUniverse } from "@/services/queries";
-import { openIssueCounts, queueAudit } from "@/services/seo";
+import { AuditRefusedError, openIssueCounts, queueAudit, VERIFY_DOMAINS_PATH } from "@/services/seo";
 import { audit } from "@/lib/audit";
 import { defineTool } from "../types";
 import { agentActor, capped, iso, limitInput, LIST_CAP, optionalProductRef, productRef, requirePermission, resolveOptionalProduct, resolveProduct, trim } from "./util";
@@ -205,7 +205,8 @@ export const getSeoAudits = defineTool({
 export const queueSeoAudit = defineTool({
   name: "queue_seo_audit",
   label: "Queuing a technical audit",
-  description: "Queue a technical SEO crawl of a product's site (its domain, or a given https start URL). The crawl runs in the background; check results later with get_seo_audits.",
+  description:
+    "Queue a technical SEO crawl of a product's site (its domain, or a given https start URL). Only domains the workspace has verified (Discovery, Domains) can be crawled; at most 10 audits per hour and one running audit per product. When refused, the result explains why and links to the verification page (verification itself stays human). The crawl runs in the background; check results later with get_seo_audits.",
   permission: "job:run",
   kind: "write",
   input: z.object({
@@ -216,7 +217,13 @@ export const queueSeoAudit = defineTool({
   run: async (c, i) => {
     requirePermission(c, "job:run");
     const p = await resolveProduct(c.tx, c.ctx.org.id, i.product);
-    const a = await queueAudit(c.tx, agentActor(c), p.id, { startUrl: i.startUrl, maxPages: i.maxPages ?? 50 });
+    let a;
+    try {
+      a = await queueAudit(c.tx, agentActor(c), p.id, { startUrl: i.startUrl, maxPages: i.maxPages ?? 50 });
+    } catch (e) {
+      if (e instanceof AuditRefusedError) return { queued: null, refused: e.message, reason: e.code, link: e.code === "DOMAIN_NOT_VERIFIED" ? VERIFY_DOMAINS_PATH : `/discovery?product=${p.slug}` };
+      throw e;
+    }
     return { queued: { auditId: a.id, startUrl: a.startUrl, maxPages: a.maxPages, status: a.status }, link: `/discovery/audits/${a.id}` };
   },
 });

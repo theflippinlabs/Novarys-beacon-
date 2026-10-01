@@ -28,7 +28,7 @@ export async function syncPlanAction(fd: FormData) {
 export async function createPageContentAction(fd: FormData) {
   return act(fd, "content:write", z.object({ pageId: zId, generate: z.string().optional() }), async ({ tx, actor }, i) => {
     const asset = await createAssetForPage(tx, actor, i.pageId);
-    if (i.generate) await enqueue("content.generate", { assetId: asset.id, userId: actor.userId }, { organizationId: actor.organizationId, idempotencyKey: `gen:${asset.id}:${asset.currentVersion + 1}` });
+    if (i.generate) await enqueue("content.generate", { assetId: asset.id, userId: actor.userId, baseVersion: asset.currentVersion, baseStatus: asset.status }, { organizationId: actor.organizationId, idempotencyKey: `gen:${asset.id}:${asset.currentVersion + 1}` });
     return { redirect: `/content/${asset.id}`, ok: i.generate ? "Draft generation queued." : "Content asset created." };
   });
 }

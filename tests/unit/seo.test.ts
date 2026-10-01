@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { analyzeHtml, analyzeSite, normalizeUrl, type PageFacts } from "@/core/seo/analyze";
+import { analyzeHtml, analyzeSite, emptyFacts, normalizeUrl, type PageFacts } from "@/core/seo/analyze";
 import { isAllowed, parseRobots } from "@/core/seo/robots";
 import { buildSitemap, buildSitemapIndex, parseSitemap } from "@/core/seo/sitemap";
 import { faqPageJsonLd, howToJsonLd, organizationJsonLd, serializeJsonLd, softwareApplicationJsonLd, breadcrumbJsonLd, articleJsonLd } from "@/core/seo/schema-org";
@@ -17,7 +17,7 @@ function page(opts: { head?: string; body?: string; lang?: boolean } = {}) {
      <meta name="viewport" content="width=device-width">
      <meta property="og:title" content="Acme"><meta property="og:description" content="Acme"><meta property="og:image" content="https://acme.example/og.png">
      <meta name="twitter:card" content="summary">
-     <script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"Organization"},{"@type":["SoftwareApplication","WebApplication"]}]}</script>`;
+     <script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"Organization","name":"Acme","url":"https://acme.example/"},{"@type":["SoftwareApplication","WebApplication"],"name":"Acme","offers":{"@type":"Offer","price":"0","priceCurrency":"EUR"}}]}</script>`;
   const body = opts.body ?? `<h1>Acme</h1><h2>Features</h2><h3>Filters</h3><p>${WORDS}</p><a href="/pricing">Pricing</a>`;
   return `<!doctype html><html${opts.lang === false ? "" : ' lang="en"'}><head>${head}</head><body>${body}</body></html>`;
 }
@@ -101,7 +101,8 @@ describe("analyzeHtml", () => {
   it("counts images without alt (empty alt is fine) and without dimensions", () => {
     const r = run(page({ body: `<h1>A</h1><p>${WORDS}</p><img src="/a.png"><img src="/b.png" alt=""><img src="/c.png" alt="c" width="1" height="1">` }));
     const alt = r.issues.find((i) => i.rule === "images.alt_missing");
-    expect(alt?.details).toEqual({ count: 1 });
+    expect(alt?.details).toEqual({ count: 1, images: ["/a.png"] });
+    expect(alt?.params).toEqual({ count: 1, total: 3 });
     expect(alt?.message).toBe("1 of 3 images have no alt attribute.");
     expect(r.issues.find((i) => i.rule === "images.dimensions")?.message).toMatch(/^2 images/);
   });
@@ -140,7 +141,8 @@ describe("analyzeHtml", () => {
     const err = run(page({ body: "<h1>Not found</h1>" }), { status: 404 });
     expect(rules(err)).not.toContain("content.thin");
     expect(err.issues.find((i) => i.rule === "http.error")?.severity).toBe("HIGH");
-    expect(run(page(), { status: 503 }).issues.find((i) => i.rule === "http.error")?.severity).toBe("CRITICAL");
+    expect(run(page(), { status: 503 }).issues.find((i) => i.rule === "http.server_error")?.severity).toBe("CRITICAL");
+    expect(rules(run(page(), { status: 503 }))).not.toContain("http.error");
   });
 
   it("flags heavy pages, slow responses and redirect chains", () => {
@@ -172,25 +174,19 @@ describe("analyzeHtml", () => {
 });
 
 function facts(url: string, over: Partial<PageFacts> = {}): PageFacts {
-  return {
-    url,
+  return emptyFacts(url, {
     status: 200,
-    title: `Title ${url}`,
+    title: `${url.split("/").pop() || "home"} overview page`,
     metaDescription: `Description ${url}`,
     canonical: url,
     indexable: true,
-    robotsMeta: null,
+    indexability: "INDEXABLE",
     h1: ["x"],
     wordCount: 500,
-    internalLinks: [],
-    externalLinks: [],
-    structuredDataTypes: [],
-    hreflang: [],
     bytes: 1,
     loadMs: 1,
-    lastModified: null,
     ...over,
-  };
+  });
 }
 
 describe("analyzeSite", () => {
@@ -217,7 +213,8 @@ describe("analyzeSite", () => {
     expect(by("links.orphan")).toEqual([B]);
     expect(by("links.broken_internal")).toEqual([HOME]);
     expect(issues.find((i) => i.rule === "links.broken_internal")?.details).toEqual({ target: C });
-    expect(by("sitemap.broken_entry")).toEqual([C]);
+    expect(by("sitemap.not_found_entry")).toEqual([C]);
+    expect(issues.find((i) => i.rule === "sitemap.unchecked")?.params).toEqual({ count: 1 });
     expect(by("schema.entity_missing")).toEqual([HOME]);
   });
 
@@ -225,9 +222,10 @@ describe("analyzeSite", () => {
     const issues = analyzeSite({
       homepage: HOME,
       sitemapUrls: [A],
-      pages: [facts(HOME, { structuredDataTypes: ["Organization"] }), facts(A, { internalLinks: [A], indexable: false })],
+      pages: [facts(HOME, { structuredDataTypes: ["Organization"] }), facts(A, { internalLinks: [A], indexable: false, indexability: "NOINDEX_META" })],
     });
-    expect(issues.map((i) => i.rule).sort()).toEqual(["links.orphan", "sitemap.non_indexable"]);
+    expect(issues.map((i) => i.rule).sort()).toEqual(["links.orphan", "sitemap.non_indexable_entry"]);
+    expect(issues.find((i) => i.rule === "sitemap.non_indexable_entry")?.message).toBe("Sitemap lists a non-indexable URL (noindex in the robots meta tag).");
   });
 });
 

@@ -2,6 +2,7 @@
 
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
+import { OPPORTUNITY_CONTENT_TYPES } from "@/core/content/types";
 import {
   affiliates,
   aiVisibilityPrompts,
@@ -9,6 +10,7 @@ import {
   commissions,
   crossSellRules,
   distributionTargets,
+  productRelationships,
   experiments,
   opportunities,
   products,
@@ -23,6 +25,8 @@ import { addDistributionTarget, setDistributionStatus } from "@/services/distrib
 import { setOpportunityStatus } from "@/services/opportunities";
 import { randomToken, hmac } from "@/lib/security/crypto";
 import { safeReferralDestination } from "@/services/tracking";
+import { addRelationship, RELATIONSHIP_TYPES, removeRelationship } from "@/services/ecosystem";
+import { assertOwned } from "@/lib/owned";
 
 // ── Opportunities ───────────────────────────────────────────────────────
 export async function setOpportunityStatusAction(fd: FormData) {
@@ -45,9 +49,9 @@ export async function toggleOpportunityActionStep(fd: FormData) {
 }
 
 export async function opportunityToContentAction(fd: FormData) {
-  return act(fd, "content:write", z.object({ id: zId, type: z.enum(["LANDING_PAGE", "ARTICLE", "FAQ", "TUTORIAL", "COMPARISON"]) }), async ({ tx, actor }, i) => {
+  return act(fd, "content:write", z.object({ id: zId, type: z.enum(OPPORTUNITY_CONTENT_TYPES) }), async ({ tx, actor }, i) => {
     const asset = await createAssetFromOpportunity(tx, actor, i.id, i.type);
-    await enqueue("content.generate", { assetId: asset.id, userId: actor.userId }, { organizationId: actor.organizationId, idempotencyKey: `gen:${asset.id}:1` });
+    await enqueue("content.generate", { assetId: asset.id, userId: actor.userId, baseVersion: 0, baseStatus: "IDEA" }, { organizationId: actor.organizationId, idempotencyKey: `gen:${asset.id}:1` });
     return { redirect: `/content/${asset.id}`, ok: "Draft generation queued from opportunity." };
   });
 }
@@ -62,6 +66,7 @@ export async function regenerateOpportunitiesAction(fd: FormData) {
 // ── AI visibility ───────────────────────────────────────────────────────
 export async function addPromptAction(fd: FormData) {
   return act(fd, "query:write", z.object({ prompt: z.string().trim().min(5).max(500), productId: z.union([zId, z.literal("")]).optional(), category: zOptText(80) }), async ({ tx, actor }, i) => {
+    await assertOwned(tx, products, i.productId, actor.organizationId, "Product not found");
     await tx.insert(aiVisibilityPrompts).values({ organizationId: actor.organizationId, prompt: i.prompt, productId: i.productId || null, category: i.category });
     return { ok: "Prompt added." };
   });
@@ -125,6 +130,7 @@ export async function addCampaignAction(fd: FormData) {
       productId: z.union([zId, z.literal("")]).optional(),
     }),
     async ({ tx, actor }, i) => {
+      await assertOwned(tx, products, i.productId, actor.organizationId, "Product not found");
       await tx.insert(campaigns).values({ organizationId: actor.organizationId, name: i.name, channel: i.channel, utmSource: i.utmSource.toLowerCase(), utmMedium: i.utmMedium.toLowerCase(), utmCampaign: i.utmCampaign.toLowerCase(), productId: i.productId || null, status: "ACTIVE" });
       return { ok: "Campaign created." };
     },
@@ -153,6 +159,8 @@ export async function createReferralCodeAction(fd: FormData) {
     if (!product) throw new Error("Product not found");
     const dest = safeReferralDestination(i.destinationUrl, product.domain);
     if (!dest) throw new Error(`Destination must be an https URL on ${product.domain ?? "the product's domain (set it first)"}.`);
+    await assertOwned(tx, affiliates, i.affiliateId, actor.organizationId, "Affiliate not found");
+    await assertOwned(tx, campaigns, i.campaignId, actor.organizationId, "Campaign not found");
     const code = (i.code || randomToken(6).replace(/[^A-Za-z0-9]/g, "").slice(0, 8)).toUpperCase();
     await tx.insert(referralCodes).values({ organizationId: actor.organizationId, productId: product.id, code, affiliateId: i.affiliateId || null, campaignId: i.campaignId || null, destinationUrl: dest });
     await audit(tx, actor, "referral.create", "referral_code", code, { productId: product.id });
@@ -197,6 +205,7 @@ export async function runReportAction(fd: FormData) {
 
 export async function addExperimentAction(fd: FormData) {
   return act(fd, "growth:write", z.object({ name: z.string().trim().min(3).max(160), hypothesis: z.string().trim().min(10).max(1000), primaryMetric: z.string().trim().min(2).max(120), signalToMonitor: zOptText(300), productId: z.union([zId, z.literal("")]).optional() }), async ({ tx, actor }, i) => {
+    await assertOwned(tx, products, i.productId, actor.organizationId, "Product not found");
     await tx.insert(experiments).values({ organizationId: actor.organizationId, name: i.name, hypothesis: i.hypothesis, primaryMetric: i.primaryMetric, signalToMonitor: i.signalToMonitor, productId: i.productId || null });
     return { ok: "Experiment drafted." };
   });
@@ -228,12 +237,19 @@ export async function addCrossSellRuleAction(fd: FormData) {
       ctaUrl: z.string().url(),
       frequencyCapDays: z.coerce.number().int().min(1).max(365).default(14),
       maxImpressions: z.coerce.number().int().min(1).max(20).default(3),
+      relationshipId: z.union([zId, z.literal("")]).optional(),
     }),
     async ({ tx, actor }, i) => {
       if (i.sourceProductId === i.destinationProductId) throw new Error("Source and destination must differ.");
+      await assertOwned(tx, products, i.sourceProductId, actor.organizationId, "Product not found");
       const dest = await tx.query.products.findFirst({ where: and(eq(products.id, i.destinationProductId), eq(products.organizationId, actor.organizationId)) });
       if (!dest || !safeReferralDestination(i.ctaUrl, dest.domain)) throw new Error("CTA URL must be https on the destination product's domain.");
+      if (i.relationshipId) {
+        const rel = await tx.query.productRelationships.findFirst({ where: and(eq(productRelationships.id, i.relationshipId), eq(productRelationships.organizationId, actor.organizationId)) });
+        if (!rel || rel.fromProductId !== i.sourceProductId || rel.toProductId !== i.destinationProductId) throw new Error("The relationship must link the same source and destination products.");
+      }
       await tx.insert(crossSellRules).values({
+        relationshipId: i.relationshipId || null,
         organizationId: actor.organizationId,
         name: i.name,
         sourceProductId: i.sourceProductId,
@@ -254,5 +270,25 @@ export async function toggleCrossSellRuleAction(fd: FormData) {
   return act(fd, "growth:write", z.object({ id: zId, active: zCheckbox }), async ({ tx, actor }, i) => {
     await tx.update(crossSellRules).set({ active: i.active }).where(and(eq(crossSellRules.id, i.id), eq(crossSellRules.organizationId, actor.organizationId)));
     return { ok: i.active ? "Rule activated." : "Rule paused." };
+  });
+}
+
+// ── Ecosystem graph ─────────────────────────────────────────────────────
+export async function addRelationshipAction(fd: FormData) {
+  return act(
+    fd,
+    "growth:write",
+    z.object({ fromProductId: zId, toProductId: zId, type: z.enum(RELATIONSHIP_TYPES), rationale: z.string().trim().min(10).max(500), sourceId: z.union([zId, z.literal("")]).optional() }),
+    async ({ tx, actor }, i) => {
+      await addRelationship(tx, actor, { fromProductId: i.fromProductId, toProductId: i.toProductId, type: i.type, rationale: i.rationale, sourceId: i.sourceId || null });
+      return { ok: "Relationship saved." };
+    },
+  );
+}
+
+export async function removeRelationshipAction(fd: FormData) {
+  return act(fd, "growth:write", z.object({ id: zId }), async ({ tx, actor }, i) => {
+    await removeRelationship(tx, actor, i.id);
+    return { ok: "Relationship removed." };
   });
 }

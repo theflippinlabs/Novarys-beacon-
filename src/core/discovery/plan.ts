@@ -1,8 +1,10 @@
 import { facetsOf, type Facet, type ProductGraph } from "@/core/knowledge/types";
+import { factsByRef, graphFacts, type GraphFact } from "@/core/knowledge/facts";
 import { pagePath, type PageType } from "./urls";
 import { stripLongDashes } from "@/core/util/text";
 
-export type FactRef = { ref: string; text: string; verification: "VERIFIED" | "UNVERIFIED" | "NEEDS_REVIEW" | "REJECTED"; sourceUrl?: string };
+/** A fact a planned page is built from: the shared graph fact (with its verification status). */
+export type FactRef = Pick<GraphFact, "ref" | "text" | "verification" | "sourceUrl">;
 
 export type PagePlan = {
   type: PageType;
@@ -17,19 +19,14 @@ export type PagePlan = {
 
 export type SkippedPlan = { type: PageType; item: string; reason: string };
 
-const sourceUrl = (g: ProductGraph, id: string | null) => (id ? g.sources.find((s) => s.id === id)?.url : undefined);
-
-function facetFact(g: ProductGraph, f: Facet): FactRef {
-  return { ref: `facet:${f.id}`, text: `${f.name}. ${f.description ?? ""}`.trim(), verification: f.verification, sourceUrl: sourceUrl(g, f.sourceId) };
-}
-
-function coreFacts(g: ProductGraph): FactRef[] {
-  const p = g.product;
-  const facts: FactRef[] = [];
-  if (p.shortDescription) facts.push({ ref: "product:short_description", text: p.shortDescription, verification: p.lastVerifiedAt ? "VERIFIED" : "UNVERIFIED", sourceUrl: p.domain ? `https://${p.domain}` : undefined });
-  if (p.fullDescription) facts.push({ ref: "product:full_description", text: p.fullDescription, verification: p.lastVerifiedAt ? "VERIFIED" : "UNVERIFIED", sourceUrl: p.domain ? `https://${p.domain}` : undefined });
-  return facts;
-}
+/** Facts by ref, from the one shared flattener (same verification semantics as the fact checker). */
+type FactIndex = Map<string, GraphFact>;
+const pick = (idx: FactIndex, ref: string): FactRef[] => {
+  const f = idx.get(ref);
+  return f ? [{ ref: f.ref, text: f.text, verification: f.verification, sourceUrl: f.sourceUrl }] : [];
+};
+const facetFact = (idx: FactIndex, f: Facet): FactRef[] => pick(idx, `facet:${f.id}`);
+const coreFacts = (idx: FactIndex): FactRef[] => [...pick(idx, "product:short_description"), ...pick(idx, "product:full_description")];
 
 const MIN_DESC = 60;
 
@@ -41,6 +38,7 @@ const MIN_DESC = 60;
  */
 export function planPages(g: ProductGraph): { planned: PagePlan[]; skipped: SkippedPlan[] } {
   const p = g.product;
+  const idx = factsByRef(graphFacts(g));
   const planned: PagePlan[] = [];
   const skipped: SkippedPlan[] = [];
   const features = facetsOf(g, "FEATURE");
@@ -52,7 +50,7 @@ export function planPages(g: ProductGraph): { planned: PagePlan[]; skipped: Skip
     type: "PRODUCT",
     path: pagePath("PRODUCT", p.slug),
     title: stripLongDashes(p.shortDescription ? `${p.name}: ${p.shortDescription}` : p.name),
-    facts: [...coreFacts(g), ...features.slice(0, 8).map((f) => facetFact(g, f)), ...audiences.map((f) => facetFact(g, f))],
+    facts: [...coreFacts(idx), ...features.slice(0, 8).flatMap((f) => facetFact(idx, f)), ...audiences.flatMap((f) => facetFact(idx, f))],
     requirements: [
       { label: "Short description", met: Boolean(p.shortDescription) },
       { label: "Full description", met: Boolean(p.fullDescription) },
@@ -76,13 +74,13 @@ export function planPages(g: ProductGraph): { planned: PagePlan[]; skipped: Skip
         skipped.push({ type, item: f.name, reason: `Description shorter than ${MIN_DESC} characters: not enough material for a standalone page.` });
         continue;
       }
-      const supporting = type === "FEATURE" || type === "INTEGRATION" ? [] : [...features.slice(0, 4), ...problems.slice(0, 3)].map((x) => facetFact(g, x));
+      const supporting = type === "FEATURE" || type === "INTEGRATION" ? [] : [...features.slice(0, 4), ...problems.slice(0, 3)].flatMap((x) => facetFact(idx, x));
       planned.push({
         type,
         path: pagePath(type, p.slug, f.slug),
         title: stripLongDashes(titleFor(type, p.name, f.name)),
         facetId: f.id,
-        facts: [facetFact(g, f), ...coreFacts(g).slice(0, 1), ...supporting],
+        facts: [...facetFact(idx, f), ...coreFacts(idx).slice(0, 1), ...supporting],
         requirements: [
           { label: "Facet description ≥ 60 chars", met: descOk },
           { label: "Facet linked to a source", met: Boolean(f.sourceId) },
@@ -94,19 +92,14 @@ export function planPages(g: ProductGraph): { planned: PagePlan[]; skipped: Skip
 
   for (const pc of g.competitors) {
     const sourced = pc.comparisonFacts.filter((c) => c.sourceUrl);
-    const facts: FactRef[] = sourced.map((c, i) => ({
-      ref: `comparison:${pc.competitorId}:${i}`,
-      text: `${c.dimension}: ${c.product} / ${c.competitor}`,
-      verification: c.verifiedAt ? "VERIFIED" : "UNVERIFIED",
-      sourceUrl: c.sourceUrl,
-    }));
+    const facts: FactRef[] = pc.comparisonFacts.flatMap((c, i) => (c.sourceUrl ? pick(idx, `comparison:${pc.competitorId}:${i}`) : []));
     if (sourced.length >= 3) {
       planned.push({
         type: "COMPARISON",
         path: pagePath("COMPARISON", p.slug, pc.competitor.slug),
         title: `${p.name} vs ${pc.competitor.name}`,
         competitorId: pc.competitorId,
-        facts: [...coreFacts(g).slice(0, 1), ...facts],
+        facts: [...coreFacts(idx).slice(0, 1), ...facts],
         requirements: [{ label: "≥ 3 sourced comparison facts", met: true }],
       });
     } else {
@@ -118,7 +111,7 @@ export function planPages(g: ProductGraph): { planned: PagePlan[]; skipped: Skip
         path: pagePath("ALTERNATIVE", p.slug, pc.competitor.slug),
         title: `${pc.competitor.name} alternatives: ${p.name}`,
         competitorId: pc.competitorId,
-        facts: [...coreFacts(g), ...facts],
+        facts: [...coreFacts(idx), ...facts],
         requirements: [{ label: "≥ 2 sourced comparison facts & product description", met: true }],
       });
     }
@@ -134,7 +127,7 @@ export function planPages(g: ProductGraph): { planned: PagePlan[]; skipped: Skip
       type: "ANSWER",
       path: pagePath("ANSWER", p.slug, faq.question),
       title: faq.question,
-      facts: [{ ref: `faq:${faq.id}`, text: `${faq.question} ${faq.answer}`, verification: faq.verification, sourceUrl: sourceUrl(g, faq.sourceId) }],
+      facts: pick(idx, `faq:${faq.id}`),
       requirements: [{ label: "Answer linked to a source", met: Boolean(faq.sourceId) }],
     });
   }
@@ -144,7 +137,8 @@ export function planPages(g: ProductGraph): { planned: PagePlan[]; skipped: Skip
       type: "CHANGELOG",
       path: pagePath("CHANGELOG", p.slug),
       title: `${p.name} changelog`,
-      facts: g.changelog.slice(0, 20).map((c) => ({ ref: `changelog:${c.id}`, text: `${c.releasedOn} ${c.title} ${c.body ?? ""}`, verification: "VERIFIED" as const, sourceUrl: sourceUrl(g, c.sourceId) })),
+      // Changelog entries carry their own verification (no longer assumed VERIFIED).
+      facts: g.changelog.slice(0, 20).flatMap((c) => pick(idx, `changelog:${c.id}`)),
       requirements: [{ label: "≥ 1 changelog entry", met: true }],
     });
   }

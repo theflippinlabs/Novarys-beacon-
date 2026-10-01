@@ -1,12 +1,19 @@
 import { and, eq, gt, sql } from "drizzle-orm";
 import { asSystem, type Tx } from "@/db";
 import { memberships, organizations, sessions, users } from "@/db/schema";
-import { hashPassword, randomToken, sha256, verifyPassword } from "@/lib/security/crypto";
+import { hashPassword, hmac, randomToken, sha256, verifyPassword } from "@/lib/security/crypto";
 import type { Role } from "./rbac";
 
 export const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-const LOCKOUT_THRESHOLD = 10;
-const LOCKOUT_MS = 15 * 60 * 1000;
+/** Failures per (email, ip) tolerated before back-off starts. */
+export const LOGIN_FREE_FAILURES = 4;
+export const LOGIN_MAX_BACKOFF_SEC = 900;
+
+/** Exponential back-off after the free failures: 2s, 4s, 8s ... capped at 15 minutes. */
+export function loginBackoffSeconds(failures: number): number {
+  if (failures <= LOGIN_FREE_FAILURES) return 0;
+  return Math.min(LOGIN_MAX_BACKOFF_SEC, 2 ** (failures - LOGIN_FREE_FAILURES));
+}
 
 export type AuthContext = {
   user: { id: string; email: string; name: string };
@@ -58,30 +65,46 @@ export async function hasAnyUser(): Promise<boolean> {
   });
 }
 
-export type AuthResult = { ok: true; userId: string } | { ok: false; reason: "invalid" | "locked" };
+export type AuthResult = { ok: true; userId: string } | { ok: false; reason: "invalid" | "throttled"; retryAfterSec?: number };
 
-/** Constant-ish time authentication with lockout; never reveals whether the email exists. */
-export async function authenticate(email: string, password: string): Promise<AuthResult> {
+const throttleKey = (email: string, ipHash: string) => hmac(`${normalizeEmail(email)}|${ipHash}`, "login");
+
+/**
+ * Constant-ish time authentication with exponential back-off per (email, ip).
+ * There is no account-wide lockout, so nobody can lock a member out from
+ * another address; unknown emails are throttled exactly like real ones, so the
+ * response never reveals whether an account exists. Counters are updated with
+ * one atomic upsert (no read-modify-write race between parallel attempts).
+ */
+export async function authenticate(email: string, password: string, opts: { ipHash?: string } = {}): Promise<AuthResult> {
+  const key = throttleKey(email, opts.ipHash ?? "unknown");
   return asSystem(async (tx) => {
+    const t = await tx.execute<{ wait: number }>(sql`select ceil(extract(epoch from (blocked_until - now())))::int as wait from login_throttle where key = ${key} and blocked_until > now()`);
+    if (t.rows[0]) return { ok: false, reason: "throttled", retryAfterSec: Math.max(1, Number(t.rows[0].wait)) } as const;
     const user = await tx.query.users.findFirst({ where: eq(users.email, normalizeEmail(email)) });
-    if (!user) {
-      // Burn comparable time to avoid user enumeration by timing.
-      await verifyPassword(password, "scrypt$32768$8$1$AAAAAAAAAAAAAAAAAAAAAA==$" + "A".repeat(86));
+    const valid = user
+      ? await verifyPassword(password, user.passwordHash)
+      : // Burn comparable time to avoid user enumeration by timing.
+        await verifyPassword(password, "scrypt$32768$8$1$AAAAAAAAAAAAAAAAAAAAAA==$" + "A".repeat(86)).then(() => false);
+    if (!user || !valid) {
+      await tx.execute(sql`
+        insert into login_throttle (key, failures, blocked_until, updated_at) values (${key}, 1, null, now())
+        on conflict (key) do update set
+          failures = login_throttle.failures + 1,
+          blocked_until = case when login_throttle.failures + 1 > ${LOGIN_FREE_FAILURES}
+            then now() + make_interval(secs => least(${LOGIN_MAX_BACKOFF_SEC}, power(2, login_throttle.failures + 1 - ${LOGIN_FREE_FAILURES})))
+            else null end,
+          updated_at = now()`);
       return { ok: false, reason: "invalid" } as const;
     }
-    if (user.lockedUntil && user.lockedUntil.getTime() > Date.now()) return { ok: false, reason: "locked" } as const;
-    const valid = await verifyPassword(password, user.passwordHash);
-    if (!valid) {
-      const failures = user.failedLoginCount + 1;
-      await tx
-        .update(users)
-        .set({ failedLoginCount: failures, lockedUntil: failures >= LOCKOUT_THRESHOLD ? new Date(Date.now() + LOCKOUT_MS) : null })
-        .where(eq(users.id, user.id));
-      return { ok: false, reason: "invalid" } as const;
-    }
+    await tx.execute(sql`delete from login_throttle where key = ${key}`);
     await tx.update(users).set({ failedLoginCount: 0, lockedUntil: null, lastLoginAt: new Date() }).where(eq(users.id, user.id));
     return { ok: true, userId: user.id } as const;
   });
+}
+
+export async function purgeLoginThrottle(olderThanHours = 24) {
+  await asSystem((tx) => tx.execute(sql`delete from login_throttle where updated_at < now() - make_interval(hours => ${olderThanHours})`));
 }
 
 export async function createSession(userId: string, meta: { ipHash?: string; userAgent?: string } = {}) {

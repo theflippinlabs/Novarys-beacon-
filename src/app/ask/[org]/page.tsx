@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { recommendProduct } from "@/ai/tasks";
 import { withTracking } from "@/core/discovery/urls";
 import { orgBySlug, publicGraphs } from "@/services/public";
+import { pageRateLimited } from "@/lib/http";
 import { LocaleToggle } from "@/components/shell/locale-toggle";
 import { enumLabel } from "@/i18n/core";
 import { getI18n, getT } from "@/i18n/server";
@@ -22,6 +23,11 @@ export default async function AskPage({ params, searchParams }: { params: Promis
   const { org: slug } = await params;
   const sp = await searchParams;
   const need = typeof sp.need === "string" ? sp.need.slice(0, 1000) : "";
+  // Each question runs the recommender: limit per client IP.
+  if (need && (await pageRateLimited("ask", 30, 60))) {
+    const { t } = await getI18n();
+    return <main className="mx-auto max-w-2xl px-4 py-16 text-sm text-chrome">{t("Too many requests. Try again in a minute.")}</main>;
+  }
   const data = await asSystem(async (tx) => {
     const org = await orgBySlug(tx, slug);
     if (!org) return null;

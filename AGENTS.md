@@ -12,7 +12,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 - Read `docs/BEACON_ARCHITECTURE.md` first. Layering: `src/core` (pure, tested) → `src/services` (tenant-scoped `Tx`) → `src/app` (Server Actions via `act()`, route handlers).
 - Every tenant table needs `organization_id`, an entry in `TENANT_TABLES` and an RLS policy migration; the integration suite enforces this.
-- Data access in pages/actions goes through `withOrg` (`pageData` / `act`). Use `asSystem` only for trusted system paths (auth, worker, key-resolved public APIs).
+- Data access in pages/actions goes through `withOrg` (`pageData` / `act`). Use `asSystem` only for trusted system paths (auth, worker, key-resolved public APIs); it connects as the separate BYPASSRLS system role (there is no session-setting bypass). Validate every id from a form with `assertOwned` (`src/lib/owned.ts`). Migrations run as the app role under FORCE RLS: wrap data backfills on tenant tables in `NO FORCE` / `FORCE ROW LEVEL SECURITY`.
 - Never issue concurrent queries on one transaction (`Promise.all` on `tx`); use sequential awaits or `inSequence`.
 - Never invent product claims or show fabricated numbers; unconnected data renders as "Not connected".
 - UI colours follow the Beacon logo (navy-black surfaces, electric blue/cyan for focus and navigation, logo gold for primary actions); chart series use `--color-s1…s5` in order (validated palette — re-validate if you change it).

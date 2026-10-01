@@ -43,7 +43,9 @@ async function hydrate(ctx: AuthContext, messages: StoredMessage[]): Promise<Msg
     const content: Block[] = [];
     for (const b of m.content) {
       if (isStoredImage(b)) {
-        const row = await withOrg(ctx.org.id, (tx) => loadMedia(tx, ctx.org.id, b.source.media_id));
+        const loaded = await withOrg(ctx.org.id, (tx) => loadMedia(tx, ctx.org.id, b.source.media_id));
+        // Private photos belong to their uploader: another member's id never reaches the model.
+        const row = loaded && (loaded.visibility !== "PRIVATE" || loaded.createdBy === ctx.user.id) ? loaded : null;
         content.push(
           row
             ? { type: "image", source: { type: "base64", media_type: row.mime as "image/webp", data: Buffer.from(row.bytes).toString("base64") } }

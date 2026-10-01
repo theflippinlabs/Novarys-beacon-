@@ -44,6 +44,22 @@ function withParam(path: string, key: string, value: string) {
  * a flash message. Errors never leak stack traces to the client.
  */
 export async function act<S extends z.ZodType>(fd: FormData, permission: Permission, schema: S, fn: (a: ActionCtx, input: z.infer<S>) => Promise<ActionResult>): Promise<never> {
+  return pipeline(fd, permission, schema, (ctx, actor, input) => withOrg(ctx.org.id, (tx) => fn({ ctx, actor, tx }, input)));
+}
+
+export type StagedActionCtx = { ctx: AuthContext; actor: Actor; run: <T>(fn: (tx: Tx) => Promise<T>) => Promise<T> };
+
+/**
+ * Same pipeline as `act`, but the action opens its own tenant-scoped
+ * transactions through `run`. Use it when the action must call an external
+ * service (connection tests, OAuth): read in one transaction, call the
+ * provider with no transaction open, then write in another.
+ */
+export async function actStaged<S extends z.ZodType>(fd: FormData, permission: Permission, schema: S, fn: (a: StagedActionCtx, input: z.infer<S>) => Promise<ActionResult>): Promise<never> {
+  return pipeline(fd, permission, schema, (ctx, actor, input) => fn({ ctx, actor, run: (f) => withOrg(ctx.org.id, f) }, input));
+}
+
+async function pipeline<S extends z.ZodType>(fd: FormData, permission: Permission, schema: S, exec: (ctx: AuthContext, actor: Actor, input: z.infer<S>) => Promise<ActionResult>): Promise<never> {
   const ctx = await requirePermission(permission).catch((e) => {
     if (e instanceof ForbiddenError) return null;
     throw e;
@@ -59,7 +75,7 @@ export async function act<S extends z.ZodType>(fd: FormData, permission: Permiss
   } else {
     try {
       const actor: Actor = { organizationId: ctx.org.id, userId: ctx.user.id, actorType: "USER", ipHash: await clientIpHash() };
-      const res = await withOrg(ctx.org.id, (tx) => fn({ ctx, actor, tx }, parsed.data));
+      const res = await exec(ctx, actor, parsed.data);
       const dest = safeBack(res?.redirect, back);
       target = res?.ok ? withParam(dest, "ok", res.ok) : dest;
     } catch (e) {

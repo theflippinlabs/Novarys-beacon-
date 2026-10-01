@@ -4,6 +4,7 @@ import { and, eq } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { z } from "zod";
 import { apiKeys, productChangelog, productCompetitors, productFacets, productFaqs, productPricing, productProofs, products, productSources } from "@/db/schema";
+import { assertOwned } from "@/lib/owned";
 import { act, zBoolTri, zCheckbox, zId, zList, zOptText, zOptUrl } from "@/lib/actions";
 import { audit } from "@/lib/audit";
 import { normalizeDomain, parseCtas, parseNamed, parsePricing, parseSocial, parseSources, splitLines } from "@/core/knowledge/parse";
@@ -11,6 +12,7 @@ import { ONBOARDING_STEPS } from "@/services/onboarding";
 import { createProduct, deleteProduct, getProductBySlug, replacePricing, syncCompetitors, syncFacets, syncSources, updateProduct } from "@/services/products";
 import { generateApiKey } from "@/services/tracking";
 import { addComparisonFact, addFaq } from "@/services/knowledge";
+import { assertCanVerify, editFact, FACT_KINDS, setFactSource, setFactVerification, verifyProductClaims } from "@/services/provenance";
 import { enqueue } from "@/jobs/queue";
 import { mediaIdFromUrl } from "@/core/media/image";
 import { env } from "@/lib/env";
@@ -126,10 +128,18 @@ export async function saveOnboardingStepAction(fd: FormData) {
           await syncFacets(tx, actor, product.id, "DIFFERENTIATOR", parseNamed(i.differentiators));
           break;
         case 12:
-          if (i.gaPropertyId) await saveIntegration(tx, actor, { provider: "GOOGLE_ANALYTICS", productId: product.id, config: { propertyId: i.gaPropertyId }, secret: i.gaServiceAccount ? { serviceAccountJson: i.gaServiceAccount } : null });
+          if (i.gaPropertyId) {
+            const integ = await saveIntegration(tx, actor, { provider: "GOOGLE_ANALYTICS", productId: product.id, config: { propertyId: i.gaPropertyId }, secret: i.gaServiceAccount ? { serviceAccountJson: i.gaServiceAccount } : null });
+            // Saving never marks it connected: the first sync tests the credentials (CONNECTED, ERROR or EXPIRED).
+            await enqueue("integration.sync", { integrationId: integ.id }, { organizationId: actor.organizationId, idempotencyKey: `sync:onboarding:${integ.id}:${Math.floor(Date.now() / 60_000)}` });
+          }
           break;
         case 13:
-          if (i.gscSiteUrl) await saveIntegration(tx, actor, { provider: "GOOGLE_SEARCH_CONSOLE", productId: product.id, config: { siteUrl: i.gscSiteUrl }, secret: i.gscServiceAccount ? { serviceAccountJson: i.gscServiceAccount } : null });
+          if (i.gscSiteUrl) {
+            const integ = await saveIntegration(tx, actor, { provider: "GOOGLE_SEARCH_CONSOLE", productId: product.id, config: { siteUrl: i.gscSiteUrl }, secret: i.gscServiceAccount ? { serviceAccountJson: i.gscServiceAccount } : null });
+            // The first successful sync marks it CONNECTED and queues the 16-month backfill.
+            await enqueue("integration.sync", { integrationId: integ.id }, { organizationId: actor.organizationId, idempotencyKey: `sync:onboarding:${integ.id}:${Math.floor(Date.now() / 60_000)}` });
+          }
           break;
         case 14:
           await updateProduct(tx, actor, product.id, { conversionUrls: parseCtas(i.ctas) });
@@ -155,25 +165,21 @@ export async function runProductAnalysisAction(fd: FormData) {
 }
 
 const TABLES = { facet: productFacets, pricing: productPricing, faq: productFaqs, proof: productProofs } as const;
+const VERIFICATION = z.enum(["UNVERIFIED", "NEEDS_REVIEW", "VERIFIED", "REJECTED"]);
 
+/** Verification is a human decision reserved to `fact:verify` holders (owners and admins); VERIFIED needs a source. */
 export async function setVerificationAction(fd: FormData) {
-  return act(fd, "product:write", z.object({ kind: z.enum(["facet", "pricing", "faq", "proof"]), id: zId, verification: z.enum(["UNVERIFIED", "NEEDS_REVIEW", "VERIFIED", "REJECTED"]) }), async ({ tx, actor }, i) => {
-    const t = TABLES[i.kind];
-    await tx.update(t).set({ verification: i.verification }).where(and(eq(t.id, i.id), eq(t.organizationId, actor.organizationId)));
-    await audit(tx, actor, "knowledge.verify", i.kind, i.id, { verification: i.verification });
+  return act(fd, "fact:verify", z.object({ kind: z.enum(FACT_KINDS), id: zId, verification: VERIFICATION, sourceId: z.union([zId, z.literal("")]).optional() }), async ({ tx, actor }, i) => {
+    await setFactVerification(tx, actor, { kind: i.kind, id: i.id, verification: i.verification, sourceId: i.sourceId || null });
     return { ok: `Marked ${i.verification.toLowerCase().replace("_", " ")}.` };
   });
 }
 
+/** Linking a different source to a verified fact sends it back to review. */
 export async function setSourceAction(fd: FormData) {
-  return act(fd, "product:write", z.object({ kind: z.enum(["facet", "pricing", "faq", "proof"]), id: zId, sourceId: z.union([zId, z.literal("")]) }), async ({ tx, actor }, i) => {
-    const t = TABLES[i.kind];
-    if (i.sourceId) {
-      const src = await tx.query.productSources.findFirst({ where: and(eq(productSources.id, i.sourceId), eq(productSources.organizationId, actor.organizationId)) });
-      if (!src) throw new Error("Source not found");
-    }
-    await tx.update(t).set({ sourceId: i.sourceId || null }).where(and(eq(t.id, i.id), eq(t.organizationId, actor.organizationId)));
-    return { ok: "Source linked." };
+  return act(fd, "product:write", z.object({ kind: z.enum(FACT_KINDS), id: zId, sourceId: z.union([zId, z.literal("")]) }), async ({ tx, actor }, i) => {
+    const r = await setFactSource(tx, actor, { kind: i.kind, id: i.id, sourceId: i.sourceId || null });
+    return { ok: r.changed && r.verification === "NEEDS_REVIEW" ? "Source linked. The fact needs a new review." : "Source linked." };
   });
 }
 
@@ -188,6 +194,8 @@ export async function deleteKnowledgeAction(fd: FormData) {
 
 export async function addFaqAction(fd: FormData) {
   return act(fd, "product:write", z.object({ productId: zId, question: z.string().trim().min(5).max(300), answer: z.string().trim().min(10).max(3000), sourceId: z.union([zId, z.literal("")]).optional() }), async ({ tx, actor }, i) => {
+    await assertOwned(tx, products, i.productId, actor.organizationId, "Product not found");
+    await assertOwned(tx, productSources, i.sourceId, actor.organizationId, "Source not found");
     await addFaq(tx, actor, i.productId, { question: i.question, answer: i.answer, sourceId: i.sourceId || null });
     return { ok: "FAQ added (unverified until reviewed)." };
   });
@@ -207,6 +215,8 @@ export async function addProofAction(fd: FormData) {
       publishable: zCheckbox,
     }),
     async ({ tx, actor }, i) => {
+      await assertOwned(tx, products, i.productId, actor.organizationId, "Product not found");
+      await assertOwned(tx, productSources, i.sourceId, actor.organizationId, "Source not found");
       await tx.insert(productProofs).values({ organizationId: actor.organizationId, productId: i.productId, kind: i.kind, title: i.title, content: i.content, attribution: i.attribution, sourceId: i.sourceId || null, publishable: i.publishable });
       return { ok: "Proof added. It is only used publicly once verified and marked publishable." };
     },
@@ -215,6 +225,8 @@ export async function addProofAction(fd: FormData) {
 
 export async function addChangelogAction(fd: FormData) {
   return act(fd, "product:write", z.object({ productId: zId, version: zOptText(40), releasedOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), title: z.string().trim().min(2).max(200), body: zOptText(6000), sourceId: z.union([zId, z.literal("")]).optional() }), async ({ tx, actor }, i) => {
+    await assertOwned(tx, products, i.productId, actor.organizationId, "Product not found");
+    await assertOwned(tx, productSources, i.sourceId, actor.organizationId, "Source not found");
     await tx.insert(productChangelog).values({ organizationId: actor.organizationId, productId: i.productId, version: i.version, releasedOn: i.releasedOn, title: i.title, body: i.body, sourceId: i.sourceId || null });
     return { ok: "Changelog entry added." };
   });
@@ -226,6 +238,8 @@ export async function addComparisonFactAction(fd: FormData) {
     "product:write",
     z.object({ productId: zId, competitorId: zId, dimension: z.string().trim().min(2).max(120), product: z.string().trim().min(1).max(300), competitor: z.string().trim().min(1).max(300), sourceUrl: z.string().url().refine((u) => u.startsWith("https://"), "must be https"), verified: zCheckbox }),
     async ({ tx, actor }, i) => {
+      // Recording a comparison fact as verified is a verification: it needs `fact:verify`.
+      if (i.verified) await assertCanVerify(tx, actor);
       await addComparisonFact(tx, actor, i);
       return { ok: "Comparison fact added." };
     },
@@ -244,10 +258,12 @@ export async function removeComparisonFactAction(fd: FormData) {
   });
 }
 
+/** Verify the product's current scalar claims (each needs a source: its own or the one chosen here). */
 export async function markProductVerifiedAction(fd: FormData) {
-  return act(fd, "content:approve", z.object({ productId: zId }), async ({ tx, actor }, i) => {
-    await updateProduct(tx, actor, i.productId, { lastVerifiedAt: new Date() });
-    await audit(tx, actor, "knowledge.product_verified", "product", i.productId);
+  return act(fd, "fact:verify", z.object({ productId: zId, sourceId: z.union([zId, z.literal("")]).optional() }), async ({ tx, actor }, i) => {
+    const r = await verifyProductClaims(tx, actor, i.productId, i.sourceId || null);
+    if (!r.verified && r.skipped) throw new Error("Choose the source these facts were checked against: every verified fact must trace back to a source.");
+    if (r.skipped) return { ok: `${r.verified} core fact(s) verified; ${r.skipped} still need a source.` };
     return { ok: "Core product description marked as human-verified." };
   });
 }
@@ -287,8 +303,8 @@ export async function revokeApiKeyAction(fd: FormData) {
 
 export async function updateFacetAction(fd: FormData) {
   return act(fd, "product:write", z.object({ id: zId, description: zOptText(2000) }), async ({ tx, actor }, i) => {
-    await tx.update(productFacets).set({ description: i.description, verification: "NEEDS_REVIEW" }).where(and(eq(productFacets.id, i.id), eq(productFacets.organizationId, actor.organizationId)));
-    return { ok: "Updated and marked for review." };
+    const r = await editFact(tx, actor, "facet", i.id, { description: i.description });
+    return { ok: r.changed && r.verification === "NEEDS_REVIEW" ? "Updated and marked for review." : "Updated." };
   });
 }
 

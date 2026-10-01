@@ -1,6 +1,8 @@
 import { and, eq, max } from "drizzle-orm";
 import type { Tx } from "@/db";
-import { competitors, productCompetitors, productFacets, productFaqs, productPricing, products, productSources } from "@/db/schema";
+import { aiVisibilityPrompts, competitors, productCompetitors, productFacets, productFaqs, productPricing, products, productSources, queries } from "@/db/schema";
+import { suggestFaqQuestions } from "@/core/geo/entity";
+import { editFact } from "./provenance";
 import type { FacetKind } from "@/core/knowledge/types";
 import { slugify } from "@/core/util/text";
 import { audit, type Actor } from "@/lib/audit";
@@ -44,12 +46,14 @@ export async function addPricingPlan(
   tx: Tx,
   actor: Actor,
   productId: string,
-  input: { planName: string; priceCents: number | null; currency: string; interval: (typeof productPricing.$inferInsert)["interval"]; description?: string | null; trialDays?: number | null; sourceId?: string | null },
+  input: { planName: string; priceCents: number | null; currency: string | null; interval: (typeof productPricing.$inferInsert)["interval"] | null; description?: string | null; trialDays?: number | null; sourceId?: string | null },
 ) {
   await ownedProduct(tx, actor.organizationId, productId);
-  const existing = await tx.select({ planName: productPricing.planName, sortOrder: productPricing.sortOrder }).from(productPricing).where(eq(productPricing.productId, productId));
-  if (existing.some((p) => p.planName.toLowerCase() === input.planName.trim().toLowerCase())) throw new Error(`A plan named "${input.planName.trim()}" already exists`);
+  const existing = await tx.select({ planName: productPricing.planName, sortOrder: productPricing.sortOrder, sourceId: productPricing.sourceId }).from(productPricing).where(eq(productPricing.productId, productId));
   const sourceId = await ownedSource(tx, actor.organizationId, productId, input.sourceId);
+  // The same plan may be recorded again only as a claim from another source (conflicts are then detected).
+  const same = existing.filter((p) => p.planName.toLowerCase() === input.planName.trim().toLowerCase());
+  if (same.length && (!sourceId || same.some((p) => p.sourceId === sourceId || !p.sourceId))) throw new Error(`A plan named "${input.planName.trim()}" already exists`);
   const [row] = await tx
     .insert(productPricing)
     .values({
@@ -57,8 +61,8 @@ export async function addPricingPlan(
       productId,
       planName: input.planName.trim(),
       priceCents: input.priceCents,
-      currency: input.currency.toUpperCase(),
-      interval: input.interval,
+      currency: input.currency ? input.currency.toUpperCase() : null,
+      interval: input.interval ?? null,
       description: input.description?.trim() || null,
       trialDays: input.trialDays ?? null,
       sourceId,
@@ -115,4 +119,38 @@ export async function addComparisonFact(
   await tx.update(productCompetitors).set({ comparisonFacts: facts }).where(and(eq(productCompetitors.productId, input.productId), eq(productCompetitors.competitorId, input.competitorId)));
   await audit(tx, actor, "knowledge.comparison.add", "product", input.productId, { competitorId: input.competitorId, dimension: input.dimension });
   return { count: facts.length };
+}
+
+/**
+ * Draft FAQ entries from high-importance PROBLEM / INFORMATIONAL queries and
+ * active AI prompts of this product. Drafts are UNVERIFIED, have an empty
+ * answer for a human to write, and carry `suggestedFrom`; they are never
+ * published or used in generation until answered, sourced and verified.
+ */
+export async function suggestFaqs(tx: Tx, actor: Actor, productId: string) {
+  await ownedProduct(tx, actor.organizationId, productId);
+  const existing = await tx.select({ question: productFaqs.question, sortOrder: productFaqs.sortOrder }).from(productFaqs).where(eq(productFaqs.productId, productId));
+  const qs = await tx
+    .select({ id: queries.id, query: queries.query, intent: queries.intent, importance: queries.importance, status: queries.status })
+    .from(queries)
+    .where(and(eq(queries.organizationId, actor.organizationId), eq(queries.productId, productId)));
+  const prompts = await tx
+    .select({ id: aiVisibilityPrompts.id, prompt: aiVisibilityPrompts.prompt, active: aiVisibilityPrompts.active })
+    .from(aiVisibilityPrompts)
+    .where(and(eq(aiVisibilityPrompts.organizationId, actor.organizationId), eq(aiVisibilityPrompts.productId, productId)));
+  const suggestions = suggestFaqQuestions(
+    existing.map((f) => f.question),
+    qs,
+    prompts,
+  );
+  let order = existing.reduce((m, f) => Math.max(m, f.sortOrder + 1), 0);
+  for (const sug of suggestions)
+    await tx.insert(productFaqs).values({ organizationId: actor.organizationId, productId, question: sug.question, answer: "", suggestedFrom: sug.from, verification: "UNVERIFIED", sortOrder: order++ });
+  await audit(tx, actor, "knowledge.faq.suggest", "product", productId, { count: suggestions.length });
+  return suggestions;
+}
+
+/** Answer (or edit) an FAQ. A verified answer that changes goes back to review. */
+export async function answerFaq(tx: Tx, actor: Actor, faqId: string, input: { question: string; answer: string }) {
+  return editFact(tx, actor, "faq", faqId, { question: input.question, answer: input.answer });
 }

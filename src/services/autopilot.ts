@@ -1,4 +1,4 @@
-import { and, eq, gte, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, isNotNull, sql } from "drizzle-orm";
 import type { Tx } from "@/db";
 import { contentAssets, distributionTargets, growthReports, integrations, opportunities, recommendations } from "@/db/schema";
 import { analyzeGrowth, type MetricPair, type PeriodEvent } from "@/core/autopilot/analyst";
@@ -21,9 +21,9 @@ export async function generateGrowthReport(tx: Tx, organizationId: string, days 
   push("beacon_mrr", "New MRR via Beacon channels", k.revenue.beaconNewMrr, "cents");
 
   const since = addDays(new Date(), -days);
-  const published = await tx.select().from(contentAssets).where(and(eq(contentAssets.organizationId, organizationId), eq(contentAssets.status, "PUBLISHED"), gte(contentAssets.publishedAt, since)));
+  const published = await tx.select().from(contentAssets).where(and(eq(contentAssets.organizationId, organizationId), isNotNull(contentAssets.publishedVersionId), gte(contentAssets.publishedAt, since)));
   const dist = await tx.select().from(distributionTargets).where(and(eq(distributionTargets.organizationId, organizationId), eq(distributionTargets.status, "PUBLISHED"), gte(distributionTargets.updatedAt, since)));
-  const errors = await tx.select().from(integrations).where(and(eq(integrations.organizationId, organizationId), eq(integrations.status, "ERROR")));
+  const errors = await tx.select().from(integrations).where(and(eq(integrations.organizationId, organizationId), inArray(integrations.status, ["ERROR", "EXPIRED"])));
   const events: PeriodEvent[] = [
     ...published.map((p) => ({ kind: "CONTENT_PUBLISHED" as const, label: `Published: ${p.title}`, at: (p.publishedAt ?? p.updatedAt).toISOString(), productId: p.productId })),
     ...dist.map((d) => ({ kind: "DISTRIBUTION_PUBLISHED" as const, label: `Listed on ${d.name}`, at: d.updatedAt.toISOString(), productId: d.productId })),

@@ -1,6 +1,8 @@
 import { eq } from "drizzle-orm";
 import type { Metadata } from "next";
-import { addMemberAction, changePasswordAction, changeRoleAction, removeMemberAction, updateOrgSettingsAction } from "@/app/actions/settings";
+import { updateContentPolicyAction } from "@/app/actions/content";
+import { addMemberAction, changePasswordAction, changeRoleAction, removeMemberAction, setPublicSiteAction, updateOrgSettingsAction } from "@/app/actions/settings";
+import { isPublicSiteEnabled } from "@/services/public";
 import { Badge, Button, Field, Flash, HiddenBack, PageHeader, Panel, Table, Td, Th } from "@/components/ui";
 import { SettingsTabs } from "@/components/shell/settings-tabs";
 import { asSystem } from "@/db";
@@ -53,6 +55,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
                 <select name="model" defaultValue={attr.model} disabled={!can("settings:manage")}>
                   <option value="LAST_TOUCH">{t("Last non-direct touch")}</option>
                   <option value="FIRST_TOUCH">{t("First touch")}</option>
+                  <option value="LINEAR">{t("Linear")}</option>
+                  <option value="POSITION_BASED">{t("Position-based (40/20/40)")}</option>
                 </select>
               </Field>
               <Field label={t("Lookback window (days)")}>
@@ -71,6 +75,33 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
               </div>
             )}
           </form>
+        </Panel>
+        <Panel title={t("Content approval")} eyebrow={ctx.org.settings.content?.requireDistinctApprover ? t("Four-eyes approval on") : t("Four-eyes approval off")}>
+          <form action={updateContentPolicyAction} className="flex flex-col gap-3 text-sm text-chrome">
+            <HiddenBack path={back} />
+            <p>{t("Content is approved and published by members with the approve permission. Optionally, the approver of a version must be someone other than its author (enforced on the server).")}</p>
+            <label className="flex items-center gap-2">
+              <input type="checkbox" name="requireDistinctApprover" defaultChecked={Boolean(ctx.org.settings.content?.requireDistinctApprover)} disabled={!can("settings:manage")} /> {t("The approver must differ from the author")}
+            </label>
+            {can("settings:manage") && (
+              <div>
+                <Button>{t("Save")}</Button>
+              </div>
+            )}
+          </form>
+        </Panel>
+        <Panel title={t("Public site")} eyebrow={isPublicSiteEnabled(ctx.org.settings) ? t("On||public site") : t("Off||public site")}>
+          <div className="flex flex-col gap-3 text-sm text-chrome">
+            <p>{t("Hosted pages, sitemap.xml, llms.txt, the entity and published APIs and the product finder (/ask) of this organisation. When off, they all answer 404.")}</p>
+            <p className="font-mono text-xs">{`${env().BEACON_BASE_URL}/p/${ctx.org.slug}/`}</p>
+            {can("settings:manage") && (
+              <form action={setPublicSiteAction}>
+                <HiddenBack path={back} />
+                <input type="hidden" name="enabled" value={isPublicSiteEnabled(ctx.org.settings) ? "false" : "true"} />
+                <Button variant={isPublicSiteEnabled(ctx.org.settings) ? undefined : "gold"}>{isPublicSiteEnabled(ctx.org.settings) ? t("Turn public site off") : t("Turn public site on")}</Button>
+              </form>
+            )}
+          </div>
         </Panel>
         <Panel title={t("Roles")} eyebrow="RBAC">
           <Table>

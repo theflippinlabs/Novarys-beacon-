@@ -47,7 +47,7 @@ describe("content workflow", () => {
   });
 
   it("generateVersion (no LLM) stores a version, runs checks and lands in HUMAN_APPROVAL for a complete verified graph", async () => {
-    const r = await withOrg(orgId, (tx) => generateVersion(tx, ctx.actor, assetId, null, "Novarys"));
+    const r = await withOrg(orgId, (tx) => generateVersion(tx, ctx.actor, assetId, "Novarys"));
     expect(r.generatedBy).toBe("beacon-rules");
     expect(r.version.version).toBe(1);
     expect(r.fact.passed).toBe(true);
@@ -145,13 +145,13 @@ describe("content workflow", () => {
     const faqPage = (await withOrg(orgId, (tx) => tx.query.pages.findFirst({ where: and(eq(pages.productId, productId), eq(pages.type, "ANSWER"), isNull(pages.contentAssetId)) })))!;
     const a = await withOrg(orgId, (tx) => createAssetForPage(tx, ctx.actor, faqPage.id));
     expect(a.type).toBe("FAQ");
-    await withOrg(orgId, (tx) => generateVersion(tx, ctx.actor, a.id, null));
+    await withOrg(orgId, (tx) => generateVersion(tx, ctx.actor, a.id));
     await withOrg(orgId, (tx) => rejectAsset(tx, ctx.actor, a.id, "Off-brand tone"));
     const after = await asset(a.id);
     expect(after).toMatchObject({ status: "REJECTED", rejectionReason: "Off-brand tone" });
     expect((await page(faqPage.id)).status).toBe("DRAFT");
     // A rejected asset can be regenerated; the rejection reason is cleared.
-    const regen = await withOrg(orgId, (tx) => generateVersion(tx, ctx.actor, a.id, null));
+    const regen = await withOrg(orgId, (tx) => generateVersion(tx, ctx.actor, a.id));
     expect(regen.version.version).toBe(2);
     expect((await asset(a.id)).rejectionReason).toBeNull();
   });

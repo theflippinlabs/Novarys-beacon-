@@ -2,14 +2,13 @@ import { sql } from "drizzle-orm";
 import type { Tx } from "@/db";
 import type { AttentionItem } from "@/core/command/attention";
 import type { T } from "@/i18n/core";
-import { BEACON_CHANNELS, dailySeries, kpis } from "./metrics";
+import { dailySeries, kpis } from "./metrics";
 import { latestScores } from "./score";
 
 type Row = Record<string, number | string | null>;
 
 /** Everything the daily command center measures for an organisation (current window vs previous window of `days`). */
 export async function commandCenterData(tx: Tx, org: string, days: number) {
-  const channelList = sql.join(BEACON_CHANNELS.map((c) => sql`${c}`), sql`, `);
   const counts = (
     await tx.execute<Row>(sql`
       select
@@ -18,12 +17,10 @@ export async function commandCenterData(tx: Tx, org: string, days: number) {
         (select count(*) from content_assets where organization_id = ${org} and status = 'HUMAN_APPROVAL')::int as drafts_ready,
         (select count(*) from content_assets where organization_id = ${org} and status in ('FACT_CHECK','SEO_CHECK'))::int as drafts_blocked,
         (select count(*) from revenue_events where organization_id = ${org} and type = 'NEW' and channel in ('REFERRAL','AFFILIATE') and occurred_at >= now() - interval '7 days')::int as referral_conv,
-        (select coalesce(sum(mrr_delta_cents), 0) from revenue_events where organization_id = ${org} and occurred_at >= now() - interval '7 days' and channel::text in (${channelList}))::bigint as beacon_mrr_7d,
-        (select min(currency) from revenue_events where organization_id = ${org}) as currency,
         (select count(*) from experiments where organization_id = ${org} and status = 'READY_FOR_REVIEW')::int as experiments_ready,
         (select count(*) from distribution_targets where organization_id = ${org} and status = 'PREPARED' and submission_approved_at is null)::int as dist_pending,
         (select count(*) from recommendations where organization_id = ${org} and status = 'PROPOSED')::int as recs,
-        (select count(*) from integrations where organization_id = ${org} and status = 'ERROR')::int as integ_errors,
+        (select count(*) from integrations where organization_id = ${org} and status in ('ERROR','EXPIRED'))::int as integ_errors,
         (select count(*) from products where organization_id = ${org})::int as products,
         (select count(*) from products where organization_id = ${org} and onboarding_completed_at is null)::int as onboarding_open,
         (select count(*) from commissions where organization_id = ${org} and status = 'ON_HOLD')::int as commissions_hold`)

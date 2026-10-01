@@ -4,7 +4,7 @@ import { closeDb, withOrg, type Tx } from "@/db";
 import { aiRuns, beaconScores, opportunities, pages, queries } from "@/db/schema";
 import { addQuery } from "@/services/queries";
 import { generateProductOpportunities } from "@/services/opportunities";
-import { computeAndStoreScore, latestScoreDetail } from "@/services/score";
+import { computeAndStoreScore, latestScoreDetail, storedScoreWithDiff } from "@/services/score";
 import { newOrg, seedCompleteProduct, uid } from "./helpers";
 
 let orgId: string;
@@ -29,7 +29,7 @@ beforeAll(async () => {
 afterAll(closeDb);
 
 describe("opportunities", () => {
-  it("creates CONTENT_GAP opportunities for ACTIVE, uncovered queries with importance ≥ 3", async () => {
+  it("creates one CONTENT_GAP opportunity per uncovered, relevant cluster of ACTIVE queries (never per keyword)", async () => {
     const res = await q((tx) => generateProductOpportunities(tx, orgId, productId));
     expect(res.created).toBe(res.total);
     expect(res.total).toBeGreaterThanOrEqual(2);
@@ -37,9 +37,13 @@ describe("opportunities", () => {
     expect(g.map((o) => o.queryId).sort()).toEqual([queryIds[0], queryIds[1]].sort());
     for (const o of g) {
       expect(o.status).toBe("OPEN");
-      expect(o.fingerprint).toBe(`content_gap:${o.queryId}`);
+      expect(o.category).toBe("CONTENT");
+      expect(o.fingerprint).toBe(`content_gap:cluster:${o.sources.clusterId}`);
+      expect(o.sources.queryIds).toContain(o.queryId);
       expect(o.priorityScore).toBeGreaterThan(0);
       expect(o.actions.length).toBeGreaterThan(0);
+      expect(o.nextAction?.href).toMatch(/^\/queries\?product=/);
+      expect(Object.keys(o.scoringRationale).sort()).toEqual(["confidence", "effort", "impact", "urgency"]);
     }
     const run = await q((tx) => tx.select().from(aiRuns).where(and(eq(aiRuns.organizationId, orgId), eq(aiRuns.task, "generateOpportunity"))));
     expect(run.length).toBe(1);
@@ -58,7 +62,7 @@ describe("opportunities", () => {
     expect(after.find((o) => o.id === target.id)!.status).toBe("DISMISSED");
   });
 
-  it("auto-closes an OPEN opportunity whose condition no longer holds (query covered)", async () => {
+  it("marks an OPEN opportunity OBSOLETE when its condition no longer holds (query covered)", async () => {
     await q(async (tx) => {
       const [p] = await tx.insert(pages).values({ organizationId: orgId, productId, type: "GUIDE", path: `/guides/${uid()}`, title: "Moderation tool", status: "PUBLISHED", targetQueryId: queryIds[0] }).returning();
       await tx.update(queries).set({ coverage: "COVERED", pageId: p.id }).where(eq(queries.id, queryIds[0]));
@@ -66,7 +70,7 @@ describe("opportunities", () => {
     const res = await q((tx) => generateProductOpportunities(tx, orgId, productId));
     expect(res.resolved).toBe(1);
     const g = await gaps();
-    expect(g.find((o) => o.queryId === queryIds[0])!.status).toBe("DONE");
+    expect(g.find((o) => o.queryId === queryIds[0])!.status).toBe("OBSOLETE");
     expect(g.find((o) => o.queryId === queryIds[1])!.status).toBe("DISMISSED");
   });
 });
@@ -77,8 +81,13 @@ describe("beacon score", () => {
     expect(score.total).toBeGreaterThanOrEqual(0);
     expect(score.total).toBeLessThanOrEqual(100);
     expect(score.components.length).toBeGreaterThan(0);
-    const sum = score.components.reduce((s, c) => s + c.max, 0);
-    expect(sum).toBe(100);
+    // Full maxima sum to 100; unmeasurable lines (no backlink source, no AI provider, no comparison) are excluded and rescaled.
+    expect(score.components.reduce((s, c) => s + c.fullMax, 0)).toBe(100);
+    expect(score.measuredMax).toBe(score.components.reduce((s, c) => s + c.max, 0));
+    expect(score.measuredMax).toBeLessThan(100);
+    expect(score.notMeasured.map((n) => n.label)).toEqual(expect.arrayContaining(["Referring domains", "AI mention rate"]));
+    const latestDiff = await q((tx) => storedScoreWithDiff(tx, orgId, productId));
+    expect(latestDiff).toMatchObject({ previousAt: null, diff: { totalDelta: null, lines: [] } });
     for (const c of score.components) {
       expect(c.earned).toBeGreaterThanOrEqual(0);
       expect(c.earned).toBeLessThanOrEqual(c.max);
@@ -91,6 +100,10 @@ describe("beacon score", () => {
     // A second computation appends history.
     await q((tx) => computeAndStoreScore(tx, orgId, productId));
     expect(await q((tx) => tx.select().from(beaconScores).where(eq(beaconScores.productId, productId)))).toHaveLength(2);
+    const withDiff = (await q((tx) => storedScoreWithDiff(tx, orgId, productId)))!;
+    expect(withDiff.score.total).toBe(score.total);
+    expect(withDiff.previousAt).not.toBeNull();
+    expect(withDiff.diff).toEqual({ totalDelta: 0, lines: [] });
   });
 
   it("an unknown product cannot be scored", async () => {

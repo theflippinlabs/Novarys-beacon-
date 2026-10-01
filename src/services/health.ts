@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { db } from "@/db";
+import { db, systemDb } from "@/db";
 
 /** Infrastructure health (no tenant data). */
 export async function systemHealth() {
@@ -15,7 +15,8 @@ export async function systemHealth() {
   const dbLatencyMs = Date.now() - t0;
   const queue = dbOk
     ? (
-        await db().execute<{ queued: number; running: number; dead_24h: number; failed_retrying: number; oldest_queued_s: number | null; last_started: string | null }>(sql`
+        // Queue-wide counts (no tenant data) need the system role: jobs are RLS-protected.
+        await systemDb().execute<{ queued: number; running: number; dead_24h: number; failed_retrying: number; oldest_queued_s: number | null; last_started: string | null }>(sql`
       select count(*) filter (where status = 'QUEUED' and run_at <= now())::int as queued,
         count(*) filter (where status = 'RUNNING')::int as running,
         count(*) filter (where status = 'DEAD' and finished_at >= now() - interval '24 hours')::int as dead_24h,

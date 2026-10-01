@@ -18,7 +18,9 @@ const STATUS = z.enum(["UNKNOWN", "IN_DEVELOPMENT", "BETA", "LIVE", "DEPRECATED"
 function scoreSummary(score: BeaconScore) {
   return {
     total: Math.round(score.total),
-    components: score.components.map((c) => ({ key: c.key, label: c.label, earned: Math.round(c.earned * 10) / 10, max: c.max, lines: c.lines.map((l) => ({ label: l.label, earned: Math.round(l.earned * 10) / 10, max: l.max, reason: trim(l.reason, 200) })) })),
+    measuredCoveragePct: Math.round(score.coverage * 100),
+    notMeasured: score.notMeasured.map((n) => `${n.label}: ${n.reason}`),
+    components: score.components.map((c) => ({ key: c.key, label: c.label, earned: Math.round(c.earned * 10) / 10, max: c.max, lines: c.lines.map((l) => ({ label: l.label, earned: Math.round(l.earned * 10) / 10, max: l.max, measurable: l.measurable, reason: trim(l.reason, 200) })) })),
     fastestPath: { target: score.pathTo.target, tasks: score.pathTo.tasks.slice(0, 8) },
   };
 }
@@ -97,7 +99,7 @@ export const getProduct = defineTool({
       coreDescriptionVerifiedAt: iso(p.lastVerifiedAt) ?? "not verified",
       onboarding: p.onboardingCompletedAt ? "complete" : `in progress (step ${p.onboardingStep})`,
       facets,
-      pricing: g.pricing.map((x) => ({ id: x.id, planName: x.planName, price: x.priceCents === null ? "not public" : x.priceCents, currency: x.currency, interval: x.interval, trialDays: x.trialDays, verification: x.verification, sourced: Boolean(x.sourceId) })),
+      pricing: g.pricing.map((x) => ({ id: x.id, planName: x.planName, price: x.priceCents === null ? "not public" : x.priceCents, currency: x.currency ?? "unknown", interval: x.interval ?? "unknown", trialDays: x.trialDays, verification: x.verification, sourced: Boolean(x.sourceId) })),
       faqs: capped(g.faqs.map((f) => ({ id: f.id, question: trim(f.question, 200), answer: trim(f.answer, 300), verification: f.verification, sourced: Boolean(f.sourceId) }))),
       sources: capped(g.sources.map((s) => ({ id: s.id, title: s.title, url: s.url, kind: s.kind }))),
       competitors: g.competitors.map((c) => ({
@@ -192,7 +194,7 @@ export const updateProductTool = defineTool({
   name: "update_product",
   label: "Updating a product",
   description:
-    "Update a product's core fields (name, domain, status, category, keywords, descriptions, URLs, languages, countries, API/free-trial flags). Only send the fields to change. Only use facts the user gave you or that come from the product's own site. Changing the descriptions, category or keywords of a human-verified product clears its verification so a human re-verifies it in the app.",
+    "Update a product's core fields (name, domain, status, category, keywords, descriptions, URLs, languages, countries, API/free-trial flags). Only send the fields to change. Only use facts the user gave you or that come from the product's own site. Changing any human-verified value (descriptions, category, status, URLs, flags…) sends that claim back to review so a human re-verifies it in the app.",
   permission: "product:write",
   kind: "write",
   input: z.object({ product: productRef(), name: z.string().trim().min(2).max(80).optional().describe("New product name."), ...productFields }),
@@ -204,10 +206,10 @@ export const updateProductTool = defineTool({
     if (name !== undefined) patch.name = name;
     if (!Object.keys(patch).length) throw new Error("Nothing to update: pass at least one field.");
     const touchesCore = CORE_DESCRIPTION.some((k) => k in patch);
-    const needsReverification = touchesCore && Boolean(p.lastVerifiedAt);
-    if (needsReverification) patch.lastVerifiedAt = null;
-    await updateProduct(c.tx, agentActor(c), p.id, patch);
-    return { updated: Object.keys(patch).filter((k) => k !== "lastVerifiedAt"), needsReverification, ...productLinks(p.slug) };
+    // updateProduct sends every changed verified claim back to review (and clears the legacy product verification).
+    const { reverify } = await updateProduct(c.tx, agentActor(c), p.id, patch);
+    const needsReverification = reverify.length > 0 || (touchesCore && Boolean(p.lastVerifiedAt));
+    return { updated: Object.keys(patch), needsReverification, fieldsToReverify: reverify, ...productLinks(p.slug) };
   },
 });
 

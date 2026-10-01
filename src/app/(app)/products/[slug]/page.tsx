@@ -6,9 +6,9 @@ import { Badge, Button, EmptyState, Flash, HiddenBack, KV, LinkButton, Meter, Pa
 import { LineChart } from "@/components/charts/line-chart";
 import { ProductTabs, RangePicker } from "@/components/shell/product-tabs";
 import { experiments, jobs, opportunities } from "@/db/schema";
-import { computeBeaconScore } from "@/core/score/beacon-score";
 import { kpis, dailySeries } from "@/services/metrics";
-import { scoreInput, scoreHistory } from "@/services/score";
+import { scoreHistory, storedScoreWithDiff } from "@/services/score";
+import { recomputeScoreAction } from "@/app/actions/knowledge";
 import { latestAudit } from "@/services/seo";
 import { promptSummaries } from "@/services/ai-visibility";
 import { launchChecklist } from "@/services/onboarding";
@@ -16,7 +16,6 @@ import { metricSeries } from "@/services/visibility";
 import { loadProductGraph } from "@/core/knowledge/load";
 import { addDays, isoDay } from "@/core/util/text";
 import { daysParam, pageData, productOr404, type SP } from "@/lib/page";
-import { db } from "@/db";
 import { listMedia } from "@/services/media";
 import { ProductPhotos } from "@/components/media/product-photos";
 import { getI18n, getT } from "@/i18n/server";
@@ -34,7 +33,8 @@ export default async function ProductDashboard({ params, searchParams }: { param
   const { data, can } = await pageData(async (tx, ctx) => {
     const p = await productOr404(tx, ctx.org.id, slug);
     const g = (await loadProductGraph(tx, ctx.org.id, p.id))!;
-    const score = computeBeaconScore(await scoreInput(tx, ctx.org.id, p.id));
+    // The stored score is the single source of truth (same as the command center); recompute stores a new one.
+    const stored = await storedScoreWithDiff(tx, ctx.org.id, p.id);
     const [k, series, history, audit, ai, checklist, opps, exps, clicks, impressions, qstats, pstats] = await inSequence([
       () => kpis(tx, ctx.org.id, { days, productId: p.id }),
       () => dailySeries(tx, ctx.org.id, days, p.id),
@@ -50,11 +50,12 @@ export default async function ProductDashboard({ params, searchParams }: { param
       () => tx.execute<{ status: string; n: number }>(sql`select status, count(*)::int as n from pages where product_id = ${p.id} group by status`),
     ]);
     const photos = await listMedia(tx, ctx.org.id, { productId: p.id });
-    const analysis = await db().select().from(jobs).where(and(eq(jobs.organizationId, ctx.org.id), eq(jobs.type, "product.analyze"), sql`${jobs.payload}->>'productId' = ${p.id}`)).orderBy(desc(jobs.createdAt)).limit(1);
-    return { p, g, score, k, series, history, audit, ai, checklist, opps, exps, clicks, impressions, qstats: qstats.rows, pstats: pstats.rows, analysis: analysis[0] ?? null, photos };
+    const analysis = await tx.select().from(jobs).where(and(eq(jobs.organizationId, ctx.org.id), eq(jobs.type, "product.analyze"), sql`${jobs.payload}->>'productId' = ${p.id}`)).orderBy(desc(jobs.createdAt)).limit(1);
+    return { p, g, stored, k, series, history, audit, ai, checklist, opps, exps, clicks, impressions, qstats: qstats.rows, pstats: pstats.rows, analysis: analysis[0] ?? null, photos };
   });
   const { t } = await getI18n();
-  const { p, score, k } = data;
+  const { p, stored, k } = data;
+  const score = stored?.score ?? null;
   const base = `/products/${p.slug}`;
   const cov = Object.fromEntries(data.qstats.map((r) => [r.coverage, Number(r.n)]));
   const pages = Object.fromEntries(data.pstats.map((r) => [r.status, Number(r.n)]));
@@ -92,61 +93,131 @@ export default async function ProductDashboard({ params, searchParams }: { param
       )}
 
       <div className="grid gap-6 xl:grid-cols-[26rem_1fr]">
-        <Panel eyebrow={t("Beacon score")} title={t("Operational discoverability readiness")}>
-          <div className="flex items-end gap-3">
-            <div className="num text-6xl font-medium tracking-tighter text-platinum">{score.total}</div>
-            <div className="pb-2 text-sm text-muted">/ 100</div>
-          </div>
-          <p className="mt-1 text-xs text-muted">{t("Transparent readiness score from observable facts. Not a ranking or traffic prediction.")}</p>
-          <div className="mt-5 flex flex-col gap-3">
-            {score.components.map((c) => (
-              <details key={c.key} className="group">
-                <summary className="flex cursor-pointer list-none flex-col gap-1">
-                  <span className="flex justify-between text-xs text-chrome">
-                    <span>{t(c.label)}</span>
-                    <span className="text-muted group-open:text-gold">{t("details")}</span>
-                  </span>
-                  <Meter value={c.earned} max={c.max} label={t(c.label)} />
-                </summary>
-                <ul className="mt-2 flex flex-col gap-1.5 border-l border-line pl-3">
-                  {c.lines.map((l) => (
-                    <li key={l.label} className="text-[11px]">
-                      <span className="num text-platinum">
-                        {l.earned}/{l.max}
-                      </span>{" "}
-                      <span className="text-chrome">{t("{label}:", { label: t(l.label) })}</span> <span className="text-muted">{t(l.reason)}</span>
+        <Panel
+          eyebrow={t("Beacon score")}
+          title={t("Operational discoverability readiness")}
+          actions={
+            can("job:run") && (
+              <form action={recomputeScoreAction}>
+                <HiddenBack path={base} />
+                <input type="hidden" name="productId" value={p.id} />
+                <Button>{t("Recompute")}</Button>
+              </form>
+            )
+          }
+        >
+          {!score || !stored ? (
+            <p className="text-sm text-muted">{t("Not computed yet. Recompute to store the first score; it is then refreshed daily.")}</p>
+          ) : (
+            <>
+              <div className="flex items-end gap-3">
+                <div className="num text-6xl font-medium tracking-tighter text-platinum">{score.total}</div>
+                <div className="pb-2 text-sm text-muted">/ 100</div>
+                {stored.diff.totalDelta !== null && stored.diff.totalDelta !== 0 && (
+                  <div className={`num pb-2 text-sm ${stored.diff.totalDelta > 0 ? "text-ok" : "text-crit"}`}>
+                    {stored.diff.totalDelta > 0 ? "+" : ""}
+                    {stored.diff.totalDelta}
+                  </div>
+                )}
+              </div>
+              <p className="mt-1 text-xs text-muted">
+                {t("Computed {date}.", { date: stored.computedAt.toISOString().slice(0, 16).replace("T", " ") })}{" "}
+                {t("Measured coverage: {pct}% of the 100 points (unmeasurable lines are excluded and the score is rescaled).", { pct: Math.round(score.coverage * 100) })}
+              </p>
+              <p className="mt-1 text-xs text-muted">{t("Transparent readiness score from observable facts. Not a ranking or traffic prediction.")}</p>
+              {score.notMeasured.length > 0 && (
+                <ul className="mt-3 flex flex-col gap-1 border-l border-warn/40 pl-3">
+                  {score.notMeasured.map((n) => (
+                    <li key={`${n.component}:${n.label}`} className="text-[11px] text-warn">
+                      {t("{label}:", { label: t(n.label) })} {t(n.reason)}
                     </li>
                   ))}
                 </ul>
-              </details>
-            ))}
-          </div>
-          {score.pathTo.tasks.length > 0 && (
-            <div className="mt-6 border-t border-line pt-4">
-              <div className="eyebrow text-gold">{t("Fastest path to {target}", { target: score.pathTo.target })}</div>
-              <ol className="mt-2 flex flex-col gap-2">
-                {score.pathTo.tasks.map((task, i) => (
-                  <li key={task.task} className="flex gap-3 text-xs">
-                    <span className="num text-muted">{i + 1}.</span>
-                    <span className="flex-1 text-chrome">{t(task.task)}</span>
-                    <span className="num text-ok">+{task.points}</span>
-                  </li>
+              )}
+              <div className="mt-5 flex flex-col gap-3">
+                {score.components.map((c) => (
+                  <details key={c.key} className="group">
+                    <summary className="flex cursor-pointer list-none flex-col gap-1">
+                      <span className="flex justify-between gap-2 text-xs text-chrome">
+                        <span>{t(c.label)}</span>
+                        <span className="num text-muted group-open:text-gold">{c.max ? `${Math.round((c.earned / c.max) * 100)}%` : t("Not measured")}</span>
+                      </span>
+                      <Meter value={c.earned} max={c.max || 1} label={t(c.label)} />
+                    </summary>
+                    <ul className="mt-2 flex flex-col gap-1.5 border-l border-line pl-3">
+                      {c.lines.map((l) => (
+                        <li key={l.label} className="text-[11px]">
+                          {l.measurable ? (
+                            <span className="num text-platinum">
+                              {l.earned}/{l.max}
+                            </span>
+                          ) : (
+                            <span className="text-muted">{t("excluded")}</span>
+                          )}{" "}
+                          <span className="text-chrome">{t("{label}:", { label: t(l.label) })}</span> <span className="text-muted">{t(l.reason)}</span>
+                        </li>
+                      ))}
+                      {c.missing > 0 && <li className="text-[11px] text-muted">{t("Missing points: {n}", { n: c.missing })}</li>}
+                      {c.nextActions.slice(0, 3).map((a) => (
+                        <li key={a} className="text-[11px] text-gold">
+                          → {t(a)}
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
                 ))}
-              </ol>
-            </div>
+              </div>
+              {stored.previousAt && (
+                <div className="mt-6 border-t border-line pt-4">
+                  <div className="eyebrow">{t("Since last computation ({date})", { date: stored.previousAt.toISOString().slice(0, 10) })}</div>
+                  {stored.diff.lines.length ? (
+                    <ul className="mt-2 flex flex-col gap-1">
+                      {stored.diff.lines.map((d) => (
+                        <li key={`${d.component}:${d.label}`} className="flex justify-between gap-3 text-[11px]">
+                          <span className="text-chrome">
+                            {t(d.component)} · {t(d.label)}
+                            {d.measurableBefore !== null && d.measurableBefore !== d.measurableAfter ? ` (${d.measurableAfter ? t("now measured") : t("no longer measured")})` : ""}
+                          </span>
+                          <span className={`num ${d.delta > 0 ? "text-ok" : d.delta < 0 ? "text-crit" : "text-muted"}`}>
+                            {d.delta > 0 ? "+" : ""}
+                            {d.delta}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-2 text-[11px] text-muted">{t("No line changed.")}</p>
+                  )}
+                </div>
+              )}
+              {score.pathTo.tasks.length > 0 && (
+                <div className="mt-6 border-t border-line pt-4">
+                  <div className="eyebrow text-gold">{t("Fastest path to {target}", { target: score.pathTo.target })}</div>
+                  <ol className="mt-2 flex flex-col gap-2">
+                    {score.pathTo.tasks.map((task, i) => (
+                      <li key={task.task} className="flex gap-3 text-xs">
+                        <span className="num text-muted">{i + 1}.</span>
+                        <span className="flex-1 text-chrome">{t(task.task)}</span>
+                        <span className="num text-ok">+{task.points}</span>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              )}
+            </>
           )}
         </Panel>
 
         <div className="flex flex-col gap-6">
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <Stat label={t("Organic clicks")} value={k.discovery.organicClicks.now} prev={k.discovery.organicClicks.prev} source={t(k.discovery.organicClicks.source)} />
-            <Stat label={t("Impressions")} value={k.discovery.organicImpressions.now} prev={k.discovery.organicImpressions.prev} source={t(k.discovery.organicImpressions.source)} />
-            <Stat label={t("AI referrals")} value={k.discovery.aiReferrals.now} prev={k.discovery.aiReferrals.prev} source={t(k.discovery.aiReferrals.source)} />
-            <Stat label={t("AI mentions (sampled)")} value={k.discovery.aiMentions.now} prev={k.discovery.aiMentions.prev} source={t(k.discovery.aiMentions.source)} />
-            <Stat label={t("Visitors")} value={k.acquisition.visitors.now} prev={k.acquisition.visitors.prev} source={t(k.acquisition.visitors.source)} />
-            <Stat label={t("Signups")} value={k.acquisition.signups.now} prev={k.acquisition.signups.prev} source={t(k.acquisition.signups.source)} />
-            <Stat label={t("MRR")} value={k.revenue.mrr.now} fmt="money" currency={k.currency} source={t(k.revenue.mrr.source)} />
-            <Stat label={t("Conversion rate")} value={k.revenue.conversionRate.now} prev={k.revenue.conversionRate.prev} fmt="percent" source={t(k.revenue.conversionRate.source)} />
+            <Stat label={t("Organic clicks")} kpi={k.discovery.organicClicks} />
+            <Stat label={t("Impressions")} kpi={k.discovery.organicImpressions} />
+            <Stat label={t("AI referrals")} kpi={k.discovery.aiReferrals} />
+            <Stat label={t("AI mentions (sampled)")} kpi={k.discovery.aiMentions} />
+            <Stat label={t("Visitors")} kpi={k.acquisition.visitors} />
+            <Stat label={t("Signups")} kpi={k.acquisition.signups} />
+            <Stat label={t("MRR")} kpi={k.revenue.mrr} fmt="money" />
+            <Stat label={t("Conversion rate")} kpi={k.revenue.conversionRate} fmt="percent" />
           </div>
           <Panel title={t("Search visibility · last {days} days", { days })} eyebrow={t("Visibility")}>
             {data.clicks.length ? (

@@ -111,15 +111,21 @@ test("create product through onboarding", async () => {
 
 test("verify facts in the knowledge graph", async () => {
   await page.goto("/products/acme-live/knowledge");
-  await page.click("text=I verified the core descriptions");
+  // Verification needs a source: the reviewer names the page the core facts were checked against.
+  const core = page.locator("form:has(button:text-is('I verified the core descriptions'))");
+  await core.locator('select[name="sourceId"]').selectOption({ label: "Acme Live website" });
+  await core.locator("button:text-is('I verified the core descriptions')").click();
   await expect(page.getByText("Core product description marked as human-verified.")).toBeVisible();
-  // Verify every facet and plan (each click reloads the page).
-  const buttons = page.locator("button:text-is('verify')");
+  // Verify every facet and plan against a source (each click reloads the page). Only visible controls (desktop table) are used.
+  const buttons = page.locator("button:text-is('verify'):visible");
   for (let n = await buttons.count(); n > 0; n--) {
-    await buttons.first().click();
+    const form = page.locator("form:has(button:text-is('verify')):visible").first();
+    const select = form.locator('select[name="sourceId"]');
+    if (!(await select.inputValue())) await select.selectOption({ label: "Acme Live docs" });
+    await form.locator("button:text-is('verify')").click();
     await expect(buttons).toHaveCount(n - 1);
   }
-  await expect(page.locator("button:text-is('verify')")).toHaveCount(0);
+  await expect(page.locator("button:text-is('verify'):visible")).toHaveCount(0);
 });
 
 test("add a query and generate an opportunity", async () => {
@@ -133,10 +139,13 @@ test("add a query and generate an opportunity", async () => {
   await page.goto("/opportunities?product=acme-live");
   await page.click("button:has-text('Regenerate')");
   await expect(page.getByText("Opportunity generation queued.")).toBeVisible();
-  await eventually(page, async () => (await page.getByText('Cover "tiktok agency moderation software"').count()) > 0);
-  await page.getByText('Cover "tiktok agency moderation software"').click();
+  // Content gaps are one opportunity per query cluster, named after its most important query.
+  const gap = page.getByText(/the "tiktok agency moderation software" topic/);
+  await eventually(page, async () => (await gap.count()) > 0);
+  await gap.first().click();
   await expect(page.getByText("Recommended actions")).toBeVisible();
-  await expect(page.getByText(/Create an audience page targeting/)).toBeVisible();
+  await expect(page.getByText("Search demand").first()).toBeVisible();
+  await expect(page.getByText("Unknown (no search provider data)").first()).toBeVisible();
 });
 
 test("run a technical SEO audit", async () => {
@@ -168,7 +177,7 @@ test("create, approve and publish content", async () => {
   await page.fill('textarea[name="body"]', body.replace("## Who it is for", "Trusted by 10,000 agencies worldwide.\n\n## Who it is for"));
   await page.click("text=Save new version");
   await expect(page.getByText(/Saved v2/)).toBeVisible();
-  await expect(page.getByText(/claim\(s\) need attention/)).toBeVisible();
+  await expect(page.getByText(/1 blocking/)).toBeVisible();
   await expect(page.locator("button:has-text('Approve')")).toHaveCount(0);
 
   // Restore the factual version and approve.

@@ -60,8 +60,11 @@ export function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 }
 
-export function formatMoney(cents: number, currency = "EUR"): string {
-  return new Intl.NumberFormat("en-GB", { style: "currency", currency, maximumFractionDigits: cents % 100 === 0 ? 0 : 2 }).format(cents / 100);
+/** Money in minor units. The currency is never defaulted: an unknown currency prints the amount with "(currency unknown)". */
+export function formatMoney(cents: number, currency: string | null): string {
+  const digits = cents % 100 === 0 ? 0 : 2;
+  if (!currency) return `${new Intl.NumberFormat("en-GB", { maximumFractionDigits: digits, minimumFractionDigits: digits }).format(cents / 100)} (currency unknown)`;
+  return new Intl.NumberFormat("en-GB", { style: "currency", currency, maximumFractionDigits: digits }).format(cents / 100);
 }
 
 export function isoDay(d: Date): string {

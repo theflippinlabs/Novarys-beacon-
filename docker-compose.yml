@@ -1,34 +1,48 @@
-# Local/self-hosted stack: Postgres + migrations + web + worker.
-# Copy .env.example to .env and set BEACON_ENCRYPTION_KEY / BEACON_HASH_SECRET first.
+# Local/self-hosted stack: Postgres + release (provision + migrate) + web + worker.
+# Copy .env.example to .env and set BEACON_ENCRYPTION_KEY, BEACON_HASH_SECRET,
+# POSTGRES_PASSWORD, BEACON_DB_APP_PASSWORD and BEACON_DB_SYSTEM_PASSWORD first.
+#
+# Roles: `postgres` (superuser) is used ONLY by the release step to create
+#   beacon_app     NOSUPERUSER NOBYPASSRLS  owns the tables, runs migrations, web and worker queries (RLS applies)
+#   beacon_system  NOSUPERUSER BYPASSRLS    DML only, used by `asSystem` (auth lookups, the job worker)
+# The web and worker services never receive the superuser credentials.
+x-app-db: &app-db
+  DATABASE_URL: "postgres://beacon_app:${BEACON_DB_APP_PASSWORD:?set BEACON_DB_APP_PASSWORD}@db:5432/beacon"
+  BEACON_DB_SYSTEM_USER: beacon_system
+  BEACON_DB_SYSTEM_PASSWORD: "${BEACON_DB_SYSTEM_PASSWORD:?set BEACON_DB_SYSTEM_PASSWORD}"
 services:
   db:
     image: postgres:16
     environment:
-      POSTGRES_USER: beacon
-      POSTGRES_PASSWORD: beacon
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}"
       POSTGRES_DB: beacon
     volumes: [pgdata:/var/lib/postgresql/data]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U beacon"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d beacon"]
       interval: 5s
       retries: 10
-  migrate:
+  release:
     build: .
-    command: ["pnpm", "db:migrate"]
+    command: ["pnpm", "release"]
     env_file: .env
-    environment: { DATABASE_URL: "postgres://beacon:beacon@db:5432/beacon" }
+    environment:
+      <<: *app-db
+      DATABASE_ADMIN_URL: "postgres://postgres:${POSTGRES_PASSWORD}@db:5432/beacon"
+      BEACON_DB_APP_USER: beacon_app
+      BEACON_DB_APP_PASSWORD: "${BEACON_DB_APP_PASSWORD}"
     depends_on: { db: { condition: service_healthy } }
   web:
     build: .
     env_file: .env
-    environment: { DATABASE_URL: "postgres://beacon:beacon@db:5432/beacon" }
+    environment: *app-db
     ports: ["3000:3000"]
-    depends_on: { migrate: { condition: service_completed_successfully } }
+    depends_on: { release: { condition: service_completed_successfully } }
   worker:
     build: .
     command: ["pnpm", "worker"]
     env_file: .env
-    environment: { DATABASE_URL: "postgres://beacon:beacon@db:5432/beacon" }
-    depends_on: { migrate: { condition: service_completed_successfully } }
+    environment: *app-db
+    depends_on: { release: { condition: service_completed_successfully } }
 volumes:
   pgdata:

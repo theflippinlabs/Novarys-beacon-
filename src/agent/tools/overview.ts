@@ -8,7 +8,7 @@ export const getWorkspaceOverview = defineTool({
   name: "get_workspace_overview",
   label: "Reading the overview",
   description:
-    "Read the command center for the whole workspace: the ranked priority queue (what needs attention today), the measured KPIs (discovery, acquisition, revenue, ecosystem, content) for the period vs the previous period, and every product with its latest Beacon Score. Use it first when the user asks how things are going or what to do next. KPIs whose data source is not connected are returned as { status: \"not connected\" }; report them as such, never estimate them. Money values are in minor units (cents) of `currency`.",
+    "Read the command center for the whole workspace: the ranked priority queue (what needs attention today), the measured KPIs (discovery, acquisition, revenue, ecosystem, content) for the period vs the previous period, and every product with its latest Beacon Score. Use it first when the user asks how things are going or what to do next. KPIs whose data source is not connected are returned as { status: \"not connected\" }, connected sources without data yet as { status: \"no data yet\" }; report them as such, never estimate them. Money values are in minor units (cents) of their `currency`; several currencies are listed in `byCurrency` and never added together. Beacon tracker AI referrals and GA4 AI referral sessions are separate sources: never add them.",
   permission: "read",
   kind: "read",
   input: z.object({ days: daysInput }),
@@ -27,14 +27,15 @@ export const getWorkspaceOverview = defineTool({
         return { name: p.name, slug: p.slug, status: p.status, beaconScore: s ? { total: Math.round(s.total), computedAt: iso(s.computedAt) } : "not computed yet", link: `/products/${p.slug}` };
       }),
       kpis: {
-        currency: k.currency,
+        currencies: k.currencies,
         discovery: {
           organicImpressions: kpi(k.discovery.organicImpressions),
           organicClicks: kpi(k.discovery.organicClicks),
           indexablePages: kpi(k.discovery.indexedPages),
           coveredQueries: kpi(k.discovery.coveredQueries),
           brandedImpressions: kpi(k.discovery.brandedImpressions),
-          aiReferrals: kpi(k.discovery.aiReferrals),
+          aiReferralsBeaconTracker: kpi(k.discovery.aiReferrals),
+          aiReferralSessionsGa4: kpi(k.discovery.aiReferralSessionsGa4),
           observedAiMentions: kpi(k.discovery.aiMentions),
         },
         acquisition: { visitors: kpi(k.acquisition.visitors), signups: kpi(k.acquisition.signups), trials: kpi(k.acquisition.trials), activations: kpi(k.acquisition.activations) },
