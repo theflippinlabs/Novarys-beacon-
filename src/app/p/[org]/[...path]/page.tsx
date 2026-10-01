@@ -48,8 +48,12 @@ export default async function PublicPage({ params }: { params: Promise<{ org: st
     <div className="min-h-screen bg-obsidian">
       <header className="border-b border-line">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-4">
-          <span className="font-mono text-xs uppercase tracking-[0.3em] text-platinum">{d.row.product.name}</span>
-          <span className="eyebrow">{d.org.branding.displayName ?? d.org.name}</span>
+          <span className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.3em] text-platinum">{d.row.product.name}</span>
+          <span className="eyebrow flex items-center gap-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/brand/beacon-emblem-64.png" alt="" width={20} height={20} />
+            {d.org.branding.displayName ?? d.org.name}
+          </span>
         </div>
       </header>
       <main className="mx-auto max-w-3xl px-4 py-12">

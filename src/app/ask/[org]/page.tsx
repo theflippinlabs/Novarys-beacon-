@@ -26,6 +26,8 @@ export default async function AskPage({ params, searchParams }: { params: Promis
   const r = data.result;
   return (
     <main className="mx-auto min-h-screen max-w-2xl px-4 py-16">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/brand/beacon-emblem-128.png" alt="" width={56} height={56} className="mb-4" />
       <div className="eyebrow text-gold">{data.org.branding.displayName ?? data.org.name}</div>
       <h1 className="mt-2 text-3xl font-semibold tracking-tight">Describe what you need.</h1>
       <p className="mt-2 text-sm text-chrome">We match your need against verified product facts and explain why. If nothing fits, we say so.</p>

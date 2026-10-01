@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { logoutAction } from "@/app/actions/auth";
 import { Nav } from "@/components/shell/nav";
 import { requireAuth } from "@/lib/auth/session";
@@ -11,7 +12,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <div className="flex items-center justify-between px-4 py-4 lg:block lg:px-5 lg:py-6">
             <div>
               <div className="flex items-center gap-2">
-                <span className="inline-block h-2.5 w-2.5 rotate-45 bg-gold" aria-hidden />
+                <Image src="/brand/beacon-emblem-64.png" alt="" width={28} height={28} priority />
                 <span className="font-mono text-xs uppercase tracking-[0.3em] text-platinum">Beacon</span>
               </div>
               <div className="eyebrow mt-1.5 hidden lg:block">{ctx.org.branding.displayName ?? ctx.org.name}</div>
