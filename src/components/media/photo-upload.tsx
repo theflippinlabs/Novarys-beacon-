@@ -24,7 +24,7 @@ const KEEP_IF_SMALL = new Set(["image/png", "image/webp", "image/gif"]);
  * Falls back to the original file whenever the browser cannot decode it; the
  * server validates and re-encodes everything anyway.
  */
-async function prepare(file: File, keepAlpha: boolean): Promise<File> {
+export async function prepare(file: File, keepAlpha: boolean): Promise<File> {
   if ((KEEP_IF_SMALL.has(file.type) || keepAlpha) && file.type !== "image/heic" && file.type !== "image/heif" && file.size <= 5 * 1024 * 1024) return file;
   if (typeof createImageBitmap !== "function") return file;
   try {

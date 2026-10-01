@@ -1,5 +1,8 @@
 /** Photo and image uploads (product photos, logos, content images). */
 export const fr: Record<string, string> = {
+  "Choose an image from your phone or computer, or paste an https address. Saved with this step.": "Choisissez une image depuis votre téléphone ou votre ordinateur, ou collez une adresse https. Elle est enregistrée avec cette étape.",
+  "Choose an image": "Choisir une image",
+  "Choose another image": "Choisir une autre image",
   // Panels and labels
   Photos: "Photos",
   Images: "Images",

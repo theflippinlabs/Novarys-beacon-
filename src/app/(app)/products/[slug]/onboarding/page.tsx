@@ -1,10 +1,7 @@
 import Link from "next/link";
 import { and, eq } from "drizzle-orm";
 import { saveOnboardingStepAction } from "@/app/actions/products";
-import { uploadProductPhotosAction } from "@/app/actions/media";
-import { PhotoUpload } from "@/components/media/photo-upload";
-import { buildMediaUrl, mediaIdFromUrl } from "@/core/media/image";
-import { env } from "@/lib/env";
+import { ImageUrlField } from "@/components/media/image-url-field";
 import { Button, Field, Flash, HiddenBack, PageHeader, Panel, cx } from "@/components/ui";
 import { integrations } from "@/db/schema";
 import { facetLines } from "@/core/knowledge/parse";
@@ -41,8 +38,6 @@ export default async function OnboardingPage({ params, searchParams }: { params:
   const lines = (kind: Parameters<typeof facetsOf>[1]) => facetLines(facetsOf(g, kind));
   const gsc = integ.find((i) => i.provider === "GOOGLE_SEARCH_CONSOLE");
   const ga = integ.find((i) => i.provider === "GOOGLE_ANALYTICS");
-  const logoId = p.logoUrl ? mediaIdFromUrl(p.logoUrl, [env().BEACON_BASE_URL]) : null;
-  const ownLogo = logoId ? buildMediaUrl(logoId) : null;
 
   return (
     <>
@@ -91,8 +86,8 @@ export default async function OnboardingPage({ params, searchParams }: { params:
                   <Field label={t("Release date")}>
                     <input name="releaseDate" type="date" defaultValue={p.releaseDate ?? ""} />
                   </Field>
-                  <Field label={t("Logo URL (https)")} hint={t("Or upload an image below.")}>
-                    <input name="logoUrl" type="url" defaultValue={p.logoUrl ?? ""} placeholder="https://…" />
+                  <Field label={t("Logo")} hint={t("Choose an image from your phone or computer, or paste an https address. Saved with this step.")}>
+                    <ImageUrlField name="logoUrl" defaultValue={p.logoUrl} productId={p.id} />
                   </Field>
                 </div>
               </>
@@ -290,27 +285,6 @@ export default async function OnboardingPage({ params, searchParams }: { params:
               )}
             </div>
           </form>
-          {step === 1 && (
-            <div className="mt-6 grid gap-4 border-t border-line pt-5 sm:grid-cols-[6rem_1fr]">
-              <div className="flex h-24 w-24 items-center justify-center border border-line bg-obsidian">
-                {ownLogo ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={ownLogo} alt={t("Current logo")} className="max-h-full max-w-full object-contain" />
-                ) : (
-                  <span className="eyebrow">{t("No logo")}</span>
-                )}
-              </div>
-              <div className="flex min-w-0 flex-col gap-2">
-                <div className="eyebrow text-chrome">{t("Upload a logo")}</div>
-                <p className="text-[11px] text-muted">{t("The uploaded image becomes the product logo right away (PNG with transparency works best). Unsaved changes above are not kept.")}</p>
-                <PhotoUpload key={p.logoUrl ?? "none"} action={uploadProductPhotosAction} kind="logo" compact>
-                  <HiddenBack path={back} />
-                  <input type="hidden" name="productId" value={p.id} />
-                  <input type="hidden" name="asLogo" value="on" />
-                </PhotoUpload>
-              </div>
-            </div>
-          )}
         </Panel>
       </div>
     </>

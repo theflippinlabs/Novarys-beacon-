@@ -1,0 +1,47 @@
+import { and, eq } from "drizzle-orm";
+import { withOrg } from "@/db";
+import { products } from "@/db/schema";
+import { getAuthContext } from "@/lib/auth/session";
+import { can } from "@/lib/auth/rbac";
+import { err, ipHashOf, json, limited } from "@/lib/http";
+import { ingestImage, MAX_UPLOAD_BYTES, mediaUrl } from "@/services/media";
+
+export const dynamic = "force-dynamic";
+
+/**
+ * Upload one public image from a form field (e.g. the product logo in
+ * onboarding) without leaving the page: returns the absolute URL the field
+ * then holds until the form is saved.
+ */
+export async function POST(req: Request) {
+  const origin = req.headers.get("origin");
+  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
+  if (!origin || !host || new URL(origin).host !== host) return err(403, "Cross-origin request refused");
+  const ctx = await getAuthContext();
+  if (!ctx) return err(401, "Not signed in");
+  if (!can(ctx.role, "product:write")) return err(403, "You do not have permission to do that.");
+  const tooMany = await limited(`media-upload:${ctx.user.id}`, 60, 600);
+  if (tooMany) return tooMany;
+  if (Number(req.headers.get("content-length") ?? 0) > MAX_UPLOAD_BYTES + 64_000) return err(413, "Photo too large");
+
+  const form = await req.formData().catch(() => null);
+  const file = form?.get("file");
+  if (!(file instanceof File)) return err(400, "No photo received");
+  if (file.size > MAX_UPLOAD_BYTES) return err(413, "Photo too large");
+  const productId = typeof form?.get("productId") === "string" ? String(form?.get("productId")) : null;
+
+  try {
+    const actor = { organizationId: ctx.org.id, userId: ctx.user.id, actorType: "USER" as const, ipHash: ipHashOf(req) };
+    const data = Buffer.from(await file.arrayBuffer());
+    const out = await withOrg(ctx.org.id, async (tx) => {
+      if (productId) {
+        const p = await tx.query.products.findFirst({ where: and(eq(products.id, productId), eq(products.organizationId, ctx.org.id)) });
+        if (!p) throw new Error("Product not found");
+      }
+      return ingestImage(tx, actor, { data, filename: file.name || "image", productId, visibility: "PUBLIC" });
+    });
+    return json({ id: out.id, url: mediaUrl(out.id, true), width: out.width, height: out.height });
+  } catch (e) {
+    return err(400, (e as Error).message);
+  }
+}

@@ -100,6 +100,22 @@
     box-shadow: 0 0 0 3px rgb(13 122 236 / 0.18);
     outline: none;
   }
+  /* iOS Safari gives date inputs an intrinsic width wider than the screen and no height when empty. */
+  input[type="date"],
+  input[type="datetime-local"],
+  input[type="month"],
+  input[type="time"] {
+    -webkit-appearance: none;
+    appearance: none;
+    display: block;
+    min-width: 0;
+    max-width: 100%;
+    min-height: 2.5rem;
+    text-align: left;
+  }
+  input::-webkit-date-and-time-value {
+    text-align: left;
+  }
   input[type="checkbox"] {
     width: auto;
     accent-color: var(--color-blue);

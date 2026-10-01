@@ -1,3 +1,4 @@
+import sharp from "sharp";
 import { expect, test, type Page } from "@playwright/test";
 
 /**
@@ -294,6 +295,16 @@ test("edit and delete a product", async ({ page }) => {
   await page.getByRole("button", { name: "Add product →" }).click();
   await page.goto("/products/throwaway-app");
   await expect(page.getByRole("link", { name: "Continue editing →" })).toHaveAttribute("href", /\/products\/throwaway-app\/onboarding\?step=\d+/);
+
+  // The logo is chosen from the device right next to the field, then saved with the step.
+  await page.goto("/products/throwaway-app/onboarding?step=1");
+  const png = await sharp({ create: { width: 64, height: 64, channels: 4, background: { r: 13, g: 122, b: 236, alpha: 1 } } }).png().toBuffer();
+  await page.locator('input[type="file"]').first().setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: png });
+  await expect(page.locator('input[name="logoUrl"]')).toHaveValue(/\/api\/media\/[0-9a-f-]{36}$/);
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("Saved");
+  await expect(page.locator('input[name="logoUrl"]')).toHaveValue(/\/api\/media\//);
+  await page.goto("/products/throwaway-app");
 
   // A wrong confirmation is refused; the exact name deletes.
   await page.locator('input[name="confirm"]').fill("something else");
