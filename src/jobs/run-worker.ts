@@ -1,10 +1,12 @@
 import { closeDb } from "@/db";
 import { env } from "@/lib/env";
 import { startupChecks } from "@/lib/startup";
+import { waitForMigrations } from "./migrations-ready";
 import { drain, startWorker } from "./worker";
 
 async function main() {
   await startupChecks("worker");
+  await waitForMigrations();
   if (process.argv.includes("--once")) {
     const n = await drain(1000);
     console.log(`processed ${n} job(s)`);
