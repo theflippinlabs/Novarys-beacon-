@@ -6,7 +6,7 @@ import { asSystem, closeDb, db, withOrg } from "@/db";
 import { auditLogs, contentAssets, media, organizations, products } from "@/db/schema";
 import { createSession } from "@/lib/auth/service";
 import type { Actor } from "@/lib/audit";
-import { deleteMedia, insertImage, loadMedia, prepareImage, MAX_UPLOAD_BYTES, MEDIA_ERRORS, mediaUrl, setOrgLogo, setProductLogo } from "@/services/media";
+import { deleteMedia, insertImage, loadMedia, prepareImage, MAX_UPLOAD_BYTES, MEDIA_ERRORS, mediaUrl, setOrgLogo, setProductLogo, stageImages } from "@/services/media";
 import { GET as mediaGET } from "@/app/api/media/[id]/route";
 import { newOrg, params, uid } from "./helpers";
 
@@ -64,7 +64,7 @@ afterAll(closeDb);
 /** Upload path: re-encode with no transaction open, then store inside the tenant transaction. */
 const ingest = async (actor: Actor, input: Parameters<typeof prepareImage>[0]) => {
   const img = await prepareImage(input);
-  return withOrg(actor.organizationId, (tx) => insertImage(tx, actor, img));
+  return stageImages(actor.organizationId, [img], ([staged]) => withOrg(actor.organizationId, (tx) => insertImage(tx, actor, staged)));
 };
 const rejects = async (p: Promise<unknown>) => {
   try {
@@ -85,15 +85,18 @@ describe("prepareImage + insertImage", () => {
     expect([photo.width, photo.height]).toEqual([100, 300]); // orientation 6 applied
     const row = (await withOrg(a.org.id, (tx) => loadMedia(tx, a.org.id, photo.id)))!;
     expect(row).toMatchObject({ mime: "image/webp", filename: "IMG_0042.webp", visibility: "PUBLIC", productId: productA, createdBy: a.user.id, sizeBytes: photo.sizeBytes });
-    expect(row.bytes.length).toBe(photo.sizeBytes);
-    const meta = await sharp(row.bytes).metadata();
+    // No object storage configured in this suite: the bytes stay in PostgreSQL.
+    expect(row.storageKey).toBeNull();
+    const bytes = row.bytes!;
+    expect(bytes.length).toBe(photo.sizeBytes);
+    const meta = await sharp(bytes).metadata();
     expect(meta.format).toBe("webp");
     expect(meta.exif).toBeUndefined();
     expect(meta.xmp).toBeUndefined();
     expect(meta.icc).toBeUndefined();
     expect(meta.orientation ?? 1).toBe(1);
-    expect(row.bytes.includes("secret-owner")).toBe(false);
-    expect(row.bytes.includes("iPhone")).toBe(false);
+    expect(bytes.includes("secret-owner")).toBe(false);
+    expect(bytes.includes("iPhone")).toBe(false);
 
     const logged = await withOrg(a.org.id, (tx) => tx.select().from(auditLogs).where(and(eq(auditLogs.action, "media.upload"), eq(auditLogs.entityId, photo.id))));
     expect(logged).toHaveLength(1);

@@ -13,6 +13,9 @@ import { recomputeCoverage } from "./discovery";
 import { contentGapsForProduct } from "./content-gaps";
 import { audit, type Actor } from "@/lib/audit";
 import { learningTallies } from "./autopilot-learning";
+import { loadEstimationContext } from "./estimates";
+import { estimateImpact } from "@/core/estimate/impact";
+import type { ImpactEstimate } from "@/core/estimate/types";
 
 type QueryMetric = { impressions: number; clicks: number; position: number | null };
 
@@ -145,7 +148,13 @@ export async function generateProductOpportunities(tx: Tx, organizationId: strin
     learning: await learningTallies(tx, organizationId),
   };
   const drafts = generateOpportunity(signals);
-  const res = await upsertOpportunities(tx, organizationId, productId, drafts);
+  // Expected impact per opportunity (pure, from this organisation's measured data only).
+  const estimation = await loadEstimationContext(tx, organizationId);
+  const estimated = drafts.map((d) => ({
+    ...d,
+    impactEstimate: estimateImpact(estimation, { productId, queryIds: d.sources.queryIds?.length ? d.sources.queryIds : d.queryId ? [d.queryId] : [], opportunityType: d.type }),
+  }));
+  const res = await upsertOpportunities(tx, organizationId, productId, estimated);
   await recordRun(tx, {
     organizationId,
     task: "generateOpportunity",
@@ -166,7 +175,7 @@ export async function generateProductOpportunities(tx: Tx, organizationId: strin
  * condition is back). Then OPEN opportunities of the product whose
  * fingerprint was not produced become OBSOLETE.
  */
-export async function upsertOpportunities(tx: Tx, organizationId: string, productId: string, drafts: ReturnType<typeof generateOpportunity>) {
+export async function upsertOpportunities(tx: Tx, organizationId: string, productId: string, drafts: (ReturnType<typeof generateOpportunity>[number] & { impactEstimate?: ImpactEstimate | null })[]) {
   let created = 0;
   const fps = drafts.map((d) => d.fingerprint);
   const reopened = fps.length
@@ -197,6 +206,7 @@ export async function upsertOpportunities(tx: Tx, organizationId: string, produc
           nextAction: sql`excluded.next_action`,
           sources: sql`excluded.sources`,
           queryId: sql`excluded.query_id`,
+          impactEstimate: sql`coalesce(excluded.impact_estimate, ${opportunities.impactEstimate})`,
           status: sql`case when ${opportunities.status} = 'OBSOLETE' then 'OPEN'::opportunity_status else ${opportunities.status} end`,
           obsoletedAt: sql`null`,
           updatedAt: new Date(),

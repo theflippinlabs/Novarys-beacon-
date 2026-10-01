@@ -43,6 +43,18 @@ const schema = z.object({
   /** Email notifications through Resend's HTTPS API; both are required, otherwise the email channel shows "Not connected". */
   RESEND_API_KEY: z.string().optional(),
   BEACON_EMAIL_FROM: z.string().optional(),
+  /**
+   * S3-compatible object storage for uploaded media (a Railway Bucket in production).
+   * Endpoint, bucket, access key id and secret are set together or not at all;
+   * when none is set, media bytes stay in PostgreSQL.
+   */
+  BEACON_MEDIA_S3_ENDPOINT: z.string().url().optional(),
+  BEACON_MEDIA_S3_BUCKET: z.string().optional(),
+  BEACON_MEDIA_S3_REGION: z.string().default("auto"),
+  BEACON_MEDIA_S3_ACCESS_KEY_ID: z.string().optional(),
+  BEACON_MEDIA_S3_SECRET_ACCESS_KEY: z.string().optional(),
+  /** "true" for path-style URLs (endpoint/bucket/key, e.g. MinIO); Railway Buckets use virtual-hosted style (the default). */
+  BEACON_MEDIA_S3_FORCE_PATH_STYLE: z.enum(["true", "false"]).default("false"),
 });
 
 type Parsed = z.infer<typeof schema>;
@@ -55,6 +67,36 @@ const DEV_BASE_URL = "http://localhost:3000";
 const isLoopbackUrl = (u: string) => /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/|$)/.test(u);
 
 const b64Len = (v: string) => Buffer.from(v, "base64").length;
+
+/** The variables that must be set together for media object storage. */
+export const MEDIA_S3_REQUIRED = ["BEACON_MEDIA_S3_ENDPOINT", "BEACON_MEDIA_S3_BUCKET", "BEACON_MEDIA_S3_ACCESS_KEY_ID", "BEACON_MEDIA_S3_SECRET_ACCESS_KEY"] as const;
+
+export type MediaStorageConfig = { endpoint: string; bucket: string; region: string; accessKeyId: string; secretAccessKey: string; forcePathStyle: boolean };
+
+/**
+ * Media object storage settings: `config` when every required variable is set,
+ * null when none is (PostgreSQL fallback). `problems` lists a partial or
+ * invalid configuration (never the secret values).
+ */
+export function mediaStorageSettings(p: Pick<Parsed, (typeof MEDIA_S3_REQUIRED)[number] | "BEACON_MEDIA_S3_REGION" | "BEACON_MEDIA_S3_FORCE_PATH_STYLE" | "NODE_ENV">): { config: MediaStorageConfig | null; problems: string[] } {
+  const missing = MEDIA_S3_REQUIRED.filter((k) => !p[k]);
+  if (missing.length === MEDIA_S3_REQUIRED.length) return { config: null, problems: [] };
+  if (missing.length) return { config: null, problems: [`media object storage is partially configured: set ${missing.join(", ")} (or unset every BEACON_MEDIA_S3_* variable)`] };
+  const endpoint = p.BEACON_MEDIA_S3_ENDPOINT!;
+  if (p.NODE_ENV === "production" && !endpoint.startsWith("https://") && !isLoopbackUrl(endpoint)) return { config: null, problems: ["BEACON_MEDIA_S3_ENDPOINT must be an https:// URL"] };
+  if (!/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(p.BEACON_MEDIA_S3_BUCKET!)) return { config: null, problems: ["BEACON_MEDIA_S3_BUCKET is not a valid bucket name"] };
+  return {
+    config: {
+      endpoint,
+      bucket: p.BEACON_MEDIA_S3_BUCKET!,
+      region: p.BEACON_MEDIA_S3_REGION || "auto",
+      accessKeyId: p.BEACON_MEDIA_S3_ACCESS_KEY_ID!,
+      secretAccessKey: p.BEACON_MEDIA_S3_SECRET_ACCESS_KEY!,
+      forcePathStyle: p.BEACON_MEDIA_S3_FORCE_PATH_STYLE === "true",
+    },
+    problems: [],
+  };
+}
 
 /**
  * Production requirements, checked eagerly at boot (instrumentation and the
@@ -72,6 +114,7 @@ export function productionEnvProblems(p: Parsed): string[] {
   else if (b64Len(p.BEACON_HASH_SECRET) < 32) out.push("BEACON_HASH_SECRET must decode to at least 32 bytes (base64)");
   if (!p.DATABASE_SYSTEM_URL && !p.BEACON_DB_SYSTEM_PASSWORD) out.push("DATABASE_SYSTEM_URL or BEACON_DB_SYSTEM_PASSWORD is required (system database role)");
   if (p.BEACON_SSRF_ALLOW_PRIVATE === "true") out.push("BEACON_SSRF_ALLOW_PRIVATE must not be enabled in production");
+  out.push(...mediaStorageSettings(p).problems);
   return out;
 }
 

@@ -8,6 +8,8 @@ import { audit, type Actor } from "@/lib/audit";
 import { promptSummaries } from "./ai-visibility";
 import { searchDemand, type SearchDemand } from "./queries";
 import { createAssetFromOpportunity } from "./content";
+import { estimateImpact } from "@/core/estimate/impact";
+import { loadEstimationContext } from "./estimates";
 
 /** Content gaps of a product, one per query cluster, with coverage evidence, relevance, demand (or UNKNOWN) and sources. */
 export async function contentGapsForProduct(tx: Tx, organizationId: string, productId: string, demand?: SearchDemand): Promise<ContentGap[]> {
@@ -56,12 +58,13 @@ export async function opportunityFromGap(tx: Tx, actor: Actor, productId: string
   const gap = (await contentGapsForProduct(tx, actor.organizationId, productId)).find((g) => g.clusterId === clusterId);
   if (!gap) throw new Error("This cluster is no longer a content gap.");
   const [draft] = generateOpportunities({ product: { id: product.id, name: product.name, slug: product.slug }, contentGaps: [gap], queries: [], aiGaps: [], seoIssues: [], missingEntity: [], competitorsWithoutComparison: [], orphanPages: [], lowConversionPages: [] });
+  const impactEstimate = estimateImpact(await loadEstimationContext(tx, actor.organizationId), { productId, queryIds: draft.sources.queryIds ?? [], opportunityType: draft.type });
   const [row] = await tx
     .insert(opportunities)
-    .values({ organizationId: actor.organizationId, ...draft })
+    .values({ organizationId: actor.organizationId, ...draft, impactEstimate })
     .onConflictDoUpdate({
       target: [opportunities.organizationId, opportunities.fingerprint],
-      set: { title: draft.title, problem: draft.problem, evidence: draft.evidence, sources: draft.sources, scoringRationale: draft.scoringRationale, nextAction: draft.nextAction, updatedAt: new Date() },
+      set: { title: draft.title, problem: draft.problem, evidence: draft.evidence, sources: draft.sources, scoringRationale: draft.scoringRationale, nextAction: draft.nextAction, impactEstimate, updatedAt: new Date() },
     })
     .returning();
   // A human asked for it: an obsolete or dismissed one is reopened.

@@ -1,4 +1,5 @@
-import { ProviderHttpError, searchRow, type ConnectionTest, type MetricRow, type SearchRow, type VisibilityAdapter } from "./types";
+import { DEFAULT_LINK_BUDGET, pagesToRead, parseLinkCounts, parseUrlLinks, summarizeBacklinks, topLinkedPages, type BacklinkSummary, type LinkCountEntry } from "@/core/search/backlinks";
+import { isAuthFailure, ProviderHttpError, searchRow, type BacklinkFetchOptions, type ConnectionTest, type MetricRow, type SearchRow, type VisibilityAdapter } from "./types";
 
 type Stat = { Date: string; Impressions: number; Clicks: number };
 type QueryStat = { Query: string; Date: string; Impressions: number; Clicks: number; AvgImpressionPosition?: number; AvgClickPosition?: number };
@@ -73,6 +74,75 @@ export function createBingAdapter(fetchImpl: typeof fetch = fetch): VisibilityAd
         if (inRange(day) && s.Query && (!o.pagePrefix || s.Query.startsWith(o.pagePrefix))) out.push(searchRow({ day, page: s.Query, clicks: s.Clicks, impressions: s.Impressions, position: bingPosition(s.AvgImpressionPosition) }));
       }
       return out;
+    },
+    /**
+     * Inbound links (Bing Webmaster API GetLinkCounts + GetUrlLinks, see
+     * src/core/search/backlinks.ts for the documented shapes and doc URLs).
+     * Reads the site pages with inbound links (paged, capped), then the
+     * linking URLs of the most-linked pages within a strict request and
+     * time budget. Pages outside `pagePrefix` (another product on the same
+     * property) are ignored. Returns null when Bing has no link data.
+     * Failures of GetLinkCounts, and auth failures anywhere, throw; another
+     * failure on one target's GetUrlLinks only marks the result incomplete.
+     */
+    async fetchBacklinks(config, secret, o: BacklinkFetchOptions = {}): Promise<BacklinkSummary | null> {
+      const budget = { ...DEFAULT_LINK_BUDGET, ...o.budget };
+      const now = o.clock ?? Date.now;
+      const deadline = now() + budget.deadlineMs;
+      let requests = 0;
+      let complete = true;
+      const canCall = () => requests < budget.maxRequests && now() < deadline;
+      const get = async (method: string, params: Record<string, string>) => {
+        if (requests > 0 && o.delayMs !== 0) await new Promise((r) => setTimeout(r, o.delayMs ?? 200));
+        requests++;
+        return call<unknown>(method, secret.apiKey, { siteUrl: config.siteUrl, ...params });
+      };
+      const inScope = (url: string) => !o.pagePrefix || url.startsWith(o.pagePrefix);
+
+      const counts: LinkCountEntry[] = [];
+      let pages = budget.maxCountPages;
+      for (let page = 0; page < pages; page++) {
+        if (!canCall()) {
+          complete = false;
+          break;
+        }
+        const r = parseLinkCounts(await get("GetLinkCounts", { page: String(page) }));
+        if (page === 0) pages = pagesToRead(r.totalPages, budget.maxCountPages);
+        if (page === 0 && r.totalPages !== null && r.totalPages > budget.maxCountPages) complete = false;
+        if (!r.items.length) break;
+        counts.push(...r.items.filter((c) => inScope(c.url)));
+      }
+      if (!counts.length) return null;
+
+      const linking: { target: string; urls: string[] }[] = [];
+      for (const target of topLinkedPages(counts, budget.maxTargets)) {
+        const urls: string[] = [];
+        let linkPages = budget.maxLinkPagesPerTarget;
+        let read = false;
+        for (let page = 0; page < linkPages; page++) {
+          if (!canCall()) {
+            complete = false;
+            break;
+          }
+          let r;
+          try {
+            r = parseUrlLinks(await get("GetUrlLinks", { link: target, page: String(page) }));
+          } catch (e) {
+            if (isAuthFailure(e)) throw e;
+            complete = false;
+            break;
+          }
+          read = true;
+          if (page === 0) linkPages = pagesToRead(r.totalPages, budget.maxLinkPagesPerTarget);
+          if (page === 0 && r.totalPages !== null && r.totalPages > budget.maxLinkPagesPerTarget) complete = false;
+          if (!r.items.length) break;
+          urls.push(...r.items);
+        }
+        if (read) linking.push({ target, urls });
+      }
+      if (counts.length > linking.length) complete = false;
+      const ownHosts = [config.siteUrl, o.pagePrefix].filter((h): h is string => Boolean(h));
+      return summarizeBacklinks({ counts, linking, ownHosts, complete });
     },
   };
 }

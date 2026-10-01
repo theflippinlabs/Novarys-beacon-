@@ -64,7 +64,7 @@ export const INTEGRATION_CATALOG: CatalogEntry[] = [
     coreSource: true,
   }),
   fromAdapter("GOOGLE_ANALYTICS", "Analytics", "Sessions by channel, including AI-assistant referrals, via the GA4 Data API.", { analystMetrics: ["ai_referrals", "visitors"], coreSource: true }),
-  fromAdapter("BING_WEBMASTER", "Search visibility", "Bing clicks and impressions by day, query and page via the Bing Webmaster API.", { analystMetrics: ["clicks", "impressions"] }),
+  fromAdapter("BING_WEBMASTER", "Search visibility", "Bing clicks and impressions by day, query and page, plus inbound links and referring domains (Beacon Score), via the Bing Webmaster API.", { analystMetrics: ["clicks", "impressions"] }),
   {
     provider: "STRIPE",
     label: "Stripe",

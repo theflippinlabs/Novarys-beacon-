@@ -1,3 +1,5 @@
+import type { BacklinkSummary, LinkBudget } from "@/core/search/backlinks";
+
 export type MetricRow = { metric: string; day: string; dimension?: string; value: number; weight?: number | null };
 
 export type DateRange = { start: string; end: string };
@@ -37,6 +39,17 @@ export type SearchFetchOptions = {
   delayMs?: number;
 };
 
+export type BacklinkFetchOptions = {
+  /** Only count site pages starting with this URL prefix (one property serving several products). */
+  pagePrefix?: string | null;
+  /** Pause between paged provider calls (quota friendliness); 0 in tests. */
+  delayMs?: number;
+  /** Override parts of the request and time budget. */
+  budget?: Partial<LinkBudget>;
+  /** Clock for the time budget (tests). */
+  clock?: () => number;
+};
+
 export type ConnectionTest = {
   ok: boolean;
   message: string;
@@ -65,6 +78,8 @@ export interface VisibilityAdapter {
   testConnection(config: Record<string, string>, secret: Record<string, string>): Promise<ConnectionTest>;
   fetchMetrics(config: Record<string, string>, secret: Record<string, string>, range: DateRange): Promise<MetricRow[]>;
   fetchSearchRows?(config: Record<string, string>, secret: Record<string, string>, range: DateRange, opts?: SearchFetchOptions): Promise<SearchRow[]>;
+  /** Backlink providers (Bing): inbound link counts and sampled referring domains; null when the provider has no link data. */
+  fetchBacklinks?(config: Record<string, string>, secret: Record<string, string>, opts?: BacklinkFetchOptions): Promise<BacklinkSummary | null>;
   /** Analytics providers (GA4): daily rows per report grain, stored in analytics_daily. */
   fetchAnalyticsDaily?(config: Record<string, string>, secret: Record<string, string>, range: DateRange): Promise<AnalyticsRow[]>;
 }

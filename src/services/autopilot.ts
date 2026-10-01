@@ -128,6 +128,30 @@ async function targetOf(tx: Tx, o: Opp): Promise<RecommendationTarget> {
   };
 }
 
+/**
+ * RECOMMEND from a Beacon Brain finding (a person pressed "Propose"): a
+ * PROPOSED recommendation that waits for a human decision like any other.
+ * Linked to the finding's opportunity when it has one (its target is then
+ * measured like the opportunity's). Returns null when an open
+ * recommendation already exists for it.
+ */
+export async function proposeFromFinding(tx: Tx, actor: Actor, f: { kind: string; title: string; body: string; productId: string | null; opportunityId: string | null }) {
+  const o = f.opportunityId ? ((await tx.query.opportunities.findFirst({ where: and(eq(opportunities.id, f.opportunityId), eq(opportunities.organizationId, actor.organizationId)) })) ?? null) : null;
+  const productId = o?.productId ?? f.productId;
+  const row = await proposeRecommendation(tx, actor.organizationId, {
+    kind: o?.type ?? f.kind,
+    title: f.title.slice(0, 300),
+    body: f.body.slice(0, 2000),
+    requiresApproval: true,
+    productId,
+    opportunityId: o?.id ?? null,
+    source: o ? "OPPORTUNITY" : "ANALYST",
+    targetRef: o ? await targetOf(tx, o) : { productId, opportunityType: f.kind },
+  });
+  if (row) await audit(tx, actor, "recommendation.propose", "recommendation", row.id, { kind: row.kind, opportunityId: row.opportunityId, from: "brain" });
+  return row;
+}
+
 const REPROPOSE_AFTER_DAYS = 90;
 const PER_PRODUCT = 3;
 const MAX_PER_RUN = 15;

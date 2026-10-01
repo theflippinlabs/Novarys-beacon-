@@ -7,6 +7,7 @@ import { opportunities, products, queries } from "@/db/schema";
 import { PRIORITY_FORMULA } from "@/core/opportunities/engine";
 import { OPPORTUNITY_CONTENT_TYPES } from "@/core/content/types";
 import { pageData, type SP } from "@/lib/page";
+import { ImpactEstimateView } from "@/components/estimate/estimate-view";
 import { enumLabel } from "@/i18n/core";
 import { getI18n, getT } from "@/i18n/server";
 import type { Metadata } from "next";
@@ -76,6 +77,9 @@ export default async function OpportunityDetail({ params, searchParams }: { para
           </Panel>
         </div>
         <div className="flex flex-col gap-6">
+          <Panel title={t("Expected impact")} eyebrow={t("Estimate")}>
+            {o.impactEstimate ? <ImpactEstimateView impact={o.impactEstimate} /> : <p className="text-xs text-muted">{t("Not estimated yet. It is computed the next time opportunities are regenerated.")}</p>}
+          </Panel>
           <Panel title={t("Assessment")}>
             <div className="flex flex-wrap gap-2">
               <PotentialBadge potential={o.potential} />

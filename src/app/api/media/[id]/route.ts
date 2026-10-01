@@ -4,6 +4,8 @@ import { media } from "@/db/schema";
 import { isUuid } from "@/core/media/image";
 import { sessionTokenFrom } from "@/lib/auth/session";
 import { resolveSession } from "@/lib/auth/service";
+import { log } from "@/lib/logger";
+import { readMediaBytes } from "@/services/media-storage";
 
 export const dynamic = "force-dynamic";
 
@@ -11,6 +13,10 @@ const BASE_HEADERS = { "x-content-type-options": "nosniff", "content-security-po
 
 function notFound() {
   return new Response("Not found", { status: 404, headers: { ...BASE_HEADERS, "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" } });
+}
+
+function unavailable() {
+  return new Response("Temporarily unavailable", { status: 503, headers: { ...BASE_HEADERS, "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", "retry-after": "30" } });
 }
 
 function cookieValue(req: Request, name: string): string | null {
@@ -25,12 +31,13 @@ function cookieValue(req: Request, name: string): string | null {
  * Serves uploaded images. PUBLIC media is served to anyone holding the
  * (unguessable, random UUID) id; PRIVATE media only to the member who uploaded
  * it, signed in to the owning organisation. Lookup by id runs with system privileges because
- * the tenant is not known until the row is found.
+ * the tenant is not known until the row is found. Bytes in object storage are
+ * read after that transaction has closed, and only once access is granted.
  */
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!isUuid(id)) return notFound();
-  const row = await asSystem(async (tx) => (await tx.select({ organizationId: media.organizationId, createdBy: media.createdBy, visibility: media.visibility, mime: media.mime, bytes: media.bytes }).from(media).where(eq(media.id, id.toLowerCase())).limit(1))[0]);
+  const row = await asSystem(async (tx) => (await tx.select({ organizationId: media.organizationId, createdBy: media.createdBy, visibility: media.visibility, mime: media.mime, bytes: media.bytes, storageKey: media.storageKey }).from(media).where(eq(media.id, id.toLowerCase())).limit(1))[0]);
   if (!row) return notFound();
   if (row.visibility === "PRIVATE") {
     const ctx = await resolveSession(sessionTokenFrom((n) => cookieValue(req, n) ?? undefined));
@@ -47,5 +54,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   if (row.visibility === "PRIVATE") headers.vary = "Cookie";
   const inm = req.headers.get("if-none-match");
   if (inm && inm.split(",").some((t) => t.trim().replace(/^W\//, "") === etag)) return new Response(null, { status: 304, headers });
-  return new Response(new Uint8Array(row.bytes), { status: 200, headers: { ...headers, "content-length": String(row.bytes.length) } });
+  let bytes: Buffer | null;
+  try {
+    bytes = await readMediaBytes(row);
+  } catch (e) {
+    log.error("media.read_failed", { mediaId: id.toLowerCase(), err: (e as Error).message });
+    return unavailable();
+  }
+  if (!bytes) return notFound();
+  return new Response(new Uint8Array(bytes), { status: 200, headers: { ...headers, "content-length": String(bytes.length) } });
 }

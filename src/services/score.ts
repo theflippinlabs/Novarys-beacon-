@@ -44,9 +44,12 @@ export async function scoreInput(tx: Tx, organizationId: string, productId: stri
     where t.organization_id = ${organizationId} and pr.product_id = ${productId} and t.ran_at >= now() - interval '90 days'`)
   ).rows[0];
   const providers = await availableProviders(tx, organizationId);
+  // Latest backlink measurement (written by the Bing sync), with the inbound link count of the same day.
   const refDomains = (
-    await tx.execute<{ v: number | null }>(sql`
-    select value::float as v from visibility_metrics where product_id = ${productId} and metric = 'referring_domains' order by day desc limit 1`)
+    await tx.execute<{ v: number | null; day: string; provider: string; links: number | null }>(sql`
+    select r.value::float as v, r.day::text as day, r.provider,
+      (select l.value::float from visibility_metrics l where l.product_id = r.product_id and l.provider = r.provider and l.metric = 'inbound_links' and l.day = r.day and l.dimension = '') as links
+    from visibility_metrics r where r.product_id = ${productId} and r.metric = 'referring_domains' and r.dimension = '' order by r.day desc limit 1`)
   ).rows[0];
   const integ = await tx
     .select()
@@ -68,6 +71,7 @@ export async function scoreInput(tx: Tx, organizationId: string, productId: stri
       verifiedProofs: g.proofs.filter((p) => p.publishable && isVerified(p)).length,
       sources: g.sources.length,
       referringDomains: refDomains?.v ?? null,
+      backlinks: refDomains ? { source: refDomains.provider === "BING_WEBMASTER" ? "Bing Webmaster Tools" : refDomains.provider, asOf: refDomains.day, inboundLinks: refDomains.links === null ? null : Number(refDomains.links) } : null,
       ai: { providerConfigured: providers.length > 0, tests90d: Number(ai?.tests ?? 0), testsMentioning90d: Number(ai?.mentioning ?? 0) },
     },
     queries: { active: Number(q?.active ?? 0), weightedCovered: Number(q?.covered ?? 0), weightedTotal: Number(q?.total ?? 0) },

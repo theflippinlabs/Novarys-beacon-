@@ -83,3 +83,19 @@ export function altFromFilename(name: string): string {
     .trim()
     .slice(0, 200);
 }
+
+/** Prefix of every media object in object storage. */
+export const MEDIA_STORAGE_PREFIX = "media/";
+
+/** Object storage key of one image: `media/{organizationId}/{mediaId}.webp` (both lowercased UUIDs). */
+export function mediaStorageKey(organizationId: string, mediaId: string): string {
+  if (!isUuid(organizationId) || !isUuid(mediaId)) throw new Error("Invalid media storage key ids");
+  return `${MEDIA_STORAGE_PREFIX}${organizationId.toLowerCase()}/${mediaId.toLowerCase()}.webp`;
+}
+
+/** Inverse of `mediaStorageKey`; null for any key Beacon did not build. */
+export function parseMediaStorageKey(key: string): { organizationId: string; mediaId: string } | null {
+  const m = /^media\/([0-9a-f-]{36})\/([0-9a-f-]{36})\.webp$/.exec(key);
+  if (!m || !isUuid(m[1]) || !isUuid(m[2])) return null;
+  return { organizationId: m[1], mediaId: m[2] };
+}

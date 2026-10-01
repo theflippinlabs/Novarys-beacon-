@@ -11,6 +11,7 @@ import { upsertAnalyticsDaily } from "./journey";
 import { decryptSecret, encryptSecret } from "@/lib/security/crypto";
 import { addDays, isoDay } from "@/core/util/text";
 import { audit, type Actor } from "@/lib/audit";
+import type { BacklinkSummary } from "@/core/search/backlinks";
 
 export async function upsertMetrics(tx: Tx, organizationId: string, productId: string, provider: string, rows: MetricRow[]) {
   for (let i = 0; i < rows.length; i += 500) {
@@ -23,6 +24,17 @@ export async function upsertMetrics(tx: Tx, organizationId: string, productId: s
         set: { value: sql`excluded.value`, weight: sql`excluded.weight` },
       });
   }
+}
+
+/**
+ * Backlink measurements as metric rows for one day: `inbound_links` (sum of
+ * the provider's per-page counts) and `referring_domains` (distinct hosts of
+ * the sampled linking URLs; only when the provider returned linking URLs).
+ */
+export function backlinkMetrics(s: BacklinkSummary, day: string): MetricRow[] {
+  const out: MetricRow[] = [{ metric: "inbound_links", day, value: s.inboundLinks }];
+  if (s.referringDomains !== null) out.push({ metric: "referring_domains", day, value: s.referringDomains });
+  return out;
 }
 
 /** Config keys starting with "_" are internal state (backfill progress, OAuth site list): kept across saves, hidden in the UI. */
@@ -95,10 +107,19 @@ async function recordFailure(run: Run, integ: typeof integrations.$inferSelect, 
  * so corrections replace earlier values). DISABLED integrations are skipped.
  */
 export async function syncIntegration(run: Run, integrationId: string, days?: number, opts: { delayMs?: number; now?: Date } = {}) {
-  const { integ, secret, prefix } = await run(async (tx) => {
+  const today = isoDay(opts.now ?? new Date());
+  const { integ, secret, prefix, linksToday } = await run(async (tx) => {
     const integ = await tx.query.integrations.findFirst({ where: eq(integrations.id, integrationId) });
     if (!integ) throw new NonRetryableError("Integration not found");
-    return { integ, secret: await loadSecret(tx, integ.id), prefix: await resolvePagePrefix(tx, integ) };
+    const linksToday = integ.productId
+      ? Boolean(
+          await tx.query.visibilityMetrics.findFirst({
+            where: and(eq(visibilityMetrics.productId, integ.productId), eq(visibilityMetrics.provider, integ.provider), eq(visibilityMetrics.metric, "inbound_links"), eq(visibilityMetrics.day, today)),
+            columns: { id: true },
+          }),
+        )
+      : false;
+    return { integ, secret: await loadSecret(tx, integ.id), prefix: await resolvePagePrefix(tx, integ), linksToday };
   });
   if (integ.status === "DISABLED") return { skipped: true, reason: "disabled" };
   if (!isVisibilityProvider(integ.provider) || !integ.productId) return { skipped: true };
@@ -109,14 +130,31 @@ export async function syncIntegration(run: Run, integrationId: string, days?: nu
     // GA4: landing page / source / campaign and country / device reports (analytics_daily).
     const analytics = adapter.fetchAnalyticsDaily ? await adapter.fetchAnalyticsDaily(integ.config, secret, range) : null;
     const rows = search ? searchTotalsAsMetrics(search) : await adapter.fetchMetrics(integ.config, secret, range);
+    // Backlinks (Bing): at most once a day, still outside any transaction. An auth failure fails the
+    // sync (EXPIRED); any other link failure keeps the search data and writes no link metric.
+    let backlinks: BacklinkSummary | null = null;
+    let backlinkError: string | null = null;
+    if (adapter.fetchBacklinks && !linksToday) {
+      try {
+        backlinks = await adapter.fetchBacklinks(integ.config, secret, { pagePrefix: prefix, delayMs: opts.delayMs });
+      } catch (e) {
+        if (isAuthFailure(e)) throw e;
+        backlinkError = sanitizeProviderMessage((e as Error).message ?? String(e)).slice(0, 300);
+      }
+    }
     const rec = await run(async (tx) => {
-      await upsertMetrics(tx, integ.organizationId, integ.productId!, integ.provider, rows);
+      await upsertMetrics(tx, integ.organizationId, integ.productId!, integ.provider, backlinks ? [...rows, ...backlinkMetrics(backlinks, today)] : rows);
       if (search) await upsertSearchRows(tx, { organizationId: integ.organizationId, productId: integ.productId, integrationId: integ.id, provider: integ.provider as SearchProvider }, search);
       if (analytics) await upsertAnalyticsDaily(tx, { organizationId: integ.organizationId, productId: integ.productId!, integrationId: integ.id }, analytics);
       return recordConnectionResult(tx, integ, { ok: true, message: "synced" }, { synced: true });
     });
     await enqueueBackfillIfNeeded(rec.integration, rec.previousSuccessAt);
-    return { rows: rows.length, searchRows: search?.length ?? 0, range };
+    return {
+      rows: rows.length,
+      searchRows: search?.length ?? 0,
+      range,
+      ...(adapter.fetchBacklinks ? { backlinks: linksToday ? "already measured today" : backlinkError ? `not measured: ${backlinkError}` : (backlinks ?? "no link data") } : {}),
+    };
   } catch (e) {
     await recordFailure(run, integ, e);
     throw jobError(e);

@@ -34,7 +34,11 @@ import { fr as w2c } from "./w2c";
 import { fr as w2d } from "./w2d";
 import { fr as w3b } from "./w3b";
 import { fr as w4a } from "./w4a";
+import { fr as w5a } from "./w5a";
+import { fr as w5b } from "./w5b";
+import { fr as brainEst } from "./brain-est";
+import { fr as brain } from "./brain";
 
-export const FR_AREAS = { common, shell, overview, products, knowledge, onboarding, discovery, queries, content, distribution, visibility, opportunities, conversions, referrals, revenue, autopilot, settings, publicPages, messages, media, agent, agentui, p2sec, p2search, p2measure, p2know, p2content, p2crawl, p2intel, w2a, w2b, w2c, w2d, w3b, w4a } as const;
+export const FR_AREAS = { common, shell, overview, products, knowledge, onboarding, discovery, queries, content, distribution, visibility, opportunities, conversions, referrals, revenue, autopilot, settings, publicPages, messages, media, agent, agentui, p2sec, p2search, p2measure, p2know, p2content, p2crawl, p2intel, w2a, w2b, w2c, w2d, w3b, w4a, w5a, w5b, brainEst, brain } as const;
 
 export const FR: Readonly<Record<string, string>> = Object.freeze(Object.assign({}, ...Object.values(FR_AREAS)));

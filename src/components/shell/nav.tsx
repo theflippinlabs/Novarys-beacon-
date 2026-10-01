@@ -18,6 +18,7 @@ const I = (d: ReactNode) => (
 export const SECTIONS: Section[] = [
   { href: "/", label: "Overview", icon: I(<path d="M12 2.5l2.2 7.3L21.5 12l-7.3 2.2L12 21.5l-2.2-7.3L2.5 12l7.3-2.2z" />) },
   { href: "/agent", label: "Agent", icon: I(<><path d="M12 3.5l1.6 4.9L18.5 10l-4.9 1.6L12 16.5l-1.6-4.9L5.5 10l4.9-1.6z" /><path d="M18.5 15.5l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z" /></>) },
+  { href: "/brain", label: "Brain", icon: I(<><path d="M9.5 4.5a3 3 0 00-3 3 3 3 0 00-2 5.2 3 3 0 002.5 4.8 3 3 0 005.5 1.5V6a2.5 2.5 0 00-3-1.5z" /><path d="M14.5 4.5a3 3 0 013 3 3 3 0 012 5.2 3 3 0 01-2.5 4.8 3 3 0 01-5.5 1.5" /><path d="M9 10h2M13 13h2" /></>) },
   { href: "/products", label: "Products", icon: I(<><path d="M3.5 7.5L12 3l8.5 4.5v9L12 21l-8.5-4.5z" /><path d="M3.5 7.5L12 12l8.5-4.5M12 12v9" /></>) },
   { href: "/discovery", label: "Discovery", icon: I(<><circle cx="11" cy="11" r="6.5" /><path d="M20.5 20.5l-4.8-4.8" /></>) },
   { href: "/queries", label: "Queries", icon: I(<><path d="M4 5h16v11H9l-5 4z" /><path d="M10 9.2a2 2 0 113 1.7c-.6.3-1 .8-1 1.4" /></>) },

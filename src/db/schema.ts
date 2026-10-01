@@ -37,6 +37,9 @@ import type { ExperimentArm } from "@/core/experiments/stats";
 import type { StoredOnboardingSteps } from "@/core/onboarding/steps";
 import type { LaunchBaseline, LaunchMode } from "@/core/launch/checklist";
 import type { WatchDiff, WatchKind, WatchStatus } from "@/core/competitors/watch";
+import type { EstimationPower, ImpactTarget } from "@/core/estimate/types";
+import type { CoverageMap as BrainCoverageMap, Evidence as BrainEvidence, FindingAction as BrainFindingAction, LlmRunUsage, Narrative as BrainNarrative, SpecialistKey as BrainSpecialistKey } from "@/brain/types";
+import type { ImpactEstimate } from "@/core/estimate/types";
 
 const id = () => uuid("id").primaryKey().defaultRandom();
 const orgId = () =>
@@ -1186,6 +1189,8 @@ export const opportunities = pgTable(
     /** Deterministic key so regeneration is idempotent. */
     fingerprint: text("fingerprint").notNull(),
     generatedBy: text("generated_by").notNull().default("rules"),
+    /** Expected impact (src/core/estimate, master estimator) computed at (re)generation; null before it existed. */
+    impactEstimate: jsonb("impact_estimate").$type<ImpactEstimate | null>(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -1853,11 +1858,19 @@ export const media = pgTable(
     height: integer("height").notNull(),
     sizeBytes: integer("size_bytes").notNull(),
     alt: text("alt"),
-    bytes: bytea("bytes").notNull(),
+    /** The WebP bytes when stored in PostgreSQL (no object storage configured); null when `storageKey` is set. */
+    bytes: bytea("bytes"),
+    /** Object storage key (`media/{organizationId}/{id}.webp`) when the bytes live in object storage. */
+    storageKey: text("storage_key"),
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: createdAt(),
   },
-  (t) => [index("media_org_idx").on(t.organizationId, t.createdAt), index("media_product_idx").on(t.productId)],
+  (t) => [
+    index("media_org_idx").on(t.organizationId, t.createdAt),
+    index("media_product_idx").on(t.productId),
+    index("media_in_database_idx").on(t.id).where(sql`${t.storageKey} IS NULL`),
+    check("media_bytes_or_storage_ck", sql`(${t.bytes} IS NULL) <> (${t.storageKey} IS NULL)`),
+  ],
 );
 
 /** Conversations with the Beacon agent. One per thread, owned by the user who started it. */
@@ -2039,6 +2052,7 @@ export const notificationKindEnum = pgEnum("notification_kind", [
   "CONVERSION_ANOMALY",
   "HIGH_PRIORITY_OPPORTUNITY",
   "COMPETITOR_PAGE_CHANGED",
+  "BRAIN_CRITICAL",
 ]);
 export const notificationChannelEnum = pgEnum("notification_channel", ["IN_APP", "EMAIL", "WEBHOOK"]);
 export const reportKindEnum = pgEnum("report_kind", ["WEEKLY"]);
@@ -2216,6 +2230,78 @@ export const competitorWatchSnapshots = pgTable(
   ],
 );
 
+// ─── Beacon Brain (docs/BEACON_BRAIN.md) ───────────────────────────────────
+/** One Brain run: coverage per specialist, executive summary, estimation power and model usage. */
+export const brainRuns = pgTable(
+  "brain_runs",
+  {
+    id: id(),
+    organizationId: orgId(),
+    status: text("status").$type<"QUEUED" | "RUNNING" | "DONE" | "FAILED">().notNull().default("QUEUED"),
+    trigger: text("trigger").$type<"SCHEDULED" | "MANUAL" | "AGENT">().notNull().default("SCHEDULED"),
+    requestedBy: uuid("requested_by").references(() => users.id, { onDelete: "set null" }),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    /** src/brain/types.ts CoverageMap. */
+    coverage: jsonb("coverage").$type<BrainCoverageMap>().notNull().default({} as BrainCoverageMap),
+    /** LLM executive summary (validated, both languages); null when the run is deterministic. */
+    executiveSummary: jsonb("executive_summary").$type<BrainNarrative | null>(),
+    summarySource: text("summary_source").$type<"LLM" | "DETERMINISTIC">().notNull().default("DETERMINISTIC"),
+    /** Validated LLM narratives per specialist. */
+    narratives: jsonb("narratives").$type<Partial<Record<BrainSpecialistKey, BrainNarrative>>>().notNull().default({}),
+    estimationPower: jsonb("estimation_power").$type<EstimationPower | null>(),
+    llmUsage: jsonb("llm_usage").$type<LlmRunUsage | null>(),
+    rankedCount: integer("ranked_count").notNull().default(0),
+    unestimatedCount: integer("unestimated_count").notNull().default(0),
+    error: text("error"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("brain_runs_org_created_idx").on(t.organizationId, t.createdAt),
+    check("brain_runs_status_ck", sql`${t.status} IN ('QUEUED', 'RUNNING', 'DONE', 'FAILED')`),
+    check("brain_runs_trigger_ck", sql`${t.trigger} IN ('SCHEDULED', 'MANUAL', 'AGENT')`),
+    check("brain_runs_summary_source_ck", sql`${t.summarySource} IN ('LLM', 'DETERMINISTIC')`),
+  ],
+);
+
+/** A finding of a Brain run: estimable ones ranked by expected impact, the others kept apart (never ranked as zero). */
+export const brainFindings = pgTable(
+  "brain_findings",
+  {
+    id: id(),
+    organizationId: orgId(),
+    runId: uuid("run_id")
+      .notNull()
+      .references(() => brainRuns.id, { onDelete: "cascade" }),
+    specialist: text("specialist").$type<BrainSpecialistKey>().notNull(),
+    /** 1-based rank within its list (estimable or not). */
+    rank: integer("rank").notNull(),
+    estimable: boolean("estimable").notNull(),
+    severity: text("severity").$type<"CRITICAL" | "HIGH" | "MEDIUM" | "LOW">().notNull().default("MEDIUM"),
+    /** Dedupe key across specialists and runs (new critical findings are notified once). */
+    findingKey: text("finding_key").notNull(),
+    /** English templates with {vars}, translated at render. */
+    title: text("title").notNull(),
+    summary: text("summary").notNull(),
+    vars: jsonb("vars").$type<Record<string, string | number>>().notNull().default({}),
+    effort: integer("effort").notNull().default(3),
+    evidence: jsonb("evidence").$type<BrainEvidence[]>().notNull().default([]),
+    /** src/core/estimate ImpactEstimate (null when the action has no measurable target). */
+    estimate: jsonb("estimate").$type<ImpactEstimate | null>(),
+    target: jsonb("target").$type<ImpactTarget | null>(),
+    action: jsonb("action").$type<BrainFindingAction>().notNull(),
+    alsoFrom: jsonb("also_from").$type<BrainSpecialistKey[]>().notNull().default([]),
+    opportunityId: uuid("opportunity_id").references(() => opportunities.id, { onDelete: "set null" }),
+    productId: uuid("product_id").references(() => products.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("brain_findings_run_idx").on(t.runId, t.estimable, t.rank),
+    index("brain_findings_org_key_idx").on(t.organizationId, t.findingKey),
+    check("brain_findings_severity_ck", sql`${t.severity} IN ('CRITICAL', 'HIGH', 'MEDIUM', 'LOW')`),
+  ],
+);
+
 export const TENANT_TABLES = [
   "memberships",
   "api_keys",
@@ -2286,4 +2372,6 @@ export const TENANT_TABLES = [
   "autopilot_learning",
   "competitor_watches",
   "competitor_watch_snapshots",
+  "brain_runs",
+  "brain_findings",
 ] as const;

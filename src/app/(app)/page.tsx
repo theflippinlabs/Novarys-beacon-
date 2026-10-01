@@ -2,6 +2,7 @@ import Link from "next/link";
 import { EmptyState, HiddenBack, PageHeader, Panel, Stat, formatValue } from "@/components/ui";
 import { LineChart } from "@/components/charts/line-chart";
 import { LatestBriefing } from "@/components/briefing/latest-briefing";
+import { LatestBrain } from "@/components/brain/latest-brain";
 import { RangePicker } from "@/components/shell/product-tabs";
 import { prioritizeAttention, type AttentionItem } from "@/core/command/attention";
 import { BEACON_CHANNELS } from "@/services/metrics";
@@ -36,6 +37,7 @@ export default async function CommandCenter({ searchParams }: { searchParams: Pr
       <PageHeader eyebrow={t("01 / Overview · {date}", { date: today })} title={t("What needs my attention today?")} description={t("{org} ecosystem: {n} product(s). Everything below is measured; unconnected sources are shown as such, never estimated.", { org: ctx.org.branding.displayName ?? ctx.org.name, n: n(c.products) })} actions={<RangePicker base="/" days={days} />} />
 
       {n(c.products) > 0 && <LatestBriefing />}
+      {n(c.products) > 0 && <LatestBrain />}
 
       {n(c.products) === 0 ? (
         <EmptyState

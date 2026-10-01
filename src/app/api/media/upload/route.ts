@@ -2,7 +2,7 @@ import { withOrg } from "@/db";
 import { getAuthContext } from "@/lib/auth/session";
 import { can } from "@/lib/auth/rbac";
 import { err, ipHashOf, json, limited, sameOrigin } from "@/lib/http";
-import { insertImage, MAX_UPLOAD_BYTES, mediaUrl, prepareImage } from "@/services/media";
+import { insertImage, MAX_UPLOAD_BYTES, mediaUrl, prepareImage, stageImages } from "@/services/media";
 
 export const dynamic = "force-dynamic";
 
@@ -29,9 +29,9 @@ export async function POST(req: Request) {
   try {
     const actor = { organizationId: ctx.org.id, userId: ctx.user.id, actorType: "USER" as const, ipHash: ipHashOf(req) };
     const data = Buffer.from(await file.arrayBuffer());
-    // Re-encode before opening the transaction (no connection held during sharp work); insertImage checks the product.
+    // Re-encode (and upload to object storage when configured) before opening the transaction; insertImage checks the product.
     const img = await prepareImage({ data, filename: file.name || "image", productId, visibility: "PUBLIC" });
-    const out = await withOrg(ctx.org.id, (tx) => insertImage(tx, actor, img));
+    const out = await stageImages(ctx.org.id, [img], ([staged]) => withOrg(ctx.org.id, (tx) => insertImage(tx, actor, staged)));
     return json({ id: out.id, url: mediaUrl(out.id, true), width: out.width, height: out.height });
   } catch (e) {
     return err(400, (e as Error).message);

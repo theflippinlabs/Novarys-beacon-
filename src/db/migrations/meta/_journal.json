@@ -141,6 +141,34 @@
       "when": 1790881675485,
       "tag": "0019_schema_snapshot_sync",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1790885275485,
+      "tag": "0020_media_object_storage",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1790888875485,
+      "tag": "0021_opportunity_impact_estimate",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1790892475485,
+      "tag": "0022_beacon_brain",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1790886655272,
+      "tag": "0023_schema_snapshot_sync",
+      "breakpoints": true
     }
   ]
 }

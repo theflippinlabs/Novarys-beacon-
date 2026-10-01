@@ -11,6 +11,7 @@ import type { AuthContext } from "@/lib/auth/service";
 import { can } from "@/lib/auth/rbac";
 import { log } from "@/lib/logger";
 import { loadMedia } from "@/services/media";
+import { readMediaBytes } from "@/services/media-storage";
 import { agentBudget, recordAgentUsage } from "@/services/agent-usage";
 import { weightedTokens } from "./budget";
 import { confirmationId, isNeedsConfirmation, needsConfirmation, type NeedsConfirmation } from "./confirm";
@@ -58,9 +59,11 @@ async function hydrate(ctx: AuthContext, messages: StoredMessage[]): Promise<Msg
         const loaded = await withOrg(ctx.org.id, (tx) => loadMedia(tx, ctx.org.id, b.source.media_id));
         // Private photos belong to their uploader: another member's id never reaches the model.
         const row = loaded && (loaded.visibility !== "PRIVATE" || loaded.createdBy === ctx.user.id) ? loaded : null;
+        // Object storage is read after the transaction has closed; an unreadable photo is reported as unavailable.
+        const bytes = row ? await readMediaBytes(row).catch(() => null) : null;
         content.push(
-          row
-            ? { type: "image", source: { type: "base64", media_type: row.mime as "image/webp", data: Buffer.from(row.bytes).toString("base64") } }
+          row && bytes
+            ? { type: "image", source: { type: "base64", media_type: row.mime as "image/webp", data: bytes.toString("base64") } }
             : { type: "text", text: "[photo no longer available]" },
         );
       } else content.push(b as Block);

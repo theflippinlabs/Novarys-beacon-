@@ -6,6 +6,7 @@ import { FilterBar, SelectFilter } from "@/components/shell/filters";
 import { opportunities, products } from "@/db/schema";
 import { OPPORTUNITY_CATEGORIES, OPPORTUNITY_TYPES } from "@/core/opportunities/engine";
 import { pageData, sp1, type SP } from "@/lib/page";
+import { ImpactSummary } from "@/components/estimate/estimate-view";
 import { enumLabel } from "@/i18n/core";
 import { getI18n, getT } from "@/i18n/server";
 import type { Metadata } from "next";
@@ -112,6 +113,7 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
                   <div className="num text-[10px] text-muted">
                     {t("IMPACT {impact} · CONF {confidence} · EFFORT {effort} · URG {urgency}", { impact: o.impact, confidence: o.confidence, effort: o.effort, urgency: o.urgency })}
                   </div>
+                  <ImpactSummary impact={o.impactEstimate} />
                   {can("growth:write") && o.status === "OPEN" && (
                     <form action={setOpportunityStatusAction} className="flex gap-2">
                       <HiddenBack path={back} />

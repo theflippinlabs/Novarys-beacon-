@@ -131,6 +131,8 @@ beforeAll(async () => {
   // A realistic graph first (products, sources, facets, pricing, FAQs, proofs, changelog, competitors).
   await seedCompleteProduct(B.org.id, { name: "Isolated Product" });
   await seedCompleteProduct(B.org.id, { name: "Second Isolated Product" });
+  // media needs exactly one of bytes / storage_key (both nullable), which the generic filler below never sets.
+  await asSystem((tx) => tx.execute(sql`insert into media (organization_id, filename, mime, width, height, size_bytes, bytes) values (${B.org.id}, ${"iso.webp"}, ${"image/webp"}, 1, 1, 1, ${Buffer.from([0])})`));
   const { cols, fks, enumFirst } = await catalog();
   // Fill every other tenant table, in passes, so rows that reference other tenant rows find them.
   let pending = (TENANT_TABLES as readonly string[]).slice();

@@ -9,8 +9,10 @@ export type ScoreInput = {
   authority: {
     verifiedProofs: number;
     sources: number;
-    /** null = no backlink data source connected (not measurable). */
+    /** null = no backlink measurement (Bing not connected, or connected without link data yet): not measurable. */
     referringDomains: number | null;
+    /** Where and when `referringDomains` was measured (shown in the line's explanation). */
+    backlinks?: { source: string; asOf: string; inboundLinks: number | null } | null;
     /** AI visibility, scoped to this product's own prompts. */
     ai: { providerConfigured: boolean; tests90d: number; testsMentioning90d: number };
   };
@@ -79,6 +81,26 @@ function component(key: string, label: string, lines: ScoreLine[]): ScoreCompone
 }
 
 /**
+ * Referring domains (max 4): 2 x log10(1 + domains), capped. Measured only
+ * from stored backlink data (Bing Webmaster Tools). Bing connected without
+ * link data yet is reported as such, never as 0 domains.
+ */
+function referringDomainsLine(i: ScoreInput): ScoreLine {
+  const n = i.authority.referringDomains;
+  if (n === null)
+    return i.measurement.bingWebmaster
+      ? unmeasured("Referring domains", 4, "Not measured yet: Bing Webmaster Tools has returned no link data for this site.")
+      : unmeasured("Referring domains", 4, "Not measured: connect Bing Webmaster Tools (backlink data).", "Connect Bing Webmaster Tools for backlink data.");
+  const b = i.authority.backlinks;
+  const reason = !b
+    ? `${n} referring domains observed.`
+    : b.inboundLinks === null
+      ? `${b.source}: ${n} referring domains as of ${b.asOf} (sampled from the most-linked pages).`
+      : `${b.source}: ${n} referring domains as of ${b.asOf} (sampled from the most-linked pages), ${b.inboundLinks} inbound links.`;
+  return line("Referring domains", Math.min(4, Math.log10(1 + n) * 2), 4, reason, "Earn links through directories, partners and useful content.", 3);
+}
+
+/**
  * Beacon Score v2: a transparent 0 to 100 operational readiness score. Every
  * point gained or lost is attributed to a concrete, inspectable reason. Lines
  * that cannot be measured (provider not connected) or do not apply are
@@ -133,9 +155,7 @@ export function computeBeaconScore(i: ScoreInput): BeaconScore {
   const authority = [
     line("Verified proof", Math.min(5, i.authority.verifiedProofs * 2.5), 5, `${i.authority.verifiedProofs} verified, publishable proof item(s) (case studies, testimonials, metrics).`, "Add verified case studies or testimonials with publication permission.", 3),
     line("Canonical sources", Math.min(3, i.authority.sources), 3, `${i.authority.sources} canonical source URL(s).`, "Link documentation, pricing and website sources.", 1),
-    i.authority.referringDomains === null
-      ? unmeasured("Referring domains", 4, "Not measured: connect Bing Webmaster Tools (backlink data).", "Connect Bing Webmaster Tools for backlink data.")
-      : line("Referring domains", Math.min(4, Math.log10(1 + i.authority.referringDomains) * 2), 4, `${i.authority.referringDomains} referring domains observed.`, "Earn links through directories, partners and useful content.", 3),
+    referringDomainsLine(i),
     !ai.providerConfigured
       ? unmeasured("AI mention rate", 3, "Not measured: connect an AI provider (Settings, Integrations) to sample AI answers.", "Connect an AI provider and track this product's prompts.")
       : ai.tests90d

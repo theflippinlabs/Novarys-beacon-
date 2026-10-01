@@ -16,6 +16,7 @@ export const NOTIFICATION_KINDS = [
   "CONVERSION_ANOMALY",
   "HIGH_PRIORITY_OPPORTUNITY",
   "COMPETITOR_PAGE_CHANGED",
+  "BRAIN_CRITICAL",
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 export const NOTIFICATION_CHANNELS = ["IN_APP", "EMAIL", "WEBHOOK"] as const;
@@ -33,6 +34,7 @@ export const KIND_LABELS: Record<NotificationKind, string> = {
   CONVERSION_ANOMALY: "Conversion anomaly",
   HIGH_PRIORITY_OPPORTUNITY: "High-priority opportunity",
   COMPETITOR_PAGE_CHANGED: "Competitor page changed",
+  BRAIN_CRITICAL: "Critical Brain finding",
 };
 
 /** Digest titles per kind (`{n}` = number of signals in the digest). */
@@ -46,6 +48,7 @@ export const KIND_TITLES: Record<NotificationKind, string> = {
   CONVERSION_ANOMALY: "Conversion anomalies: {n}",
   HIGH_PRIORITY_OPPORTUNITY: "New high-priority opportunities: {n}",
   COMPETITOR_PAGE_CHANGED: "Competitor pages changed, to review: {n}",
+  BRAIN_CRITICAL: "New critical Brain findings: {n}",
 };
 
 /** Item templates (English keys, rendered through t()). */
@@ -77,6 +80,7 @@ export const KIND_LINKS: Record<NotificationKind, string> = {
   CONVERSION_ANOMALY: "/conversions",
   HIGH_PRIORITY_OPPORTUNITY: "/opportunities?potential=HIGH",
   COMPETITOR_PAGE_CHANGED: "/ai-visibility#watched-pages",
+  BRAIN_CRITICAL: "/brain",
 };
 
 export type Thresholds = {

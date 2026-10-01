@@ -1,6 +1,6 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { asSystem, withOrg, type Tx } from "@/db";
-import { aiVisibilityPrompts, integrations, organizations } from "@/db/schema";
+import { aiVisibilityPrompts, integrations, organizations, products } from "@/db/schema";
 import { availableProviders, resolveProvider } from "@/ai/registry";
 import { generateQueued } from "@/services/content";
 import type { ContentStatus } from "@/core/content/workflow";
@@ -18,6 +18,7 @@ import { safeFetch } from "@/lib/security/ssrf";
 import { dueMeasurements, generateGrowthReport, identifyRecommendations, measureRecommendation } from "@/services/autopilot";
 import { analyzeProduct } from "@/services/onboarding";
 import { purgeTrackingIpHashes } from "@/services/tracking";
+import { sweepOrphanMediaObjects } from "@/services/media-storage";
 import { purgeRateLimitBuckets } from "@/lib/security/rate-limit";
 import { purgeExpiredSessions, purgeLoginThrottle } from "@/lib/auth/service";
 import { isoDay } from "@/core/util/text";
@@ -25,6 +26,7 @@ import { generateBriefing } from "@/services/briefings";
 import { generateWeeklyReport } from "@/services/reports";
 import { evaluateNotifications, type Delivery } from "@/services/notifications";
 import { orgsWithActiveWatches, runCompetitorWatch } from "@/services/competitor-watch";
+import { runBrain } from "@/brain/orchestrator";
 import { deliverEmail, deliverWebhook, PermanentDeliveryError } from "@/services/notification-delivery";
 import { emailConfig } from "@/integrations/email";
 import { enqueue, NonRetryableError, purgeFinishedJobs, type Job, type JobContext, type JobType } from "./queue";
@@ -194,6 +196,14 @@ export const HANDLERS: Record<JobType, Handler> = {
     await enqueueDeliveries(orgId, res.deliveries);
     return { checked: res.checked, ok: res.ok, baselines: res.baselines, changed: res.changed, blocked: res.blocked, failed: res.failed, skipped: res.skipped, deliveries: res.deliveries.length };
   },
+  "brain.run": async (job, ctx) => {
+    // Beacon Brain: specialists read in short transactions; the optional LLM phase runs with no transaction open.
+    const orgId = orgOf(job);
+    const trigger = job.payload.trigger === "MANUAL" || job.payload.trigger === "AGENT" ? job.payload.trigger : "SCHEDULED";
+    const res = await runBrain(orgId, { runId: typeof job.payload.runId === "string" ? job.payload.runId : null, trigger, emailConfigured: emailConfig().configured, heartbeat: ctx.heartbeat });
+    await enqueueDeliveries(orgId, res.deliveries);
+    return { runId: res.runId, ranked: res.ranked, unestimated: res.unestimated, newCritical: res.newCritical, summarySource: res.summarySource, llmCalls: res.llm.calls, llmRejected: res.llm.rejected.length, deliveries: res.deliveries.length };
+  },
   "maintenance.cleanup": async () => {
     await purgeRateLimitBuckets();
     await purgeExpiredSessions();
@@ -203,7 +213,9 @@ export const HANDLERS: Record<JobType, Handler> = {
     const jobsPurged = await purgeFinishedJobs(30);
     // Privacy: keyed IP hashes on tracking touches are cleared after 90 days.
     const ipHashesCleared = await purgeTrackingIpHashes();
-    return { ok: true, jobsPurged, ipHashesCleared };
+    // Media object storage: remove objects no media row references (failed best-effort deletes, aborted uploads).
+    const mediaSweep = await sweepOrphanMediaObjects().catch((e: Error) => ({ configured: true, error: e.message }));
+    return { ok: true, jobsPurged, ipHashesCleared, mediaSweep };
   },
 };
 
@@ -237,6 +249,9 @@ export async function scheduleRecurring(now = new Date()) {
     await enqueue("sources.check", {}, { organizationId: o.id, idempotencyKey: `sources:${o.id}:${week}` });
     // Weekly competitor page watch (only pages not checked for 6 days are fetched).
     if (watching.has(o.id)) await enqueue("competitor_watch.check", {}, { organizationId: o.id, idempotencyKey: `cwatch:${o.id}:${week}` });
+    // Weekly Beacon Brain run for organisations with at least one product.
+    if (await asSystem((tx) => tx.query.products.findFirst({ where: eq(products.organizationId, o.id), columns: { id: true } })))
+      await enqueue("brain.run", {}, { organizationId: o.id, idempotencyKey: `brain:${o.id}:${week}` });
     // Weekly technical audit of every product whose own domain is verified.
     for (const productId of await asSystem((tx) => productsWithVerifiedDomain(tx, o.id)))
       await enqueue("seo.audit", { productId, scheduled: true }, { organizationId: o.id, idempotencyKey: `audit-weekly:${productId}:${week}` });

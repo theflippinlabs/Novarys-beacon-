@@ -1,11 +1,14 @@
 import "server-only";
+import { randomUUID } from "node:crypto";
 import sharp, { type Metadata } from "sharp";
 import { and, desc, eq, inArray, isNull, type SQL } from "drizzle-orm";
 import type { Tx } from "@/db";
 import { contentAssets, media, organizations, products } from "@/db/schema";
 import { audit, type Actor } from "@/lib/audit";
 import { env } from "@/lib/env";
-import { buildMediaUrl, isUuid, sniffImage } from "@/core/media/image";
+import { log } from "@/lib/logger";
+import { buildMediaUrl, isUuid, mediaStorageKey, sniffImage } from "@/core/media/image";
+import { discardMediaObjects, mediaStorage, uploadMediaObject } from "@/services/media-storage";
 
 /** Largest accepted upload (before re-encoding). */
 export const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
@@ -24,6 +27,7 @@ export const MEDIA_ERRORS = {
   tooManyPixels: "The image dimensions are too large.",
   notFound: "Image not found.",
   notPublic: "Only public images can be used as a logo.",
+  storageUnavailable: "The image could not be stored right now. Try again in a moment.",
 } as const;
 
 export type MediaInput = {
@@ -88,6 +92,10 @@ async function assertContentAsset(tx: Tx, organizationId: string, assetId: strin
 
 /** A validated, re-encoded image ready to be stored (no database work done yet). */
 export type PreparedImage = {
+  /** Generated up front so the object storage key is known before the row exists. */
+  id: string;
+  /** Set by `stageImages` once the bytes are in object storage; null keeps them in PostgreSQL. */
+  storageKey: string | null;
   bytes: Buffer;
   width: number;
   height: number;
@@ -107,6 +115,8 @@ export async function prepareImage(input: MediaInput): Promise<PreparedImage> {
   const img = await reencode(input.data);
   return {
     ...img,
+    id: randomUUID(),
+    storageKey: null,
     filename: storedFilename(input.filename),
     alt: input.alt?.trim().slice(0, 300) || null,
     productId: input.productId || null,
@@ -115,13 +125,44 @@ export async function prepareImage(input: MediaInput): Promise<PreparedImage> {
   };
 }
 
-/** Step 2 of an upload, inside the tenant transaction: checks ownership of the targets, stores and audits. */
+/**
+ * Step 2 of an upload, with no transaction open: when object storage is
+ * configured, uploads each image under `media/{organizationId}/{id}.webp`,
+ * then runs `persist` (which opens the tenant transaction and calls
+ * `insertImage`). If `persist` fails, the uploaded objects are deleted (best
+ * effort, logged; the daily sweep removes any leftover). Without object
+ * storage, `persist` receives the images unchanged and the bytes go to
+ * PostgreSQL as before.
+ */
+export async function stageImages<T>(organizationId: string, images: PreparedImage[], persist: (staged: PreparedImage[]) => Promise<T>): Promise<T> {
+  const storage = mediaStorage();
+  if (!storage) return persist(images);
+  const staged: PreparedImage[] = [];
+  try {
+    for (const img of images) staged.push({ ...img, storageKey: await uploadMediaObject(storage, organizationId, img.id, img.bytes) });
+  } catch (e) {
+    log.warn("media.storage.upload_failed", { organizationId, err: (e as Error).message });
+    await discardMediaObjects(staged.map((s) => s.storageKey), "upload_failed");
+    throw new Error(MEDIA_ERRORS.storageUnavailable);
+  }
+  try {
+    return await persist(staged);
+  } catch (e) {
+    await discardMediaObjects(staged.map((s) => s.storageKey), "insert_failed");
+    throw e;
+  }
+}
+
+/** Step 3 of an upload, inside the tenant transaction: checks ownership of the targets, stores and audits. */
 export async function insertImage(tx: Tx, actor: Actor, img: PreparedImage): Promise<{ id: string; url: string; width: number; height: number; sizeBytes: number }> {
   if (img.productId) await assertProduct(tx, actor.organizationId, img.productId);
   if (img.contentAssetId) await assertContentAsset(tx, actor.organizationId, img.contentAssetId);
+  // A storage key is only ever this organisation's key for this id (never a key supplied from elsewhere).
+  if (img.storageKey && img.storageKey !== mediaStorageKey(actor.organizationId, img.id)) throw new Error("Invalid media storage key");
   const [row] = await tx
     .insert(media)
     .values({
+      id: img.id,
       organizationId: actor.organizationId,
       productId: img.productId,
       contentAssetId: img.contentAssetId,
@@ -132,7 +173,8 @@ export async function insertImage(tx: Tx, actor: Actor, img: PreparedImage): Pro
       height: img.height,
       sizeBytes: img.bytes.length,
       alt: img.alt,
-      bytes: img.bytes,
+      bytes: img.storageKey ? null : img.bytes,
+      storageKey: img.storageKey,
       createdBy: actor.actorType === "USER" || !actor.actorType ? (actor.userId ?? null) : null,
     })
     .returning({ id: media.id });
@@ -140,7 +182,7 @@ export async function insertImage(tx: Tx, actor: Actor, img: PreparedImage): Pro
   return { id: row.id, url: mediaUrl(row.id), width: img.width, height: img.height, sizeBytes: img.bytes.length };
 }
 
-/** One media row including its bytes, or null (also for malformed ids). */
+/** One media row including its bytes (null when they live in object storage: see `readMediaBytes`), or null (also for malformed ids). */
 export async function loadMedia(tx: Tx, organizationId: string, id: string) {
   if (!isUuid(id)) return null;
   return (await tx.query.media.findFirst({ where: and(eq(media.id, id), eq(media.organizationId, organizationId)) })) ?? null;
@@ -168,7 +210,7 @@ export async function listMedia(tx: Tx, organizationId: string, filter: { produc
 }
 
 async function requireMedia(tx: Tx, organizationId: string, id: string) {
-  const row = isUuid(id) ? await tx.select({ id: media.id, visibility: media.visibility, productId: media.productId }).from(media).where(and(eq(media.id, id), eq(media.organizationId, organizationId))).limit(1) : [];
+  const row = isUuid(id) ? await tx.select({ id: media.id, visibility: media.visibility, productId: media.productId, storageKey: media.storageKey }).from(media).where(and(eq(media.id, id), eq(media.organizationId, organizationId))).limit(1) : [];
   if (!row[0]) throw new Error(MEDIA_ERRORS.notFound);
   return row[0];
 }
@@ -197,8 +239,13 @@ export async function setOrgLogo(tx: Tx, actor: Actor, mediaId: string) {
   return { logoUrl };
 }
 
-/** Deletes an image and clears any product or organisation logo that points at it. */
-export async function deleteMedia(tx: Tx, actor: Actor, id: string) {
+/**
+ * Deletes an image and clears any product or organisation logo that points at
+ * it. Returns the object storage key (null for bytes kept in PostgreSQL): the
+ * caller removes the object with `discardMediaObjects` AFTER the transaction
+ * commits (never inside it).
+ */
+export async function deleteMedia(tx: Tx, actor: Actor, id: string): Promise<{ storageKey: string | null }> {
   const m = await requireMedia(tx, actor.organizationId, id);
   const urls = [mediaUrl(m.id), mediaUrl(m.id, true)];
   await tx
@@ -213,4 +260,5 @@ export async function deleteMedia(tx: Tx, actor: Actor, id: string) {
   }
   await tx.delete(media).where(and(eq(media.id, m.id), eq(media.organizationId, actor.organizationId)));
   await audit(tx, actor, "media.delete", "media", m.id, {});
+  return { storageKey: m.storageKey };
 }

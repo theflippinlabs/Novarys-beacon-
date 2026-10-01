@@ -9,6 +9,7 @@ import { getAiVisibility, getAutopilot, getConversionsSummary, getRevenueSummary
 import { createProductTool, getProduct, listProductPhotos, listProducts, recomputeBeaconScore, setProductLogoTool, updateProductTool } from "./products";
 import { getWorkspaceOverview } from "./overview";
 import { listCompetitorChanges } from "./competitors";
+import { askSpecialist, getBrainReport, runBrainTool } from "./brain";
 
 /**
  * Every tool the agent may call. Order is stable (it is part of the cached prompt prefix):
@@ -35,6 +36,8 @@ export const AGENT_TOOLS: AgentTool[] = [
   getRevenueSummary,
   getAutopilot,
   listCompetitorChanges,
+  getBrainReport,
+  askSpecialist,
   // Write: products & knowledge graph (facts are always saved UNVERIFIED)
   createProductTool,
   updateProductTool,
@@ -61,6 +64,8 @@ export const AGENT_TOOLS: AgentTool[] = [
   addDistributionTargetTool,
   setDistributionTargetStatus,
   queueAiVisibilityTests,
+  // Write: Beacon Brain (analysis only; queues a background run)
+  runBrainTool,
 ];
 
 /** The tools a member with `role` may use (RBAC permission per tool). */
