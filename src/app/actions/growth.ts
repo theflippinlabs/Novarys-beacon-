@@ -18,16 +18,16 @@ import {
 import { act, zCheckbox, zId, zList, zOptText, zOptUrl } from "@/lib/actions";
 import { audit } from "@/lib/audit";
 import { enqueue } from "@/jobs/queue";
-import { createAsset } from "@/services/content";
-import { REQUIRES_APPROVAL } from "@/core/distribution/catalog";
+import { createAssetFromOpportunity } from "@/services/content";
+import { addDistributionTarget, setDistributionStatus } from "@/services/distribution";
+import { setOpportunityStatus } from "@/services/opportunities";
 import { randomToken, hmac } from "@/lib/security/crypto";
 import { safeReferralDestination } from "@/services/tracking";
 
 // ── Opportunities ───────────────────────────────────────────────────────
 export async function setOpportunityStatusAction(fd: FormData) {
   return act(fd, "growth:write", z.object({ id: zId, status: z.enum(["OPEN", "ACCEPTED", "IN_PROGRESS", "DONE", "DISMISSED"]) }), async ({ tx, actor }, i) => {
-    await tx.update(opportunities).set({ status: i.status }).where(and(eq(opportunities.id, i.id), eq(opportunities.organizationId, actor.organizationId)));
-    await audit(tx, actor, "opportunity.status", "opportunity", i.id, { status: i.status });
+    await setOpportunityStatus(tx, actor, i.id, i.status);
     return { ok: `Opportunity ${i.status.toLowerCase().replace("_", " ")}.` };
   });
 }
@@ -46,11 +46,8 @@ export async function toggleOpportunityActionStep(fd: FormData) {
 
 export async function opportunityToContentAction(fd: FormData) {
   return act(fd, "content:write", z.object({ id: zId, type: z.enum(["LANDING_PAGE", "ARTICLE", "FAQ", "TUTORIAL", "COMPARISON"]) }), async ({ tx, actor }, i) => {
-    const o = await tx.query.opportunities.findFirst({ where: and(eq(opportunities.id, i.id), eq(opportunities.organizationId, actor.organizationId)) });
-    if (!o?.productId) throw new Error("Opportunity has no product");
-    const asset = await createAsset(tx, actor, { productId: o.productId, type: i.type, targetQueryId: o.queryId, brief: `${o.title}\n${o.problem}` });
+    const asset = await createAssetFromOpportunity(tx, actor, i.id, i.type);
     await enqueue("content.generate", { assetId: asset.id, userId: actor.userId }, { organizationId: actor.organizationId, idempotencyKey: `gen:${asset.id}:1` });
-    await tx.update(opportunities).set({ status: "IN_PROGRESS" }).where(eq(opportunities.id, o.id));
     return { redirect: `/content/${asset.id}`, ok: "Draft generation queued from opportunity." };
   });
 }
@@ -90,7 +87,7 @@ const DSTATUS = z.enum(["DISCOVERED", "QUALIFIED", "PREPARED", "SUBMITTED", "PUB
 
 export async function addDistributionTargetAction(fd: FormData) {
   return act(fd, "distribution:write", z.object({ name: z.string().trim().min(2).max(120), kind: KINDS, url: zOptUrl, productId: z.union([zId, z.literal("")]).optional(), relevance: z.coerce.number().int().min(1).max(5).optional(), notes: zOptText(1000) }), async ({ tx, actor }, i) => {
-    await tx.insert(distributionTargets).values({ organizationId: actor.organizationId, name: i.name, kind: i.kind, url: i.url, productId: i.productId || null, relevance: i.relevance, notes: i.notes });
+    await addDistributionTarget(tx, actor, { name: i.name, kind: i.kind, url: i.url, productId: i.productId || null, relevance: i.relevance, notes: i.notes });
     return { ok: "Target added." };
   });
 }
@@ -102,14 +99,7 @@ export async function addDistributionTargetAction(fd: FormData) {
  */
 export async function setDistributionStatusAction(fd: FormData) {
   return act(fd, "distribution:write", z.object({ id: zId, status: DSTATUS, publishedUrl: zOptUrl, followUpOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).or(z.literal("")).optional() }), async ({ tx, actor }, i) => {
-    const t = await tx.query.distributionTargets.findFirst({ where: and(eq(distributionTargets.id, i.id), eq(distributionTargets.organizationId, actor.organizationId)) });
-    if (!t) throw new Error("Not found");
-    if (REQUIRES_APPROVAL.has(i.status) && !t.submissionApprovedAt) throw new Error("An approver must approve this external submission first.");
-    await tx
-      .update(distributionTargets)
-      .set({ status: i.status, ...(i.status === "SUBMITTED" ? { submittedAt: new Date() } : {}), ...(i.publishedUrl ? { publishedUrl: i.publishedUrl } : {}), ...(i.followUpOn ? { followUpOn: i.followUpOn } : {}) })
-      .where(eq(distributionTargets.id, t.id));
-    await audit(tx, actor, "distribution.status", "distribution_target", t.id, { from: t.status, to: i.status });
+    await setDistributionStatus(tx, actor, i.id, i.status, { publishedUrl: i.publishedUrl, followUpOn: i.followUpOn });
     return { ok: `Moved to ${i.status.replace("_", " ").toLowerCase()}.` };
   });
 }

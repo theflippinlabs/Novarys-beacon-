@@ -1,4 +1,5 @@
 import { escapeHtml } from "@/core/util/text";
+import { mediaIdFromUrl } from "@/core/media/image";
 
 /**
  * Minimal, safe Markdown → HTML renderer for Beacon drafts. Input is
@@ -6,24 +7,38 @@ import { escapeHtml } from "@/core/util/text";
  * (headings, lists, blockquotes, tables, bold/italic, links, autolinks).
  * Link targets are restricted to http(s) and site-relative paths, so user or
  * model content can never inject script, event handlers or javascript: URLs.
+ * Images (`![alt](src)`) render only when `src` is this site's own uploaded
+ * media (`/api/media/<uuid>`, relative or on one of `imageOrigins`); any other
+ * image degrades to a plain link, so drafts never hot-link remote images.
  */
+export type MarkdownOptions = { imageOrigins?: readonly string[] };
+
 const safeHref = (raw: string) => {
   const h = raw.replace(/&amp;/g, "&");
   return /^(https?:\/\/|\/(?!\/))/i.test(h) ? escapeHtml(h) : "#";
 };
 
-function inline(s: string): string {
+function inlineWith(s: string, opts: MarkdownOptions): string {
+  const imgs: string[] = [];
   return s
+    .replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (_, alt: string, h: string) => {
+      const src = h.replace(/&amp;/g, "&");
+      if (!mediaIdFromUrl(src, opts.imageOrigins)) return `<a href="${safeHref(h)}" rel="noopener noreferrer">${alt || "image"}</a>`;
+      imgs.push(`<img src="${escapeHtml(src)}" alt="${alt}" loading="lazy" decoding="async">`);
+      return `\u0000${imgs.length - 1}\u0000`;
+    })
     .replace(/\{cta:([A-Z_]+)\}/g, '<span class="cta-tag">$1</span>')
     .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, t, h) => `<a href="${safeHref(h)}" rel="noopener noreferrer">${t}</a>`)
     .replace(/&lt;(https?:\/\/[^\s&]+)&gt;/g, (_, h) => `<a href="${safeHref(h)}" rel="noopener noreferrer">${h}</a>`)
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/(^|[\s(])_([^_]+)_(?=$|[\s.,;:!?)])/g, "$1<em>$2</em>")
-    .replace(/`([^`]+)`/g, "<code>$1</code>");
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\u0000(\d+)\u0000/g, (_, i: string) => imgs[Number(i)] ?? "");
 }
 
-export function renderMarkdown(md: string): string {
-  const lines = escapeHtml(md).split(/\r?\n/);
+export function renderMarkdown(md: string, opts: MarkdownOptions = {}): string {
+  const inline = (s: string) => inlineWith(s, opts);
+  const lines = escapeHtml(md.replace(/\u0000/g, "")).split(/\r?\n/);
   const out: string[] = [];
   let i = 0;
   while (i < lines.length) {

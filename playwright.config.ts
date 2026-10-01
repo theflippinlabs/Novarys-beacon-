@@ -32,6 +32,8 @@ export default defineConfig({
       // E2E audits a local fixture site; never enable this outside development/tests.
       BEACON_SSRF_ALLOW_PRIVATE: "true",
       NEXT_TELEMETRY_DISABLED: "1",
+      // The agent journey talks to a fake Claude API served by the fixture site.
+      ANTHROPIC_BASE_URL: `http://127.0.0.1:${process.env.E2E_FIXTURE_PORT ?? 3199}`,
     },
   },
 });

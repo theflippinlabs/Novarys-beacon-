@@ -18,7 +18,10 @@ import { fr as autopilot } from "./autopilot";
 import { fr as settings } from "./settings";
 import { fr as publicPages } from "./public";
 import { fr as messages } from "./messages";
+import { fr as media } from "./media";
+import { fr as agent } from "./agent";
+import { fr as agentui } from "./agentui";
 
-export const FR_AREAS = { common, shell, overview, products, knowledge, onboarding, discovery, queries, content, distribution, visibility, opportunities, conversions, referrals, revenue, autopilot, settings, publicPages, messages } as const;
+export const FR_AREAS = { common, shell, overview, products, knowledge, onboarding, discovery, queries, content, distribution, visibility, opportunities, conversions, referrals, revenue, autopilot, settings, publicPages, messages, media, agent, agentui } as const;
 
 export const FR: Readonly<Record<string, string>> = Object.freeze(Object.assign({}, ...Object.values(FR_AREAS)));

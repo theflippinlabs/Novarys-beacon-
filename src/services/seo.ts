@@ -3,6 +3,8 @@ import type { Tx } from "@/db";
 import { crawledPages, products, seoAudits, seoIssues } from "@/db/schema";
 import { crawlSite, type Fetcher } from "@/core/seo/crawl";
 import { assertSafeUrl } from "@/lib/security/ssrf";
+import { audit, type Actor } from "@/lib/audit";
+import { enqueue } from "@/jobs/queue";
 
 export async function createAudit(tx: Tx, organizationId: string, productId: string, opts: { startUrl?: string; maxPages?: number } = {}) {
   const product = await tx.query.products.findFirst({ where: and(eq(products.id, productId), eq(products.organizationId, organizationId)) });
@@ -81,4 +83,12 @@ export async function openIssueCounts(tx: Tx, auditId: string) {
   const out = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0, INFO: 0 };
   for (const row of r.rows) out[row.severity as keyof typeof out] = Number(row.n);
   return out;
+}
+
+/** Create a technical audit for a product and queue it for the worker (the crawl itself runs in the background). */
+export async function queueAudit(tx: Tx, actor: Actor, productId: string, opts: { startUrl?: string; maxPages?: number } = {}) {
+  const a = await createAudit(tx, actor.organizationId, productId, opts);
+  await enqueue("seo.audit", { auditId: a.id, productId }, { organizationId: actor.organizationId, idempotencyKey: `audit:${a.id}` });
+  await audit(tx, actor, "seo.audit.queue", "seo_audit", a.id, { startUrl: a.startUrl });
+  return a;
 }

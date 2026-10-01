@@ -1,6 +1,6 @@
 import { and, desc, eq } from "drizzle-orm";
 import type { Tx } from "@/db";
-import { contentAssets, contentVersions, pages, queries } from "@/db/schema";
+import { contentAssets, contentVersions, opportunities, pages, queries } from "@/db/schema";
 import { generateContent, factCheckDraft } from "@/ai/tasks";
 import type { LlmProvider } from "@/ai/types";
 import type { ContentType } from "@/core/content/generate";
@@ -196,4 +196,13 @@ export async function publishAsset(tx: Tx, actor: Actor, assetId: string) {
   await setStatus(tx, asset, "PUBLISHED", { publishedAt: new Date() });
   if (asset.productId) await recomputeCoverage(tx, actor.organizationId, asset.productId);
   await audit(tx, actor, "content.publish", "content_asset", assetId, {});
+}
+
+/** Create a content idea from an opportunity (targeting its query, briefed with its problem) and mark the opportunity in progress. */
+export async function createAssetFromOpportunity(tx: Tx, actor: Actor, opportunityId: string, type: ContentType) {
+  const o = await tx.query.opportunities.findFirst({ where: and(eq(opportunities.id, opportunityId), eq(opportunities.organizationId, actor.organizationId)) });
+  if (!o?.productId) throw new Error("Opportunity has no product");
+  const asset = await createAsset(tx, actor, { productId: o.productId, type, targetQueryId: o.queryId, brief: `${o.title}\n${o.problem}` });
+  await tx.update(opportunities).set({ status: "IN_PROGRESS" }).where(eq(opportunities.id, o.id));
+  return asset;
 }

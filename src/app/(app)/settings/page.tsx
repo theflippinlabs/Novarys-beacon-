@@ -9,6 +9,11 @@ import { ROLES } from "@/lib/auth/rbac";
 import { pageData, type SP } from "@/lib/page";
 import { enumLabel } from "@/i18n/core";
 import { getI18n, getT } from "@/i18n/server";
+import { removeOrgLogoAction, uploadOrgLogoAction } from "@/app/actions/media";
+import { ConfirmSubmit } from "@/components/media/media-controls";
+import { PhotoUpload } from "@/components/media/photo-upload";
+import { buildMediaUrl, mediaIdFromUrl } from "@/core/media/image";
+import { env } from "@/lib/env";
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getT();
@@ -25,6 +30,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   );
   const attr = ctx.org.settings.attribution ?? { model: "LAST_TOUCH", lookbackDays: 30, referralPrecedence: true };
   const back = "/settings";
+  const logoId = ctx.org.branding.logoUrl ? mediaIdFromUrl(ctx.org.branding.logoUrl, [env().BEACON_BASE_URL]) : null;
+  const orgLogo = logoId ? buildMediaUrl(logoId) : null;
   return (
     <>
       <PageHeader
@@ -77,6 +84,39 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           </Table>
         </Panel>
       </div>
+      <Panel title={t("Organisation logo")} eyebrow={t("Branding")} className="mt-6">
+        <div className="grid gap-5 sm:grid-cols-[8rem_1fr]">
+          <div className="flex h-32 w-32 items-center justify-center border border-line bg-obsidian p-2">
+            {orgLogo ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={orgLogo} alt={t("Current logo")} className="max-h-full max-w-full object-contain" />
+            ) : (
+              <span className="eyebrow">{t("No logo")}</span>
+            )}
+          </div>
+          <div className="flex min-w-0 flex-col gap-3">
+            <p className="text-sm text-chrome">{t("Shown with your organisation’s branding. Square PNG or WebP with transparency works best.")}</p>
+            {ctx.org.branding.logoUrl && !orgLogo && (
+              <p className="text-xs text-muted">
+                {t("Current logo URL:")} <span className="num break-all">{ctx.org.branding.logoUrl}</span>
+              </p>
+            )}
+            {can("settings:manage") && (
+              <>
+                <PhotoUpload key={ctx.org.branding.logoUrl ?? "none"} action={uploadOrgLogoAction} kind="logo">
+                  <HiddenBack path={back} />
+                </PhotoUpload>
+                {ctx.org.branding.logoUrl && (
+                  <form action={removeOrgLogoAction}>
+                    <HiddenBack path={back} />
+                    <ConfirmSubmit message={t("Remove the organisation logo?")}>{t("Remove logo")}</ConfirmSubmit>
+                  </form>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      </Panel>
       <Panel title={t("{n} member(s)", { n: members.length })} eyebrow={t("Team")} className="mt-6" pad={false}>
         <Table>
           <thead>

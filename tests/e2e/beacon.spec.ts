@@ -256,3 +256,33 @@ test("language toggle switches the interface to French and back", async ({ page 
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
   await expect(nav.getByRole("link", { name: "Overview" })).toBeVisible();
 });
+
+test("agent: connect Claude, ask a question, the agent uses a tool and answers", async ({ page }) => {
+  await login(page);
+  await page.goto("/agent");
+  await expect(page.getByRole("heading", { name: "What should we do today?" })).toBeVisible();
+
+  // Without a key the agent explains how to connect it.
+  await page.getByLabel("Message the agent").fill("What needs my attention?");
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(page.getByText("The agent needs an Anthropic API key")).toBeVisible();
+
+  await page.goto("/settings/integrations");
+  const form = page.locator('form:has(input[name="provider"][value="ANTHROPIC"])');
+  await form.locator('input[name="apiKey"]').fill("sk-ant-test-key");
+  await form.locator('button[type="submit"]').first().click();
+  await expect(page.getByRole("status")).toContainText("Integration saved");
+
+  await page.goto("/agent");
+  await page.getByLabel("Message the agent").fill("What needs my attention?");
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(page.getByText("Reading the overview")).toBeVisible();
+  await expect(page.getByText("Your workspace has")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open products" })).toHaveAttribute("href", "/products");
+  await expect(page).toHaveURL(/\/agent\/[0-9a-f-]{36}$/);
+
+  // The conversation is saved and replays from history.
+  await page.reload();
+  await expect(page.getByText("Your workspace has")).toBeVisible();
+  await expect(page.getByText("What needs my attention?").first()).toBeVisible();
+});

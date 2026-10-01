@@ -10,7 +10,10 @@ import { normalizeDomain, parseCtas, parseNamed, parsePricing, parseSocial, pars
 import { ONBOARDING_STEPS } from "@/services/onboarding";
 import { createProduct, getProductBySlug, replacePricing, syncCompetitors, syncFacets, syncSources, updateProduct } from "@/services/products";
 import { generateApiKey } from "@/services/tracking";
+import { addComparisonFact, addFaq } from "@/services/knowledge";
 import { enqueue } from "@/jobs/queue";
+import { mediaIdFromUrl } from "@/core/media/image";
+import { env } from "@/lib/env";
 import { saveIntegration } from "@/services/visibility";
 
 export async function createProductAction(fd: FormData) {
@@ -20,6 +23,14 @@ export async function createProductAction(fd: FormData) {
   });
 }
 
+/** An https:// logo URL, or this site's own uploaded media URL (which is http:// in local development). */
+const zLogoUrl = z
+  .string()
+  .max(2000)
+  .optional()
+  .transform((v) => (v && v.trim() ? v.trim() : null))
+  .refine((v) => v === null || /^https:\/\/[^\s]+$/i.test(v) || mediaIdFromUrl(v, [env().BEACON_BASE_URL]) !== null, "must be an https:// URL");
+
 const STATUS = z.enum(["UNKNOWN", "IN_DEVELOPMENT", "BETA", "LIVE", "DEPRECATED"]);
 
 const StepSchema = z.object({
@@ -27,7 +38,7 @@ const StepSchema = z.object({
   step: z.coerce.number().int().min(1).max(ONBOARDING_STEPS.length),
   intent: z.enum(["next", "save", "skip"]).default("next"),
   name: z.string().trim().min(2).max(80).optional(),
-  logoUrl: zOptUrl,
+  logoUrl: zLogoUrl,
   status: STATUS.optional(),
   releaseDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).or(z.literal("")).optional(),
   domain: zOptText(200),
@@ -177,7 +188,7 @@ export async function deleteKnowledgeAction(fd: FormData) {
 
 export async function addFaqAction(fd: FormData) {
   return act(fd, "product:write", z.object({ productId: zId, question: z.string().trim().min(5).max(300), answer: z.string().trim().min(10).max(3000), sourceId: z.union([zId, z.literal("")]).optional() }), async ({ tx, actor }, i) => {
-    await tx.insert(productFaqs).values({ organizationId: actor.organizationId, productId: i.productId, question: i.question, answer: i.answer, sourceId: i.sourceId || null });
+    await addFaq(tx, actor, i.productId, { question: i.question, answer: i.answer, sourceId: i.sourceId || null });
     return { ok: "FAQ added (unverified until reviewed)." };
   });
 }
@@ -215,11 +226,7 @@ export async function addComparisonFactAction(fd: FormData) {
     "product:write",
     z.object({ productId: zId, competitorId: zId, dimension: z.string().trim().min(2).max(120), product: z.string().trim().min(1).max(300), competitor: z.string().trim().min(1).max(300), sourceUrl: z.string().url().refine((u) => u.startsWith("https://"), "must be https"), verified: zCheckbox }),
     async ({ tx, actor }, i) => {
-      const link = await tx.query.productCompetitors.findFirst({ where: and(eq(productCompetitors.productId, i.productId), eq(productCompetitors.competitorId, i.competitorId), eq(productCompetitors.organizationId, actor.organizationId)) });
-      if (!link) throw new Error("Competitor not linked to this product");
-      const facts = [...link.comparisonFacts, { dimension: i.dimension, product: i.product, competitor: i.competitor, sourceUrl: i.sourceUrl, ...(i.verified ? { verifiedAt: new Date().toISOString() } : {}) }];
-      await tx.update(productCompetitors).set({ comparisonFacts: facts }).where(and(eq(productCompetitors.productId, i.productId), eq(productCompetitors.competitorId, i.competitorId)));
-      await audit(tx, actor, "knowledge.comparison.add", "product", i.productId, { competitorId: i.competitorId, dimension: i.dimension });
+      await addComparisonFact(tx, actor, i);
       return { ok: "Comparison fact added." };
     },
   );

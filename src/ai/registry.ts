@@ -25,7 +25,7 @@ export function buildProvider(id: ProviderId, creds: ProviderCredentials): LlmPr
  * (Settings → Integrations) take precedence over deployment-wide environment
  * variables. Returns null when the provider is not configured.
  */
-export async function resolveProvider(tx: Tx, organizationId: string, id: ProviderId): Promise<LlmProvider | null> {
+export async function resolveCredentials(tx: Tx, organizationId: string, id: ProviderId): Promise<ProviderCredentials | null> {
   const integ = await tx.query.integrations.findFirst({
     where: and(eq(integrations.organizationId, organizationId), eq(integrations.provider, PROVIDER_INTEGRATION[id]), isNull(integrations.productId)),
   });
@@ -33,14 +33,19 @@ export async function resolveProvider(tx: Tx, organizationId: string, id: Provid
     const cred = await tx.query.providerCredentials.findFirst({ where: eq(providerCredentials.integrationId, integ.id) });
     if (cred) {
       const secret = JSON.parse(decryptSecret(cred.ciphertext, integ.id)) as { apiKey: string };
-      return buildProvider(id, { apiKey: secret.apiKey, model: integ.config.model });
+      return { apiKey: secret.apiKey, model: integ.config.model };
     }
   }
   const e = env();
-  if (id === "anthropic" && e.ANTHROPIC_API_KEY) return buildProvider(id, { apiKey: e.ANTHROPIC_API_KEY, model: e.BEACON_ANTHROPIC_MODEL });
-  if (id === "openai" && e.OPENAI_API_KEY) return buildProvider(id, { apiKey: e.OPENAI_API_KEY, model: e.BEACON_OPENAI_MODEL });
-  if (id === "perplexity" && e.PERPLEXITY_API_KEY) return buildProvider(id, { apiKey: e.PERPLEXITY_API_KEY, model: e.BEACON_PERPLEXITY_MODEL });
+  if (id === "anthropic" && e.ANTHROPIC_API_KEY) return { apiKey: e.ANTHROPIC_API_KEY, model: e.BEACON_ANTHROPIC_MODEL };
+  if (id === "openai" && e.OPENAI_API_KEY) return { apiKey: e.OPENAI_API_KEY, model: e.BEACON_OPENAI_MODEL };
+  if (id === "perplexity" && e.PERPLEXITY_API_KEY) return { apiKey: e.PERPLEXITY_API_KEY, model: e.BEACON_PERPLEXITY_MODEL };
   return null;
+}
+
+export async function resolveProvider(tx: Tx, organizationId: string, id: ProviderId): Promise<LlmProvider | null> {
+  const creds = await resolveCredentials(tx, organizationId, id);
+  return creds ? buildProvider(id, creds) : null;
 }
 
 export async function availableProviders(tx: Tx, organizationId: string): Promise<LlmProvider[]> {

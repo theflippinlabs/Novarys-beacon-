@@ -8,7 +8,7 @@ import { RangePicker } from "@/components/shell/product-tabs";
 import { buildFunnel, type FunnelStep } from "@/core/conversions/funnel";
 import { DEFAULT_ATTRIBUTION } from "@/core/attribution/attribution";
 import { channelEnum, conversionEventEnum, products } from "@/db/schema";
-import { contentPerformance, funnelCounts } from "@/services/metrics";
+import { contentPerformance, conversionsByChannel, funnelCounts, hasConversionEvents } from "@/services/metrics";
 import { daysParam, pageData, sp1, type SP } from "@/lib/page";
 import { enumLabel, type Locale, type T } from "@/i18n/core";
 import { getI18n, getT } from "@/i18n/server";
@@ -68,18 +68,9 @@ export default async function ConversionsPage({ searchParams }: { searchParams: 
     const productFilter = product ? sql`and product_id = ${product.id}` : sql``;
     const channelFilter = f.channel ? sql`and channel = ${f.channel}` : sql``;
 
-    const anyEvents = (await tx.execute<{ n: number }>(sql`select count(*)::int as n from (select 1 from conversion_events where organization_id = ${org} limit 1) x`)).rows[0];
+    const anyEvents = await hasConversionEvents(tx, org);
     const counts = await funnelCounts(tx, org, days, product?.id ?? null, f.channel ?? null);
-    const byChannel = (
-      await tx.execute<{ channel: string; visitors: number; signups: number; subs: number }>(sql`
-      select coalesce(channel::text, 'UNCLASSIFIED') as channel,
-        count(distinct visitor_id) filter (where type = 'PAGE_VIEW')::int as visitors,
-        count(*) filter (where type = 'SIGNUP')::int as signups,
-        count(*) filter (where type = 'SUBSCRIBED')::int as subs
-      from conversion_events
-      where organization_id = ${org} and occurred_at >= now() - make_interval(days => ${days}) ${productFilter}
-      group by 1 order by 2 desc, 3 desc`)
-    ).rows.map((r) => ({ channel: r.channel, visitors: Number(r.visitors), signups: Number(r.signups), subs: Number(r.subs) }));
+    const byChannel = await conversionsByChannel(tx, org, days, product?.id ?? null);
     const ctas = (
       await tx.execute<{ cta_id: string | null; page_path: string | null; clicks: number }>(sql`
       select cta_id, page_path, count(*)::int as clicks
@@ -88,7 +79,7 @@ export default async function ConversionsPage({ searchParams }: { searchParams: 
       group by 1, 2 order by 3 desc limit 20`)
     ).rows.map((r) => ({ ...r, clicks: Number(r.clicks) }));
     const content = (await contentPerformance(tx, org, days)).filter((c) => !product || c.product === product.slug);
-    return { prods, product, anyEvents: Number(anyEvents?.n ?? 0) > 0, funnel: buildFunnel(counts as Partial<Record<FunnelStep, number>>), byChannel, ctas, content };
+    return { prods, product, anyEvents, funnel: buildFunnel(counts as Partial<Record<FunnelStep, number>>), byChannel, ctas, content };
   });
 
   const qs = new URLSearchParams(Object.entries({ product: f.product, channel: f.channel }).filter(([, v]) => v) as [string, string][]).toString();

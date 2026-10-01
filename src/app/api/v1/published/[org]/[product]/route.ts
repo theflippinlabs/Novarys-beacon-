@@ -3,6 +3,7 @@ import { asSystem } from "@/db";
 import { products } from "@/db/schema";
 import { canonicalUrl } from "@/core/discovery/urls";
 import { renderMarkdown } from "@/core/content/markdown";
+import { env } from "@/lib/env";
 import { err, ipHashOf, limited } from "@/lib/http";
 import { orgBySlug, publishedPages } from "@/services/public";
 
@@ -28,7 +29,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ org: str
         title: r.version!.metaTitle ?? r.asset.title,
         description: r.version!.metaDescription,
         markdown: r.version!.body,
-        html: renderMarkdown(r.version!.body),
+        html: renderMarkdown(r.version!.body, { imageOrigins: [env().BEACON_BASE_URL] }),
         jsonLd: r.version!.structuredData,
         publishedAt: r.page.publishedAt,
         version: r.version!.version,

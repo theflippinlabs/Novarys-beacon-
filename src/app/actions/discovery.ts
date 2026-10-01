@@ -2,20 +2,18 @@
 
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { pages, products, queries, seoIssues } from "@/db/schema";
+import { pages, queries, seoIssues } from "@/db/schema";
 import { act, zId, zOptText } from "@/lib/actions";
 import { audit } from "@/lib/audit";
 import { enqueue } from "@/jobs/queue";
-import { createAudit } from "@/services/seo";
+import { queueAudit } from "@/services/seo";
 import { syncPagePlan } from "@/services/discovery";
-import { addQuery } from "@/services/queries";
+import { addCuratedQuery } from "@/services/queries";
 import { createAssetForPage } from "@/services/content";
 
 export async function runAuditAction(fd: FormData) {
   return act(fd, "job:run", z.object({ productId: zId, startUrl: zOptText(500), maxPages: z.coerce.number().int().min(1).max(500).default(50) }), async ({ tx, actor }, i) => {
-    const a = await createAudit(tx, actor.organizationId, i.productId, { startUrl: i.startUrl ?? undefined, maxPages: i.maxPages });
-    await enqueue("seo.audit", { auditId: a.id, productId: i.productId }, { organizationId: actor.organizationId, idempotencyKey: `audit:${a.id}` });
-    await audit(tx, actor, "seo.audit.queue", "seo_audit", a.id, { startUrl: a.startUrl });
+    const a = await queueAudit(tx, actor, i.productId, { startUrl: i.startUrl ?? undefined, maxPages: i.maxPages });
     return { ok: "Technical audit queued.", redirect: `/discovery/audits/${a.id}` };
   });
 }
@@ -67,20 +65,16 @@ export async function addQueryAction(fd: FormData) {
       notes: zOptText(500),
     }),
     async ({ tx, actor }, i) => {
-      const product = i.productId ? await tx.query.products.findFirst({ where: and(eq(products.id, i.productId), eq(products.organizationId, actor.organizationId)) }) : null;
-      const row = await addQuery(tx, actor.organizationId, {
+      const row = await addCuratedQuery(tx, actor, {
         query: i.query,
-        productId: product?.id ?? null,
+        productId: i.productId || null,
         intent: i.intent || undefined,
         importance: i.importance,
         market: i.market,
         language: i.language,
         clusterName: i.cluster ?? undefined,
         notes: i.notes ?? undefined,
-        brandTerms: product ? [product.name] : [],
       });
-      if (!row) throw new Error("That query already exists for this market and language.");
-      await audit(tx, actor, "query.add", "query", row.id, { query: row.query, intent: row.intent });
       return { ok: `Added "${row.query}" (${row.intent.toLowerCase()}, ${row.funnelStage.toLowerCase()}).` };
     },
   );

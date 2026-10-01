@@ -284,3 +284,17 @@ Each phase was committed separately with typecheck, lint, tests and build passin
 - **In-process API metrics** are per instance; ship logs to a central platform for fleet-wide metrics.
 - **Currency**: aggregates are per currency; there is no FX conversion.
 - **Hosted pages** (`/p/{org}/…`) set the canonical to the product domain when known; product sites can instead consume `/api/v1/published/{org}/{product}`.
+
+## Beacon agent
+
+An in-app assistant (`/agent`, centre tab on mobile) that answers questions and performs work through tools.
+
+- **Loop** (`src/agent/loop.ts`): Claude (`claude-opus-5-5`, adaptive thinking, effort `medium`, server-side refusal fallbacks) streamed through `POST /api/agent` as NDJSON events. Up to 16 model ↔ tool rounds per user turn.
+- **Tools** (`src/agent/tools/*`): read tools and in-app write tools, filtered by the member's role (`toolsForRole`), validated with zod, each run in its own `withOrg` transaction and audited with `via: "agent"`. Human-only steps (approve/publish, verify facts, external submission, payouts, deletion, members, integrations) have no tool; the agent prepares and links to them.
+- **History** (`agent_conversations`, `agent_messages`, RLS): the exact API content blocks are stored append-only and replayed unchanged; photos are stored as private media and referenced by id.
+- **Credentials**: the organisation's Anthropic key from Settings → Integrations (encrypted), else `ANTHROPIC_API_KEY`. Without one the agent says so.
+- **Voice**: browser dictation (Web Speech API) and optional read-aloud; nothing audio is sent to the server.
+
+## Media
+
+`media` table (RLS) holds uploaded images re-encoded server-side with sharp (auto-orient, ≤2048 px, WebP, EXIF/GPS stripped, decompression-bomb guard). Public media (product photos, logos, content images) is served by unguessable id at `/api/media/[id]`; private media (agent chat photos) only to members of the organisation.

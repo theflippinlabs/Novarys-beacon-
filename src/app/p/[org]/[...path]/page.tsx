@@ -5,6 +5,7 @@ import { renderMarkdown } from "@/core/content/markdown";
 import { canonicalUrl } from "@/core/discovery/urls";
 import { serializeJsonLd } from "@/core/seo/schema-org";
 import { env } from "@/lib/env";
+import { buildMediaUrl, mediaIdFromUrl } from "@/core/media/image";
 import { orgBySlug, publishedPages } from "@/services/public";
 import { getT } from "@/i18n/server";
 
@@ -46,11 +47,19 @@ export default async function PublicPage({ params }: { params: Promise<{ org: st
   if (!d) notFound();
   const v = d.row.version!;
   const t = await getT();
+  const logoId = d.row.product.logoUrl ? mediaIdFromUrl(d.row.product.logoUrl, [env().BEACON_BASE_URL]) : null;
+  const logo = logoId ? buildMediaUrl(logoId) : null;
   return (
     <div className="min-h-screen bg-obsidian">
       <header className="border-b border-line">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-4">
-          <span className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.3em] text-platinum">{d.row.product.name}</span>
+          <span className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.3em] text-platinum">
+            {logo && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={logo} alt="" width={24} height={24} className="h-6 w-6 object-contain" />
+            )}
+            {d.row.product.name}
+          </span>
           <span className="eyebrow flex items-center gap-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/brand/beacon-emblem-64.png" alt="" width={20} height={20} />
@@ -59,7 +68,7 @@ export default async function PublicPage({ params }: { params: Promise<{ org: st
         </div>
       </header>
       <main className="mx-auto max-w-3xl px-4 py-12">
-        <article className="prose-beacon" dangerouslySetInnerHTML={{ __html: renderMarkdown(v.body) }} />
+        <article className="prose-beacon" dangerouslySetInnerHTML={{ __html: renderMarkdown(v.body, { imageOrigins: [env().BEACON_BASE_URL] }) }} />
         <p className="mt-12 border-t border-line pt-4 text-xs text-muted">
           {t("Last updated {date}. Facts on this page are sourced from the product’s canonical documentation.", { date: (d.row.page.publishedAt ?? v.createdAt).toISOString().slice(0, 10) })}
         </p>

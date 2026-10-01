@@ -1,6 +1,7 @@
 export const fr: Record<string, string> = {
   // Navigation
   Overview: "Vue d’ensemble",
+  Agent: "Agent",
   Products: "Produits",
   Discovery: "Découverte",
   Queries: "Requêtes",

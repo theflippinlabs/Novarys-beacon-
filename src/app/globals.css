@@ -81,6 +81,18 @@
     font-size: 0.875rem;
     width: 100%;
   }
+  /* iOS Safari zooms into any focused field under 16px and stays zoomed. */
+  @media (pointer: coarse) {
+    input,
+    select,
+    textarea {
+      font-size: 16px;
+    }
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
   input:focus,
   select:focus,
   textarea:focus {
@@ -193,5 +205,11 @@
   .prose-beacon code {
     font-family: var(--font-mono);
     font-size: 0.85em;
+  }
+  .prose-beacon img {
+    display: inline-block;
+    max-width: 100%;
+    height: auto;
+    border: 1px solid var(--color-line);
   }
 }

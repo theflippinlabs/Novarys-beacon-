@@ -5,6 +5,9 @@ import { approveContentAction, generateContentAction, publishContentAction, reje
 import { Badge, Button, Field, Flash, HiddenBack, KV, PageHeader, Panel, StatusBadge, Table, Td, Th, cx } from "@/components/ui";
 import { aiRuns, contentAssets, contentVersions, jobs, pages, products, queries } from "@/db/schema";
 import { renderMarkdown } from "@/core/content/markdown";
+import { env } from "@/lib/env";
+import { listMedia } from "@/services/media";
+import { ContentImages } from "@/components/media/content-images";
 import { PIPELINE } from "@/core/content/workflow";
 import { canonicalUrl } from "@/core/discovery/urls";
 import { serializeJsonLd } from "@/core/seo/schema-org";
@@ -40,7 +43,8 @@ export default async function ContentDetail({ params, searchParams }: { params: 
         ).rows[0]
       : null;
     const pending = await db().select().from(jobs).where(and(eq(jobs.organizationId, ctx.org.id), eq(jobs.type, "content.generate"), sql`${jobs.payload}->>'assetId' = ${id}`, sql`${jobs.status} in ('QUEUED','RUNNING')`)).limit(1);
-    return { asset, versions, product, page, target, run, perf, pending: pending[0] ?? null };
+    const images = await listMedia(tx, ctx.org.id, { contentAssetId: id });
+    return { asset, versions, product, page, target, run, perf, pending: pending[0] ?? null, images };
   });
   const { asset, versions, product, page } = data;
   const v = versions[0];
@@ -79,7 +83,7 @@ export default async function ContentDetail({ params, searchParams }: { params: 
         <div className="flex flex-col gap-6">
           <Panel title={v ? t("Version {n}", { n: v.version }) : t("No draft yet")} eyebrow={t("Preview")}>
             {v ? (
-              <article className="prose-beacon" dangerouslySetInnerHTML={{ __html: renderMarkdown(v.body) }} />
+              <article className="prose-beacon" dangerouslySetInnerHTML={{ __html: renderMarkdown(v.body, { imageOrigins: [env().BEACON_BASE_URL] }) }} />
             ) : (
               <p className="text-sm text-muted">{t("Generate a draft to start. Drafts are composed only from knowledge-graph facts.")}</p>
             )}
@@ -98,7 +102,7 @@ export default async function ContentDetail({ params, searchParams }: { params: 
                   </Field>
                 </div>
                 <Field label={t("Body (Markdown)")}>
-                  <textarea name="body" defaultValue={v.body} className="min-h-[28rem] font-mono text-[12.5px] leading-relaxed" />
+                  <textarea id="draft-body" name="body" defaultValue={v.body} className="min-h-[28rem] font-mono text-[12.5px] leading-relaxed" />
                 </Field>
                 <div>
                   <Button>{t("Save new version")}</Button>
@@ -106,6 +110,7 @@ export default async function ContentDetail({ params, searchParams }: { params: 
               </form>
             </Panel>
           )}
+          <ContentImages assetId={asset.id} images={data.images} canEdit={can("content:write")} editorId={v && can("content:write") ? "draft-body" : null} back={`${back}#images`} />
         </div>
 
         <div className="flex flex-col gap-6">

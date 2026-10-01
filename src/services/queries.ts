@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import type { Tx } from "@/db";
-import { queries, queryClusters } from "@/db/schema";
+import { products, queries, queryClusters } from "@/db/schema";
+import { audit, type Actor } from "@/lib/audit";
 import { loadProductGraph } from "@/core/knowledge/load";
 import { classifyQuery, INTENT_TO_FUNNEL, type Intent } from "@/core/queries/classify";
 import { expandQueryUniverse } from "@/core/queries/expand";
@@ -81,4 +82,13 @@ export async function generateQueryUniverse(tx: Tx, organizationId: string, prod
     if (row) inserted++;
   }
   return { candidates: candidates.length, inserted };
+}
+
+/** Add a curated query for an optional product (brand-aware classification) and audit it. Throws when it already exists. */
+export async function addCuratedQuery(tx: Tx, actor: Actor, input: Omit<NewQuery, "productId" | "brandTerms"> & { productId: string | null }) {
+  const product = input.productId ? await tx.query.products.findFirst({ where: and(eq(products.id, input.productId), eq(products.organizationId, actor.organizationId)) }) : null;
+  const row = await addQuery(tx, actor.organizationId, { ...input, productId: product?.id ?? null, brandTerms: product ? [product.name] : [] });
+  if (!row) throw new Error("That query already exists for this market and language.");
+  await audit(tx, actor, "query.add", "query", row.id, { query: row.query, intent: row.intent });
+  return row;
 }

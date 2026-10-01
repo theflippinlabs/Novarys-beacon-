@@ -17,6 +17,7 @@ const I = (d: ReactNode) => (
 
 export const SECTIONS: Section[] = [
   { href: "/", label: "Overview", icon: I(<path d="M12 2.5l2.2 7.3L21.5 12l-7.3 2.2L12 21.5l-2.2-7.3L2.5 12l7.3-2.2z" />) },
+  { href: "/agent", label: "Agent", icon: I(<><path d="M12 3.5l1.6 4.9L18.5 10l-4.9 1.6L12 16.5l-1.6-4.9L5.5 10l4.9-1.6z" /><path d="M18.5 15.5l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z" /></>) },
   { href: "/products", label: "Products", icon: I(<><path d="M3.5 7.5L12 3l8.5 4.5v9L12 21l-8.5-4.5z" /><path d="M3.5 7.5L12 12l8.5-4.5M12 12v9" /></>) },
   { href: "/discovery", label: "Discovery", icon: I(<><circle cx="11" cy="11" r="6.5" /><path d="M20.5 20.5l-4.8-4.8" /></>) },
   { href: "/queries", label: "Queries", icon: I(<><path d="M4 5h16v11H9l-5 4z" /><path d="M10 9.2a2 2 0 113 1.7c-.6.3-1 .8-1 1.4" /></>) },
@@ -32,7 +33,7 @@ export const SECTIONS: Section[] = [
 ];
 
 /** The four sections pinned to the mobile tab bar; everything else lives under "More". */
-const TABS = ["/", "/products", "/content", "/opportunities"];
+const TABS = ["/", "/products", "/agent", "/content"];
 
 function isActive(path: string, href: string) {
   return href === "/" ? path === "/" : path === href || path.startsWith(`${href}/`);
@@ -44,7 +45,21 @@ export function Nav() {
   const { t } = useI18n();
   return (
     <nav className="flex flex-col gap-0.5" aria-label={t("Primary")}>
-      {SECTIONS.map(({ href, label }, i) => {
+      {(() => {
+        const agent = SECTIONS.find((s) => s.href === "/agent")!;
+        const active = isActive(path, agent.href);
+        return (
+          <Link
+            href={agent.href}
+            aria-current={active ? "page" : undefined}
+            className={`mx-1 mb-3 flex items-center gap-2.5 rounded-lg border px-3 py-2.5 font-mono text-[11px] uppercase tracking-[0.16em] transition-colors ${active ? "glow-blue border-blue-bright bg-blue/10 text-platinum" : "border-gold/40 bg-gradient-to-r from-gold/10 to-transparent text-gold-bright hover:border-gold"}`}
+          >
+            <span className={active ? "text-blue-bright" : "text-gold"}>{agent.icon}</span>
+            {t("Beacon agent")}
+          </Link>
+        );
+      })()}
+      {SECTIONS.filter((s) => s.href !== "/agent").map(({ href, label }, i) => {
         const active = isActive(path, href);
         return (
           <Link
@@ -119,6 +134,13 @@ export function MobileTabBar({ userName, role }: { userName: string; role: strin
         <div className="mx-auto grid max-w-xl grid-cols-5">
           {tabs.map((s) => {
             const active = isActive(path, s.href);
+            if (s.href === "/agent")
+              return (
+                <Link key={s.href} href={s.href} aria-current={active ? "page" : undefined} className={`relative flex flex-col items-center gap-1 pb-2 pt-1 text-[10px] ${active ? "text-platinum" : "text-chrome"}`}>
+                  <span className={`-mt-4 grid h-12 w-12 place-items-center rounded-full bg-gradient-to-b from-gold-bright to-gold text-obsidian shadow-[0_6px_20px_-6px_rgb(240_178_90/0.7)] ring-4 ring-obsidian ${active ? "glow-blue" : ""}`}>{s.icon}</span>
+                  {t(s.label)}
+                </Link>
+              );
             return (
               <Link key={s.href} href={s.href} aria-current={active ? "page" : undefined} className={`relative flex flex-col items-center gap-1 pb-2 pt-2.5 text-[10px] ${active ? "text-platinum" : "text-muted"}`}>
                 {active && <span className="absolute inset-x-5 top-0 h-0.5 rounded-full bg-blue-bright shadow-[0_0_10px_rgb(26_189_245)]" />}

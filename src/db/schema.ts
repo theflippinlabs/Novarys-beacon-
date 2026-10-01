@@ -11,6 +11,7 @@
  */
 import { relations, sql } from "drizzle-orm";
 import {
+  customType,
   bigint,
   boolean,
   date,
@@ -1281,6 +1282,75 @@ export const productCompetitorsRelations = relations(productCompetitors, ({ one 
 }));
 
 /** Tables protected by RLS — kept in sync with migrations/0001_rls.sql by a test. */
+/** Raw bytes column (Postgres bytea). */
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" });
+
+export const mediaVisibilityEnum = pgEnum("media_visibility", ["PUBLIC", "PRIVATE"]);
+
+/**
+ * Uploaded images (product photos, logos, content illustrations, agent chat
+ * attachments). Re-encoded server-side to WebP with metadata (EXIF/GPS)
+ * stripped. PUBLIC media is served to anyone holding the unguessable id;
+ * PRIVATE media only to members of the organisation.
+ */
+export const media = pgTable(
+  "media",
+  {
+    id: id(),
+    organizationId: orgId(),
+    productId: uuid("product_id").references(() => products.id, { onDelete: "set null" }),
+    contentAssetId: uuid("content_asset_id").references(() => contentAssets.id, { onDelete: "set null" }),
+    visibility: mediaVisibilityEnum("visibility").notNull().default("PUBLIC"),
+    filename: text("filename").notNull(),
+    mime: text("mime").notNull(),
+    width: integer("width").notNull(),
+    height: integer("height").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    alt: text("alt"),
+    bytes: bytea("bytes").notNull(),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("media_org_idx").on(t.organizationId, t.createdAt), index("media_product_idx").on(t.productId)],
+);
+
+/** Conversations with the Beacon agent. One per thread, owned by the user who started it. */
+export const agentConversations = pgTable(
+  "agent_conversations",
+  {
+    id: id(),
+    organizationId: orgId(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("agent_conversations_user_idx").on(t.organizationId, t.userId, t.updatedAt)],
+);
+
+/**
+ * Append-only message log. `content` holds the exact Messages API content
+ * blocks (text, thinking, tool_use, tool_result, image refs) so history can be
+ * replayed unchanged on the next turn.
+ */
+export const agentMessages = pgTable(
+  "agent_messages",
+  {
+    id: id(),
+    organizationId: orgId(),
+    conversationId: uuid("conversation_id")
+      .notNull()
+      .references(() => agentConversations.id, { onDelete: "cascade" }),
+    seq: integer("seq").notNull(),
+    role: text("role").$type<"user" | "assistant">().notNull(),
+    content: jsonb("content").$type<unknown[]>().notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("agent_messages_seq_uq").on(t.conversationId, t.seq)],
+);
+
 export const TENANT_TABLES = [
   "memberships",
   "api_keys",
@@ -1327,4 +1397,7 @@ export const TENANT_TABLES = [
   "integrations",
   "provider_credentials",
   "beacon_scores",
+  "media",
+  "agent_conversations",
+  "agent_messages",
 ] as const;

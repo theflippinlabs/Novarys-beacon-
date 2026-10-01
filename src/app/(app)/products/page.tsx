@@ -9,6 +9,14 @@ import { latestScores } from "@/services/score";
 import { pageData, type SP } from "@/lib/page";
 import { getI18n, getT } from "@/i18n/server";
 import type { Metadata } from "next";
+import { buildMediaUrl, mediaIdFromUrl } from "@/core/media/image";
+import { env } from "@/lib/env";
+
+/** Logos uploaded to Beacon are shown in the app; remote logo URLs are not hot-linked. */
+function ownLogo(url: string | null): string | null {
+  const id = url ? mediaIdFromUrl(url, [env().BEACON_BASE_URL]) : null;
+  return id ? buildMediaUrl(id) : null;
+}
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getT();
@@ -54,10 +62,18 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
                 {data.map(({ p, completeness, score }) => (
                   <tr key={p.id}>
                     <Td>
-                      <Link href={`/products/${p.slug}`} className="font-medium text-platinum hover:text-blue-bright">
-                        {p.name}
-                      </Link>
-                      <div className="text-xs text-muted">{p.category ?? t("Category unknown")}</div>
+                      <div className="flex items-center gap-3">
+                        {ownLogo(p.logoUrl) && (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={ownLogo(p.logoUrl)!} alt="" width={32} height={32} className="h-8 w-8 shrink-0 border border-line bg-obsidian object-contain" />
+                        )}
+                        <div className="min-w-0">
+                          <Link href={`/products/${p.slug}`} className="font-medium text-platinum hover:text-blue-bright">
+                            {p.name}
+                          </Link>
+                          <div className="text-xs text-muted">{p.category ?? t("Category unknown")}</div>
+                        </div>
+                      </div>
                     </Td>
                     <Td>
                       <StatusBadge status={p.status} />

@@ -62,7 +62,7 @@ function splitClaims(body: string, knownUrls: string[]): string[] {
     .filter((l) => l && !l.startsWith("#") && !l.startsWith("|---") && !/^- <[^>]+>$/.test(l) && !l.startsWith(EDITOR_TODO) && !/^_.*_$/.test(l) && !l.includes("{cta:"))
     .map((l) => l.replace(/^\*\*[^*]{1,40}:\*\*\s*/, "").replace(/\*\*/g, ""))
     .flatMap((l) => l.replace(/^[-*→>\d.)\s]+/, "").split(/(?<=[.!?])\s+(?=[A-Z"])/))
-    .map((s) => stripUrls(s.replace(/\{\{[^}]*\}\}/g, " ").replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1 $2").replace(/<(https?:[^>]+)>/g, "$1")).trim())
+    .map((s) => stripUrls(s.replace(/\{\{[^}]*\}\}/g, " ").replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1").replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1 $2").replace(/<(https?:[^>]+)>/g, "$1")).trim())
     .filter((s) => tokens(s).length >= 3);
 }
 

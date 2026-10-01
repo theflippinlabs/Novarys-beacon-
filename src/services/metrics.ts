@@ -237,3 +237,23 @@ export async function contentPerformance(tx: Tx, organizationId: string, days: n
     group by a.id, a.title, a.type, pg.path, pr.slug order by views desc`);
   return r.rows.map((x) => ({ ...x, views: Number(x.views), cta: Number(x.cta), signups: Number(x.signups) }));
 }
+
+/** Visitors, signups and subscriptions per acquisition channel over the last `days`. */
+export async function conversionsByChannel(tx: Tx, organizationId: string, days: number, productId?: string | null) {
+  const productFilter = productId ? sql`and product_id = ${productId}` : sql``;
+  const r = await tx.execute<{ channel: string; visitors: number; signups: number; subs: number }>(sql`
+      select coalesce(channel::text, 'UNCLASSIFIED') as channel,
+        count(distinct visitor_id) filter (where type = 'PAGE_VIEW')::int as visitors,
+        count(*) filter (where type = 'SIGNUP')::int as signups,
+        count(*) filter (where type = 'SUBSCRIBED')::int as subs
+      from conversion_events
+      where organization_id = ${organizationId} and occurred_at >= now() - make_interval(days => ${days}) ${productFilter}
+      group by 1 order by 2 desc, 3 desc`);
+  return r.rows.map((x) => ({ channel: x.channel, visitors: Number(x.visitors), signups: Number(x.signups), subs: Number(x.subs) }));
+}
+
+/** True once the organisation has received at least one first-party event. */
+export async function hasConversionEvents(tx: Tx, organizationId: string) {
+  const r = await tx.execute<{ n: number }>(sql`select count(*)::int as n from (select 1 from conversion_events where organization_id = ${organizationId} limit 1) x`);
+  return Number(r.rows[0]?.n ?? 0) > 0;
+}

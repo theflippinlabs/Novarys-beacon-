@@ -7,6 +7,7 @@ import { generateOpportunity, recordRun } from "@/ai/tasks";
 import { addDays, isoDay, normalizeQuery } from "@/core/util/text";
 import { latestAudit } from "./seo";
 import { promptSummaries } from "./ai-visibility";
+import { audit, type Actor } from "@/lib/audit";
 
 /** Collect evidence and (re)generate opportunities for a product. Idempotent via fingerprints; human decisions are preserved. */
 export async function generateProductOpportunities(tx: Tx, organizationId: string, productId: string) {
@@ -86,4 +87,16 @@ export async function generateProductOpportunities(tx: Tx, organizationId: strin
 
 export async function allProductIds(tx: Tx, organizationId: string) {
   return (await tx.select({ id: products.id }).from(products).where(eq(products.organizationId, organizationId))).map((r) => r.id);
+}
+
+export type OpportunityStatus = (typeof opportunities.$inferSelect)["status"];
+
+export async function setOpportunityStatus(tx: Tx, actor: Actor, id: string, status: OpportunityStatus) {
+  const [row] = await tx
+    .update(opportunities)
+    .set({ status })
+    .where(and(eq(opportunities.id, id), eq(opportunities.organizationId, actor.organizationId)))
+    .returning({ id: opportunities.id });
+  await audit(tx, actor, "opportunity.status", "opportunity", id, { status });
+  return row ?? null;
 }

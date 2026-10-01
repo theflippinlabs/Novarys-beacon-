@@ -17,6 +17,8 @@ import { loadProductGraph } from "@/core/knowledge/load";
 import { addDays, isoDay } from "@/core/util/text";
 import { daysParam, pageData, productOr404, type SP } from "@/lib/page";
 import { db } from "@/db";
+import { listMedia } from "@/services/media";
+import { ProductPhotos } from "@/components/media/product-photos";
 import { getI18n, getT } from "@/i18n/server";
 import type { Metadata } from "next";
 
@@ -47,8 +49,9 @@ export default async function ProductDashboard({ params, searchParams }: { param
       () => tx.execute<{ coverage: string; n: number }>(sql`select coverage, count(*)::int as n from queries where product_id = ${p.id} and status = 'ACTIVE' group by coverage`),
       () => tx.execute<{ status: string; n: number }>(sql`select status, count(*)::int as n from pages where product_id = ${p.id} group by status`),
     ]);
+    const photos = await listMedia(tx, ctx.org.id, { productId: p.id });
     const analysis = await db().select().from(jobs).where(and(eq(jobs.organizationId, ctx.org.id), eq(jobs.type, "product.analyze"), sql`${jobs.payload}->>'productId' = ${p.id}`)).orderBy(desc(jobs.createdAt)).limit(1);
-    return { p, g, score, k, series, history, audit, ai, checklist, opps, exps, clicks, impressions, qstats: qstats.rows, pstats: pstats.rows, analysis: analysis[0] ?? null };
+    return { p, g, score, k, series, history, audit, ai, checklist, opps, exps, clicks, impressions, qstats: qstats.rows, pstats: pstats.rows, analysis: analysis[0] ?? null, photos };
   });
   const { t } = await getI18n();
   const { p, score, k } = data;
@@ -277,6 +280,8 @@ export default async function ProductDashboard({ params, searchParams }: { param
           )}
         </Panel>
       </div>
+
+      <ProductPhotos product={p} photos={data.photos} canEdit={can("product:write")} back={`${base}#photos`} />
     </>
   );
 }
