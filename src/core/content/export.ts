@@ -34,7 +34,8 @@ export function exportMarkdown(i: ExportInput): string {
     "---",
     "",
   ].join("\n");
-  return `${fm}${i.version.body.trim()}\n`;
+  // `{cta:KIND}` markers only tag links for Beacon's tracker; they mean nothing outside Beacon.
+  return `${fm}${i.version.body.replace(/[ \t]*\{cta:[A-Z_]*\}/g, "").trim()}\n`;
 }
 
 export function exportJsonLd(i: ExportInput): string {

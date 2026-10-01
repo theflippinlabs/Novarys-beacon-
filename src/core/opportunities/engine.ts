@@ -432,7 +432,7 @@ export function generateOpportunities(s: OpportunitySignals): OpportunityDraft[]
         effort: 1,
         urgency: 3,
         scoringRationale: {
-          impact: `${lost} completeness points missing.`,
+          impact: `${Math.round(lost)} completeness points missing.`,
           confidence: "Measured from the knowledge graph.",
           effort: "Facts are entered by a person who knows the product.",
           urgency: "Every generated asset depends on these facts.",

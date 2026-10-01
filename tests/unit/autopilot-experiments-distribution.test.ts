@@ -411,6 +411,12 @@ describe("content export", () => {
     expect(exportFiles(input).map((f) => f.name)).toEqual(["acme-live-chat-moderation-v3/content.md", "acme-live-chat-moderation-v3/structured-data.jsonld", "acme-live-chat-moderation-v3/meta.json"]);
   });
 
+  it("drops Beacon's CTA tracking markers from the Markdown export", () => {
+    const md = exportMarkdown({ ...input, version: { ...input.version, body: "Body.\n\n- [Start free trial](https://acme.example/signup) {cta:TRY_FREE}" } });
+    expect(md).toContain("- [Start free trial](https://acme.example/signup)\n");
+    expect(md).not.toContain("{cta:");
+  });
+
   it("zips the files (stored, CRC-32)", () => {
     expect(crc32(new TextEncoder().encode("123456789"))).toBe(0xcbf43926);
     const z = zipStore(exportFiles(input));
