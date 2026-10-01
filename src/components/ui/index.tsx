@@ -20,7 +20,7 @@ export function PageHeader({ eyebrow, title, description, actions }: { eyebrow?:
 
 export function Panel({ title, eyebrow, actions, children, className, pad = true }: { title?: ReactNode; eyebrow?: string; actions?: ReactNode; children: ReactNode; className?: string; pad?: boolean }) {
   return (
-    <section className={cx("border border-line bg-panel", className)}>
+    <section className={cx("min-w-0 border border-line bg-panel", className)}>
       {(title || eyebrow || actions) && (
         <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
           <div className="min-w-0">
@@ -58,7 +58,7 @@ export function Delta({ now, prev }: { now: number | null; prev: number | null }
 /** KPI tile. `value === null` renders an explicit "not connected" state — never a fake zero. */
 export function Stat({ label, value, prev, fmt = "count", currency, source, href }: { label: string; value: number | null; prev?: number | null; fmt?: Fmt; currency?: string; source?: string; href?: string }) {
   const body = (
-    <div className="flex h-full flex-col justify-between gap-3 border border-line bg-panel p-4 transition-colors hover:border-line-strong">
+    <div className="flex h-full min-w-0 flex-col justify-between gap-3 border border-line bg-panel p-4 transition-colors hover:border-line-strong">
       <div className="eyebrow">{label}</div>
       {value === null ? (
         <div>
@@ -68,9 +68,9 @@ export function Stat({ label, value, prev, fmt = "count", currency, source, href
       ) : (
         <div>
           <div className="num text-2xl font-medium tracking-tight text-platinum">{formatValue(value, fmt, currency)}</div>
-          <div className="mt-1 flex items-center gap-2">
+          <div className="mt-1 flex flex-col gap-0.5">
             <Delta now={value} prev={prev ?? null} />
-            {source && <span className="truncate text-[11px] text-muted">{source}</span>}
+            {source && <span className="line-clamp-2 text-[11px] text-muted">{source}</span>}
           </div>
         </div>
       )}

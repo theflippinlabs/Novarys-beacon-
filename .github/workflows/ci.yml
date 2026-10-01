@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://beacon:beacon@localhost:5432/beacon_test
+      E2E_DATABASE_URL: postgres://beacon:beacon@localhost:5432/beacon_e2e
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # The app role must NOT be a superuser, otherwise Postgres bypasses row-level security.
+      - name: Database roles
+        run: |
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "create role beacon login password 'beacon' nosuperuser"
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "create database beacon_test owner beacon"
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "create database beacon_e2e owner beacon"
+      - name: Dependency audit
+        run: pnpm audit --prod
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Lint
+        run: pnpm lint
+      - name: Unit tests
+        run: pnpm test
+      - name: Integration tests
+        run: pnpm test:integration
+      - name: Build
+        run: pnpm build
+        env:
+          BEACON_ENCRYPTION_KEY: ${{ secrets.CI_ENCRYPTION_KEY || 'MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=' }}
+          BEACON_HASH_SECRET: ${{ secrets.CI_HASH_SECRET || 'ZmVkY2JhOTg3NjU0MzIxMGZlZGNiYTk4NzY1NDMyMTA=' }}
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+      - name: E2E tests
+        run: pnpm test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-results
+          path: test-results/
