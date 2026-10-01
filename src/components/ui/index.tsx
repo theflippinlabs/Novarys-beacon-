@@ -47,7 +47,11 @@ export function formatValue(v: number, fmt: Fmt = "count", currency?: string | n
     return currency
       ? new Intl.NumberFormat(intl, { style: "currency", currency, maximumFractionDigits: 0 }).format(v / 100)
       : new Intl.NumberFormat(intl, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v / 100);
-  if (fmt === "percent") return new Intl.NumberFormat(intl, { style: "percent", minimumFractionDigits: v < 0.1 ? 2 : 1, maximumFractionDigits: v < 0.1 ? 2 : 1 }).format(v);
+  if (fmt === "percent") {
+    // Two decimals only where they carry information (small non-zero rates); 0 reads "0.0%" like everywhere else.
+    const digits = v !== 0 && Math.abs(v) < 0.1 ? 2 : 1;
+    return new Intl.NumberFormat(intl, { style: "percent", minimumFractionDigits: digits, maximumFractionDigits: digits }).format(v);
+  }
   return new Intl.NumberFormat(intl, { maximumFractionDigits: v < 10 && v % 1 ? 1 : 0 }).format(v);
 }
 

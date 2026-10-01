@@ -1,6 +1,6 @@
 import { and, desc, eq, isNull, ne, or } from "drizzle-orm";
 import type { Tx } from "@/db";
-import { contentAssets, contentVersions, opportunities, organizations, pages, queries, type FactCheckResult } from "@/db/schema";
+import { contentAssets, contentVersions, opportunities, organizations, pages, products, queries, type FactCheckResult } from "@/db/schema";
 import { factCheckDraft, recordRun, rewriteDraft, templateGeneration, type GenerationResult } from "@/ai/tasks";
 import type { LlmProvider } from "@/ai/types";
 import { DEFAULT_FRESHNESS_DAYS, severityCounts, type FactCheckOptions } from "@/core/content/fact-check";
@@ -14,6 +14,7 @@ import { loadProductGraph } from "@/core/knowledge/load";
 import type { ProductGraph } from "@/core/knowledge/types";
 import type { PageType } from "@/core/discovery/urls";
 import { audit, type Actor } from "@/lib/audit";
+import { assertOwned } from "@/lib/owned";
 import { recomputeCoverage } from "./discovery";
 
 type Asset = typeof contentAssets.$inferSelect;
@@ -62,6 +63,11 @@ export async function createAsset(
   actor: Actor,
   input: { productId: string; type: ContentType; title?: string; pageId?: string | null; targetQueryId?: string | null; brief?: string | null; sourceAssetId?: string | null; sourceVersionId?: string | null },
 ) {
+  // Foreign keys ignore row-level security: every referenced row must belong to this organisation.
+  await assertOwned(tx, products, input.productId, actor.organizationId, "Product not found");
+  await assertOwned(tx, queries, input.targetQueryId, actor.organizationId, "Target query not found");
+  await assertOwned(tx, contentAssets, input.sourceAssetId, actor.organizationId, "Source content not found");
+  await assertOwned(tx, contentVersions, input.sourceVersionId, actor.organizationId, "Source version not found");
   let title = input.title?.trim();
   if (input.pageId) {
     const page = await tx.query.pages.findFirst({ where: and(eq(pages.id, input.pageId), eq(pages.organizationId, actor.organizationId)) });

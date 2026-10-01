@@ -6,6 +6,7 @@ import {
   aiVisibilityPrompts,
   auditLogs,
   campaigns,
+  contentAssets,
   crossSellRules,
   experiments,
   memberships,
@@ -13,6 +14,7 @@ import {
   productChangelog,
   productFaqs,
   productProofs,
+  queries,
   referralCodes,
   users,
 } from "@/db/schema";
@@ -49,6 +51,7 @@ vi.mock("next/cache", () => ({ revalidatePath: () => undefined, revalidateTag: (
 const { addProofAction, addChangelogAction, addFaqAction } = await import("@/app/actions/products");
 const { addPromptAction, addCampaignAction, addExperimentAction, addCrossSellRuleAction, createReferralCodeAction } = await import("@/app/actions/growth");
 const { setPublicSiteAction, updateOrgSettingsAction } = await import("@/app/actions/settings");
+const { createContentAction } = await import("@/app/actions/content");
 
 /** Run an action; return the flash outcome parsed from the redirect target. */
 async function run(action: (fd: FormData) => Promise<unknown>, fields: Record<string, string>) {
@@ -75,6 +78,7 @@ let productB: string;
 let sourceB: string;
 let affiliateB: string;
 let campaignB: string;
+let queryB: string;
 const tokens = {} as Record<Role, string>;
 
 async function memberToken(orgId: string, role: Role) {
@@ -96,6 +100,7 @@ beforeAll(async () => {
   sourceB = b.sources.site.id;
   await withOrg(B.org.id, async (tx) => {
     affiliateB = (await tx.insert(affiliates).values({ organizationId: B.org.id, name: "B affiliate", commissionBps: 1000, commissionMonths: 12, holdDays: 30, status: "ACTIVE" }).returning())[0].id;
+    queryB = (await tx.insert(queries).values({ organizationId: B.org.id, productId: productB, query: "b private query", normalized: "b private query", intent: "INFORMATIONAL", funnelStage: "AWARENESS" }).returning())[0].id;
     campaignB = (await tx.insert(campaigns).values({ organizationId: B.org.id, name: "B campaign", channel: "EMAIL", utmSource: "b", utmMedium: "email", utmCampaign: "b" }).returning())[0].id;
   });
   for (const role of ROLES) tokens[role] = await memberToken(A.org.id, role);
@@ -206,6 +211,13 @@ describe("cross-organisation ids from forms are rejected (assertOwned)", () => {
     await rejects(createReferralCodeAction, { ...base, code: `FC${uid()}`.toUpperCase(), campaignId: campaignB }, "Campaign not found");
     const rows = await withOrg(A.org.id, (tx) => tx.select().from(referralCodes).where(eq(referralCodes.organizationId, A.org.id)));
     expect(rows).toHaveLength(0);
+  });
+
+  it("createContentAction: foreign product or target query", async () => {
+    await rejects(createContentAction, { productId: productB, type: "LANDING_PAGE", title: "Foreign product page" }, "Product not found");
+    await rejects(createContentAction, { productId: productA, type: "LANDING_PAGE", title: "Foreign query page", targetQueryId: queryB }, "Target query not found");
+    const rows = await withOrg(A.org.id, (tx) => tx.select().from(contentAssets).where(eq(contentAssets.organizationId, A.org.id)));
+    expect(rows.filter((r) => r.title === "Foreign product page" || r.title === "Foreign query page")).toHaveLength(0);
   });
 
   it("the same actions accept the organisation's own ids", async () => {

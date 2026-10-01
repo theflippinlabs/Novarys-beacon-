@@ -151,6 +151,14 @@ describe("currency formatting and journey labels", () => {
     expect(formatValue(123456, "money", null, "en-US")).toBe("1,234.56");
   });
 
+  it("formats rates with two decimals only for small non-zero values", () => {
+    expect(formatValue(0, "percent", undefined, "en-US")).toBe("0.0%");
+    expect(formatValue(0.0123, "percent", undefined, "en-US")).toBe("1.23%");
+    expect(formatValue(-0.0123, "percent", undefined, "en-US")).toBe("-1.23%");
+    expect(formatValue(-0.25, "percent", undefined, "en-US")).toBe("-25.0%");
+    expect(formatValue(0.5, "percent", undefined, "en-US")).toBe("50.0%");
+  });
+
   it("normalises page paths and labels links", () => {
     expect(pagePath("https://x.example/pricing/?a=1")).toBe("/pricing");
     expect(pagePath("/pricing?utm_source=x")).toBe("/pricing");
