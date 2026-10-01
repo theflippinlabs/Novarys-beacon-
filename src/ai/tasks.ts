@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { Tx } from "@/db";
 import { aiRuns } from "@/db/schema";
 import { factCheck, type FactCheckOptions } from "@/core/content/fact-check";
-import type { Draft, DraftRequest } from "@/core/content/generate";
+import { CONTENT_RULES_VERSION, type Draft, type DraftRequest } from "@/core/content/generate";
 import { guardRewrite, type GuardResult } from "@/core/content/rewrite-guard";
 import { graphFacts } from "@/core/knowledge/facts";
 import type { ProductGraph } from "@/core/knowledge/types";
@@ -16,7 +16,7 @@ import type { LlmProvider } from "./types";
 
 /** Versioned prompts/rule-sets. Bump when behaviour changes so outputs stay traceable. */
 export const PROMPT_VERSIONS = {
-  generateContent: "content-v1",
+  generateContent: CONTENT_RULES_VERSION,
   rewriteContent: "content-rewrite-v3",
   factCheckDraft: "factcheck-v2",
   classifyIntent: "intent-rules-v1",

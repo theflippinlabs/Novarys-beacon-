@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { classifyQuery, INTENT_TO_FUNNEL } from "@/core/queries/classify";
-import { expandQueryUniverse } from "@/core/queries/expand";
+import { expandQueryUniverse, problemHowTo } from "@/core/queries/expand";
 import { makeCompetitor, makeFacet, makeGraph, makePricing } from "./fixtures/graph";
 
 describe("classifyQuery", () => {
@@ -146,5 +146,27 @@ describe("expandQueryUniverse", () => {
     });
     expect(expandQueryUniverse(g, { max: 7 })).toHaveLength(7);
     expect(expandQueryUniverse(g).length).toBeLessThanOrEqual(150);
+  });
+});
+
+describe("problem-derived queries are grammatical", () => {
+  it("phrases actions, noun phrases and sentences without inventing words", () => {
+    expect(problemHowTo("Stop spam in live chat")).toBe("how to stop spam in live chat");
+    expect(problemHowTo("how to stop spam")).toBe("how to stop spam");
+    expect(problemHowTo("Spam in TikTok live chat")).toBe("how to deal with Spam in TikTok live chat");
+    expect(problemHowTo("Abusive comments")).toBe("how to deal with Abusive comments");
+    expect(problemHowTo("Spam floods live chat")).toBeNull();
+    expect(problemHowTo("Moderation is inconsistent")).toBeNull();
+    expect(problemHowTo("Moderators miss abusive messages")).toBeNull();
+    expect(problemHowTo("Comments in live chat get lost.")).toBeNull();
+  });
+
+  it("never emits 'how to <sentence>' in the query universe", () => {
+    const g = makeGraph({ facets: [makeFacet("PROBLEM", "Spam floods live chat"), makeFacet("PROBLEM", "Moderation is inconsistent"), makeFacet("PROBLEM", "Spam in TikTok live chat")] });
+    const qs = expandQueryUniverse(g).map((q) => q.query);
+    expect(qs).not.toContain("how to spam floods live chat");
+    expect(qs).not.toContain("how to moderation is inconsistent");
+    expect(qs.filter((q) => q.startsWith("how to"))).toEqual(["how to deal with spam in tiktok live chat"]);
+    expect(qs).toEqual(expect.arrayContaining(["spam floods live chat", "moderation is inconsistent", "spam in tiktok live chat"]));
   });
 });

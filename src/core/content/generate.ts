@@ -6,9 +6,14 @@ import { formatMoney, stripLongDashes } from "@/core/util/text";
 import { publishableGraph } from "@/core/knowledge/facts";
 import type { ContentType } from "./types";
 import { EDITOR_TODO } from "./markers";
+import { queryTermCoverage } from "./seo-check";
+import { problemHowTo } from "@/core/queries/expand";
 
 export type { ContentType } from "./types";
 export { EDITOR_TODO } from "./markers";
+
+/** Version of these generation rules, recorded as the provenance ("Prompt / rules version") of every rules-generated draft. */
+export const CONTENT_RULES_VERSION = "content-rules-v2";
 
 export type DraftRequest = {
   type: ContentType;
@@ -51,8 +56,17 @@ class Writer {
 }
 
 const src = (g: ProductGraph, id: string | null) => (id ? g.sources.find((s) => s.id === id)?.url : undefined);
-/** Lower-case the first letter unless the word looks like a proper noun / acronym (e.g. "TikTok", "API"). */
-const lowerFirst = (s: string) => (/^[A-Z][a-z]*[A-Z]|^[A-Z]{2}/.test(s) ? s : s.charAt(0).toLowerCase() + s.slice(1));
+/** `s` starts with the name `name` (as a whole word, any case). */
+const startsWithName = (s: string, name: string) => Boolean(name) && s.trim().toLowerCase().startsWith(name.toLowerCase()) && !/^[\p{L}\p{N}]/u.test(s.trim().slice(name.length));
+/**
+ * Lower-case the first letter to continue a sentence, unless the text starts
+ * with a proper noun: one of `names` (the product, a competitor) or a word
+ * that looks like a brand / acronym (e.g. "TikTok", "API").
+ */
+const lowerFirst = (s: string, names: string[] = []) => (/^[A-Z][a-z]*[A-Z]|^[A-Z]{2}/.test(s) || names.some((n) => startsWithName(s, n)) ? s : s.charAt(0).toLowerCase() + s.slice(1));
+/** "Name: description" (lower-cased to continue the sentence, except in titles), without repeating the name when the description already starts with it. */
+const named = (name: string, s: string, title = false) => (startsWithName(s, name) ? s.trim() : `${name}: ${title ? s.trim() : lowerFirst(s.trim(), [name])}`);
+const upperFirst = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const sentence = (s: string) => (/[.!?]$/.test(s.trim()) ? s.trim() : `${s.trim()}.`);
 const truncate = (s: string, n: number) => (s.length <= n ? s : s.slice(0, n - 1).replace(/\s+\S*$/, "") + "…");
 
@@ -121,6 +135,27 @@ function productUrl(g: ProductGraph, path: string) {
   return canonicalUrl(g.product.domain, path) ?? path;
 }
 
+/** Proper nouns of the graph (product, competitors, integrations, brand-like words such as "TikTok") with their casing. */
+function properNouns(g: ProductGraph): string[] {
+  const words = [g.product.shortDescription, g.product.fullDescription, ...g.facets.flatMap((f) => [f.name, f.description])].flatMap((t) => (t ?? "").match(/\b(?:[A-Z][a-z]+[A-Z][\w]*|[A-Z]{2,})\b/g) ?? []);
+  return [...new Set([g.product.name, ...g.competitors.map((c) => c.competitor.name), ...facetsOf(g, "INTEGRATION").map((f) => f.name), ...words])].filter(Boolean);
+}
+
+/**
+ * Title (H1 and meta title) of a draft that targets a search query: the
+ * format's own title when it already carries most of the query's terms,
+ * otherwise the query itself, capitalised, with the graph's proper nouns
+ * re-cased ("tiktok" → "TikTok") and the product name appended when absent.
+ * Only the query's own words are used, so no claim is added.
+ */
+function targetedTitle(base: string, query: string | null | undefined, g: ProductGraph): string {
+  let q = query?.trim().replace(/\s+/g, " ") ?? "";
+  if (!q || queryTermCoverage(q, base) >= 0.5) return base;
+  for (const n of properNouns(g)) q = q.replace(new RegExp(`(?<![\\p{L}\\p{N}])${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\p{L}\\p{N}])`, "giu"), () => n);
+  q = upperFirst(q);
+  return queryTermCoverage(g.product.name, q) >= 1 ? q : `${q} | ${g.product.name}`;
+}
+
 /**
  * Deterministic, fact-grounded draft generation. Every statement is composed
  * from VERIFIED knowledge-graph facts and recorded in `factRefs`; anything the graph
@@ -143,7 +178,7 @@ export function generateDraft(graph: ProductGraph, req: DraftRequest): Draft {
 
   const intro = () => {
     if (p.shortDescription) {
-      w.line(sentence(`${p.name}: ${lowerFirst(p.shortDescription)}`)).line();
+      w.line(sentence(named(p.name, p.shortDescription))).line();
       w.ref("product:short_description", home);
     } else w.todo(`Add a short description of ${p.name} to the knowledge graph.`);
   };
@@ -152,7 +187,7 @@ export function generateDraft(graph: ProductGraph, req: DraftRequest): Draft {
     case "LANDING_PAGE": {
       const pageType = req.pageType ?? (facet ? facetPageType(facet) : "PRODUCT");
       const path = pageType === "PRODUCT" ? pagePath("PRODUCT", p.slug) : pagePath(pageType, p.slug, facet?.slug ?? comp?.competitor.slug);
-      const title = facet ? landingTitle(pageType, p.name, facet.name) : p.shortDescription ? `${p.name}: ${p.shortDescription}` : p.name;
+      const title = targetedTitle(facet ? landingTitle(pageType, p.name, facet.name) : p.shortDescription ? named(p.name, p.shortDescription, true) : p.name, req.targetQuery, g);
       w.line(`# ${title}`).line();
       if (facet) {
         if (facet.description) {
@@ -198,7 +233,7 @@ export function generateDraft(graph: ProductGraph, req: DraftRequest): Draft {
     case "COMPARISON": {
       if (!comp) throw new Error("A comparison draft requires a competitor");
       const sourced = comp.comparisonFacts.filter((f) => f.sourceUrl);
-      const title = `${p.name} vs ${comp.competitor.name}`;
+      const title = targetedTitle(`${p.name} vs ${comp.competitor.name}`, req.targetQuery, g);
       w.line(`# ${title}`).line();
       intro();
       w.line(`_This comparison is based only on publicly available, sourced information. Each row links to its source; verify details before making a decision._`).line();
@@ -218,7 +253,7 @@ export function generateDraft(graph: ProductGraph, req: DraftRequest): Draft {
     }
 
     case "FAQ": {
-      const title = `${p.name}: frequently asked questions`;
+      const title = targetedTitle(`${p.name}: frequently asked questions`, req.targetQuery, g);
       w.line(`# ${title}`).line();
       const { answers, gaps } = buildAnswerBlocks(g);
       for (const a of answers) {
@@ -234,8 +269,9 @@ export function generateDraft(graph: ProductGraph, req: DraftRequest): Draft {
 
     case "ARTICLE":
     case "TUTORIAL": {
-      const topic = req.targetQuery ?? (problems[0]?.name ? `how to ${lowerFirst(problems[0].name)}` : `getting started with ${p.name}`);
-      const title = topic.charAt(0).toUpperCase() + topic.slice(1);
+      const howTo = problems[0] ? problemHowTo(lowerFirst(problems[0].name, properNouns(g))) : null;
+      const topic = req.targetQuery ?? howTo ?? `getting started with ${p.name}`;
+      const title = upperFirst(topic);
       w.line(`# ${title}`).line();
       if (problems.length) facetList(g, w, problems.slice(0, 4), "The problem");
       else w.todo("Describe the problem this guide addresses (no problems recorded in the graph).");
@@ -275,8 +311,8 @@ export function generateDraft(graph: ProductGraph, req: DraftRequest): Draft {
     case "X_POST": {
       const feature = facet ?? features[0];
       const cta = p.conversionUrls[0]?.url ?? home;
-      let text = p.shortDescription ? `${p.name}: ${lowerFirst(p.shortDescription.replace(/\.$/, ""))}.` : `${p.name}.`;
-      if (feature) text += ` ${feature.name}${feature.description ? `: ${lowerFirst(feature.description.replace(/\.$/, ""))}` : ""}.`;
+      let text = p.shortDescription ? `${named(p.name, p.shortDescription.replace(/\.$/, ""))}.` : `${p.name}.`;
+      if (feature) text += ` ${feature.name}${feature.description ? `: ${lowerFirst(feature.description.replace(/\.$/, ""), [p.name])}` : ""}.`;
       const budget = 280 - (cta ? cta.length + 1 : 0);
       text = truncate(text, budget) + (cta ? ` ${cta}` : "");
       w.line(text);
@@ -290,7 +326,7 @@ export function generateDraft(graph: ProductGraph, req: DraftRequest): Draft {
       const title = req.type === "NEWSLETTER" ? `${p.name} update` : `LinkedIn post | ${p.name}`;
       if (req.type === "NEWSLETTER") w.line(`# ${title}`).line();
       if (problems[0]) {
-        w.line(sentence(`${problems[0].name} is a recurring problem for ${audiences[0] ? lowerFirst(audiences[0].name) : "teams"}`)).line();
+        w.line(sentence(`${problems[0].name} is a recurring problem for ${audiences[0] ? lowerFirst(audiences[0].name, [p.name]) : "teams"}`)).line();
         w.ref(`facet:${problems[0].id}`, src(g, problems[0].sourceId));
         if (audiences[0]) w.ref(`facet:${audiences[0].id}`, src(g, audiences[0].sourceId));
       }
@@ -298,7 +334,7 @@ export function generateDraft(graph: ProductGraph, req: DraftRequest): Draft {
       if (features.length) {
         w.line(`What it does:`).line();
         for (const f of features.slice(0, 4)) {
-          w.line(`→ ${f.name}${f.description ? `: ${lowerFirst(sentence(f.description))}` : ""}`);
+          w.line(`→ ${f.name}${f.description ? `: ${lowerFirst(sentence(f.description), [p.name])}` : ""}`);
           w.ref(`facet:${f.id}`, src(g, f.sourceId));
         }
         w.line();
@@ -319,7 +355,7 @@ export function generateDraft(graph: ProductGraph, req: DraftRequest): Draft {
       w.line(`# ${title}`).line().line("_Format: 30 to 45 seconds, vertical, on-screen text + voice-over._").line();
       w.line("## Hook (0-3s)").line();
       if (problems[0]) {
-        w.line(`"${sentence(problems[0].name)} Here's how ${audiences[0] ? lowerFirst(audiences[0].name) : "teams"} handle it."`).line();
+        w.line(`"${sentence(problems[0].name)} Here's how ${audiences[0] ? lowerFirst(audiences[0].name, [p.name]) : "teams"} handle it."`).line();
         w.ref(`facet:${problems[0].id}`, src(g, problems[0].sourceId));
       } else w.todo("Write a hook: no problem statement recorded in the graph.");
       w.line("## Beats").line();
@@ -355,12 +391,12 @@ export function generateDraft(graph: ProductGraph, req: DraftRequest): Draft {
 
     case "OUTREACH": {
       const title = `Outreach draft | ${p.name}`;
-      w.line(`# ${title}`).line().line("**Subject:** " + (p.shortDescription ? truncate(`${p.name}: ${lowerFirst(p.shortDescription)}`, 70) : p.name)).line();
+      w.line(`# ${title}`).line().line("**Subject:** " + (p.shortDescription ? truncate(named(p.name, p.shortDescription), 70) : p.name)).line();
       w.line("Hi {{recipient_name}},").line();
       w.todo("Personalise one sentence about why this recipient/publication is relevant. Do not send without human review.");
       intro();
       for (const f of features.slice(0, 3)) {
-        w.line(`- ${f.name}${f.description ? `: ${lowerFirst(sentence(f.description))}` : ""}`);
+        w.line(`- ${f.name}${f.description ? `: ${lowerFirst(sentence(f.description), [p.name])}` : ""}`);
         w.ref(`facet:${f.id}`, src(g, f.sourceId));
       }
       w.line().line(`More information: ${home ?? "{{product_url}}"}`).line().line("Best regards,").line("{{sender_name}}");
@@ -377,7 +413,7 @@ function landingTitle(type: PageType, product: string, item: string) {
     case "FEATURE":
       return `${item} | ${product}`;
     case "USE_CASE":
-      return `${product} for ${lowerFirst(item)}`;
+      return `${product} for ${lowerFirst(item, [product])}`;
     case "INDUSTRY":
       return `${product} for the ${item} industry`;
     case "AUDIENCE":

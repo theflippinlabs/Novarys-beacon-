@@ -23,11 +23,12 @@ export async function BarList({ rows, format, color = "var(--color-blue)", empty
   );
 }
 
-/** Funnel as ordered bars with step-to-step conversion. Null rates render as "n/a" (no denominator). */
+/** Funnel as ordered bars with step-to-step conversion. Null rates render as "n/a" (no denominator, or the step is not a subset of the previous one). */
 export async function FunnelBars({ steps }: { steps: { step: string; visitors: number; conversionFromPrev: number | null }[] }) {
   const { t, intl } = await getI18n();
   const max = Math.max(...steps.map((s) => s.visitors), 1);
   return (
+    <>
     <ol className="flex flex-col gap-2">
       {steps.map((s) => (
         <li key={s.step} className="grid grid-cols-[9rem_1fr_4.5rem] items-center gap-3">
@@ -40,6 +41,8 @@ export async function FunnelBars({ steps }: { steps: { step: string; visitors: n
         </li>
       ))}
     </ol>
+    <p className="mt-3 text-[11px] text-muted">{t("Rate: share of the previous step. n/a when the previous step is empty or has fewer people than this one (steps are counted independently, so it is not a subset).")}</p>
+    </>
   );
 }
 

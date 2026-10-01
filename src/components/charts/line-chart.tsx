@@ -2,6 +2,7 @@
 
 import { useId, useMemo, useState } from "react";
 import { useI18n } from "@/i18n/client";
+import { axisTickIndices } from "@/core/util/chart";
 
 export type Series = { key: string; label: string; color: string; points: { x: string; y: number }[] };
 
@@ -53,7 +54,7 @@ export function LineChart({ series, height = 180, format: formatProp, title }: {
             </text>
           </g>
         ))}
-        {[0, Math.floor((xs.length - 1) / 2), xs.length - 1].map((i) => (
+        {axisTickIndices(xs.length).map((i) => (
           <text key={i} x={x(i)} y={height - 6} textAnchor={i === 0 ? "start" : i === xs.length - 1 ? "end" : "middle"} className="fill-muted font-mono text-[10px]">
             {xs[i]?.slice(5)}
           </text>

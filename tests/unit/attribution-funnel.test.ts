@@ -132,6 +132,17 @@ describe("funnel", () => {
     expect(f[3].conversionFromPrev).toBe(0);
   });
 
+  it("never shows a rate above 100% between steps that are counted independently", () => {
+    // Production case: 1 CTA click, 2 completed signups (one signed up without a tracked click).
+    const f = buildFunnel({ PAGE_VIEW: 1, CTA_CLICK: 1, SIGNUP_COMPLETED: 2 });
+    const signup = f.find((r) => r.step === "SIGNUP_COMPLETED")!;
+    expect(signup).toMatchObject({ visitors: 2, conversionFromPrev: null, conversionFromStart: null });
+    for (const r of f) {
+      if (r.conversionFromPrev !== null) expect(r.conversionFromPrev).toBeLessThanOrEqual(1);
+      if (r.conversionFromStart !== null) expect(r.conversionFromStart).toBeLessThanOrEqual(1);
+    }
+  });
+
   it("pctChange", () => {
     expect(pctChange(150, 100)).toBe(0.5);
     expect(pctChange(50, 100)).toBe(-0.5);

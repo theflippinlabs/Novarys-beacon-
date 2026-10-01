@@ -237,6 +237,12 @@ test("tracking keys, events and analytics", async () => {
   await expect(page.getByText("New key (shown once)")).toBeVisible();
   const key = (await page.locator("code").first().innerText()).trim();
   expect(key).toMatch(/^bpk_/);
+  // Shown once: the flash leaves the URL and a reload shows neither the key nor the message again.
+  await expect(page).not.toHaveURL(/[?&]ok=/);
+  await page.reload();
+  await expect(page.getByText("New key (shown once)")).toHaveCount(0);
+  await expect(page.getByText(key)).toHaveCount(0);
+  await expect(page.getByText("Key created. Copy it now")).toHaveCount(0);
 
   const origin = "https://acme-live.example";
   const send = (data: object, headers: Record<string, string> = {}) => page.request.post("/api/v1/events", { headers: { "content-type": "text/plain", origin, ...headers }, data: JSON.stringify({ key, product: "acme-live", ...data }) });
@@ -357,7 +363,7 @@ test("edit and delete a product", async ({ page }) => {
   await expect(page.getByRole("status")).toContainText("Type the product name exactly");
   await page.locator('input[name="confirm"]').fill("Throwaway App");
   await page.getByRole("button", { name: "Delete product" }).click();
-  await expect(page).toHaveURL(/\/products\?ok=/);
   await expect(page.getByRole("status")).toContainText("deleted");
+  await expect(page).toHaveURL(/\/products$/);
   await expect(page.getByRole("link", { name: "Throwaway App" })).toHaveCount(0);
 });

@@ -3,6 +3,8 @@ import { analyzeAiResponse, mentionOffsets, snippetAround } from "@/core/visibil
 import { analyzeGrowth, type MetricPair } from "@/core/autopilot/analyst";
 import { prioritizeAttention, attentionPriority, type AttentionItem } from "@/core/command/attention";
 import { escapeHtml, formatMoney, jaccard, normalizeQuery, shingles, slugify, textSimilarity, tokens } from "@/core/util/text";
+import { axisTickIndices } from "@/core/util/chart";
+import { withoutFlashParams } from "@/components/ui/flash-seen";
 import { can, canAssignRole, ForbiddenError, PERMISSIONS, ROLES } from "@/lib/auth/rbac";
 
 describe("analyzeAiResponse", () => {
@@ -188,5 +190,23 @@ describe("rbac", () => {
     expect(canAssignRole("ADMIN", "OWNER")).toBe(false);
     expect(canAssignRole("EDITOR", "VIEWER")).toBe(false);
     expect(new ForbiddenError("x").message).toBe("Missing permission: x");
+  });
+});
+
+describe("chart axis labels", () => {
+  it("labels first, middle and last point once each (a single week never repeats its label)", () => {
+    expect(axisTickIndices(0)).toEqual([]);
+    expect(axisTickIndices(1)).toEqual([0]);
+    expect(axisTickIndices(2)).toEqual([0, 1]);
+    expect(axisTickIndices(3)).toEqual([0, 1, 2]);
+    expect(axisTickIndices(12)).toEqual([0, 5, 11]);
+  });
+});
+
+describe("one-shot flash messages", () => {
+  it("strips only the flash parameters from the URL once displayed", () => {
+    expect(withoutFlashParams("https://b.example/content/1?ok=Draft%20generation%20queued.#images")).toBe("/content/1#images");
+    expect(withoutFlashParams("https://b.example/queries?product=a&error=Nope&q=x")).toBe("/queries?product=a&q=x");
+    expect(withoutFlashParams("https://b.example/queries?product=a")).toBeNull();
   });
 });

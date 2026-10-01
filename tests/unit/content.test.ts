@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { EDITOR_TODO, generateDraft, type ContentType } from "@/core/content/generate";
 import { factCheck, graphFacts } from "@/core/content/fact-check";
 import { seoCheck } from "@/core/content/seo-check";
+import { renderMarkdown } from "@/core/content/markdown";
 import { canTransition, assertTransition, statusAfterChecks, PIPELINE, HUMAN_ONLY } from "@/core/content/workflow";
 import { completeGraph, FIXED_DATE, makeFacet, makeGraph } from "./fixtures/graph";
 
@@ -233,5 +234,48 @@ describe("content workflow", () => {
     expect(statusAfterChecks({ passed: false }, { passed: false })).toBe("FACT_CHECK");
     expect(statusAfterChecks({ passed: true }, { passed: false })).toBe("SEO_CHECK");
     expect(statusAfterChecks({ passed: true }, { passed: true })).toBe("HUMAN_APPROVAL");
+  });
+});
+
+describe("generated draft wording (production validation regressions)", () => {
+  const acme = () => {
+    const g = completeGraph();
+    return { ...g, product: { ...g.product, name: "Acme Live", shortDescription: "Acme Live helps TikTok agencies moderate live chat." } };
+  };
+
+  it("does not repeat or lower-case the product name when the description starts with it", () => {
+    const d = generateDraft(acme(), { type: "LANDING_PAGE", publisher: "Novarys" });
+    expect(d.title).toBe("Acme Live helps TikTok agencies moderate live chat.");
+    expect(d.body).toContain("Acme Live helps TikTok agencies moderate live chat.");
+    expect(d.body).not.toMatch(/Acme Live: acme Live|Acme Live: Acme Live/);
+    const post = generateDraft(acme(), { type: "X_POST", publisher: "Novarys" });
+    expect(post.body.startsWith("Acme Live helps TikTok agencies")).toBe(true);
+  });
+
+  it("puts the target query in the H1 and meta title so query_in_title passes", () => {
+    const g = completeGraph();
+    for (const type of ["LANDING_PAGE", "FAQ", "COMPARISON", "TUTORIAL"] as const) {
+      const targetQuery = "tiktok live chat spam filter";
+      const d = generateDraft(g, { type, publisher: "Novarys", targetQuery, competitorId: g.competitors[0].competitorId });
+      const r = seoCheck({ type, body: d.body, metaTitle: d.metaTitle, metaDescription: d.metaDescription, targetQuery, structuredData: d.structuredData, brandTerms: [g.product.name] });
+      expect(r.checks.find((c) => c.rule === "query_in_title")?.ok, type).toBe(true);
+    }
+    const d = generateDraft(g, { type: "LANDING_PAGE", publisher: "Novarys", targetQuery: "tiktok live chat spam filter" });
+    // The query reads naturally: capitalised, brand casing restored, product named once.
+    expect(d.title).toBe("TikTok live chat spam filter | Beacon Live");
+    expect(d.body.match(/^# .+$/m)?.[0]).toBe(`# ${d.title}`);
+    // A base title that already covers the query is kept.
+    expect(generateDraft(g, { type: "LANDING_PAGE", publisher: "Novarys", targetQuery: "beacon live" }).title).toBe("Beacon Live: Real-time moderation for TikTok live streams.");
+  });
+
+  it("phrases the default tutorial topic grammatically from a problem noun phrase", () => {
+    const d = generateDraft(completeGraph(), { type: "TUTORIAL", publisher: "Novarys" });
+    expect(d.title).toBe("How to deal with spam in TikTok live chat");
+  });
+
+  it("renders CTA markers as tracked links without leaking the enum code", () => {
+    const html = renderMarkdown("- [Start free trial](https://acme.example/signup) {cta:TRY_FREE}\n\nStray {cta:BOOK_DEMO} marker.");
+    expect(html).toContain('<a href="https://acme.example/signup" data-beacon-cta="TRY_FREE" rel="noopener noreferrer">Start free trial</a>');
+    expect(html).not.toMatch(/TRY_FREE<|>TRY_FREE|BOOK_DEMO|\{cta:/);
   });
 });

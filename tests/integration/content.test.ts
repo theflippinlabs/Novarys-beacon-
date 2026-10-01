@@ -5,6 +5,7 @@ import { aiRuns, auditLogs, contentAssets, contentVersions, pages, productFacets
 import { approveAsset, createAssetForPage, generateVersion, getAsset, latestVersion, publishAsset, rejectAsset, saveEditedVersion } from "@/services/content";
 import { syncPagePlan } from "@/services/discovery";
 import { newOrg, seedCompleteProduct } from "./helpers";
+import { CONTENT_RULES_VERSION } from "@/core/content/generate";
 
 let ctx: Awaited<ReturnType<typeof newOrg>>;
 let orgId: string;
@@ -61,7 +62,7 @@ describe("content workflow", () => {
     expect(v!.seoCheck!.passed).toBe(true);
     expect(v!.aiRunId).toBeTruthy();
     const run = await withOrg(orgId, (tx) => tx.query.aiRuns.findFirst({ where: eq(aiRuns.id, v!.aiRunId!) }));
-    expect(run).toMatchObject({ task: "generateContent", provider: "beacon-rules", status: "SUCCEEDED", promptVersion: "content-v1" });
+    expect(run).toMatchObject({ task: "generateContent", provider: "beacon-rules", status: "SUCCEEDED", promptVersion: CONTENT_RULES_VERSION });
   });
 
   it("an edit that adds an invented claim blocks the fact check, and approval is refused", async () => {

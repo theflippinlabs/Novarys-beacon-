@@ -4,6 +4,7 @@ import { closeDb, withOrg, type Tx } from "@/db";
 import {
   aiCitations,
   aiMentions,
+  aiRuns,
   aiVisibilityPrompts,
   aiVisibilityTests,
   competitors,
@@ -24,6 +25,8 @@ import { aiVisibilityTrend, citationDomains, competitorIntel, runPromptTests, se
 import { queryMetrics, upsertOpportunities } from "@/services/opportunities";
 import { contentGapsForProduct, draftFromGap, opportunityFromGap } from "@/services/content-gaps";
 import { generateOpportunities } from "@/core/opportunities/engine";
+import { CONTENT_RULES_VERSION } from "@/core/content/generate";
+import { generateVersion } from "@/services/content";
 import { isoDay, addDays } from "@/core/util/text";
 import type { Actor } from "@/lib/audit";
 import { newOrg, pgError, seedCompleteProduct, uid } from "./helpers";
@@ -289,6 +292,18 @@ describe("content gaps and opportunity engine v2", () => {
     expect(same.id).toBe(opportunity.id);
     const a = await q((tx) => tx.query.contentAssets.findFirst({ where: eq(contentAssets.id, asset.id) }));
     expect(a).toMatchObject({ productId: productA.id, type: "LANDING_PAGE", status: "IDEA" });
+
+    // A rules-generated draft from the gap passes Beacon's own gate without a human edit (the graph's facts are verified).
+    const gen = await q((tx) => generateVersion(tx, actor, asset.id, "Novarys"));
+    expect(gen.seo.checks.find((c) => c.rule === "query_in_title")).toMatchObject({ ok: true });
+    expect(gen.seo.checks.filter((c) => !c.ok)).toEqual([]);
+    expect(gen.quality.checks.filter((c) => !c.ok)).toEqual([]);
+    expect(gen.status).toBe("HUMAN_APPROVAL");
+    expect(gen.version.body.split("\n")[0]).toBe("# Quantum invoicing ledger | Beacon Live");
+    expect(gen.version.metaTitle).toBe("Quantum invoicing ledger | Beacon Live");
+    // Provenance records the rules version of the generator.
+    const run = await q((tx) => tx.query.aiRuns.findFirst({ where: eq(aiRuns.id, gen.version.aiRunId!) }));
+    expect(run).toMatchObject({ provider: "beacon-rules", promptVersion: CONTENT_RULES_VERSION });
   });
 
   it("marks vanished opportunities OBSOLETE and reopens them when the fingerprint recurs (batched upsert)", async () => {

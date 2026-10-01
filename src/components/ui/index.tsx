@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { getI18n, getT } from "@/i18n/server";
 import type { Kpi } from "@/services/metrics";
+import { FlashSeen } from "./flash-seen";
 
 export function cx(...xs: (string | false | null | undefined)[]) {
   return xs.filter(Boolean).join(" ");
@@ -309,7 +310,7 @@ export function Field({ label, hint, children, className }: { label: string; hin
   );
 }
 
-/** Flash messages from server actions; runtime strings are translated through the dictionary templates. */
+/** Flash messages from server actions (one-shot: see FlashSeen); runtime strings are translated through the dictionary templates. */
 export async function Flash({ searchParams }: { searchParams: Record<string, string | string[] | undefined> }) {
   const t = await getT();
   const ok = typeof searchParams.ok === "string" ? searchParams.ok : null;
@@ -318,6 +319,7 @@ export async function Flash({ searchParams }: { searchParams: Record<string, str
   return (
     <div role="status" className={cx("mb-6 border px-4 py-3 text-sm", error ? "border-crit/50 text-crit" : "border-ok/40 text-ok")}>
       {error ? `✕ ${t(error)}` : `✓ ${t(ok!)}`}
+      <FlashSeen />
     </div>
   );
 }

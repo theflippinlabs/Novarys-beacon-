@@ -3,6 +3,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { createApiKeyAction, revokeApiKeyAction } from "@/app/actions/products";
 import { Badge, Button, Field, Flash, HiddenBack, PageHeader, Panel, StatusBadge, Table, Td, Th } from "@/components/ui";
 import { ProductTabs } from "@/components/shell/product-tabs";
+import { NewKeyNotice } from "./new-key";
 import { apiKeys, conversionEvents } from "@/db/schema";
 import { env } from "@/lib/env";
 import { pageData, productOr404, type SP } from "@/lib/page";
@@ -36,12 +37,7 @@ export default async function TrackingPage({ params, searchParams }: { params: P
       <PageHeader eyebrow={t("Tracking · {name}", { name: data.p.name })} title={t("Conversion tracking & keys")} description={t("First-party, privacy-respecting measurement. Browser (publishable) keys can only send PAGE_VIEW and CTA_CLICK from allowed origins; lifecycle and revenue events require a secret server key.")} />
       <ProductTabs slug={slug} active="tracking" />
       <Flash searchParams={sp} />
-      {newKey && (
-        <div className="mb-6 border border-gold px-4 py-3">
-          <div className="eyebrow text-gold">{t("New key (shown once)")}</div>
-          <code className="num mt-1 block break-all text-sm text-platinum">{newKey}</code>
-        </div>
-      )}
+      <NewKeyNotice value={newKey} slug={slug} />
       <div className="grid gap-6 xl:grid-cols-[1fr_24rem]">
         <Panel title={t("API keys")} pad={false}>
           {data.keys.length ? (

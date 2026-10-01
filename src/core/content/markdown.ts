@@ -33,7 +33,9 @@ function inlineWith(s: string, opts: MarkdownOptions): string {
       imgs.push(`<img src="${escapeHtml(src)}" alt="${alt}" loading="lazy" decoding="async">`);
       return `\u0000${imgs.length - 1}\u0000`;
     })
-    .replace(/\{cta:([A-Z_]+)\}/g, '<span class="cta-tag">$1</span>')
+    // `[label](url) {cta:KIND}`: the kind tags the link for the tracker (`data-beacon-cta`) and is never shown to readers.
+    .replace(/\[([^\]]+)\]\(([^)\s]+)\)\s*\{cta:([A-Z_]+)\}/g, (_, t, h, k) => `<a href="${safeHref(h)}" data-beacon-cta="${k}" rel="noopener noreferrer">${t}</a>`)
+    .replace(/\s*\{cta:[A-Z_]*\}/g, "")
     .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, t, h) => `<a href="${safeHref(h)}" rel="noopener noreferrer">${t}</a>`)
     .replace(/&lt;(https?:\/\/[^\s&]+)&gt;/g, (_, h) => `<a href="${safeHref(h)}" rel="noopener noreferrer">${h}</a>`)
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")

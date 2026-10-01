@@ -153,4 +153,6 @@ export const fr: Record<string, string> = {
   UNKNOWN: "INCONNU",
   "MEASURED: same system and same visitor. MODELLED: joined on the page path only (the people behind the numbers may differ). UNKNOWN: one side has no data. Search Console, GA4 and Beacon count differently; their numbers are shown side by side, never added.":
     "MESURÉ : même système et même visiteur. MODÉLISÉ : rapprochement sur le chemin de la page uniquement (les personnes derrière les chiffres peuvent différer). INCONNU : un des côtés n’a pas de données. Search Console, GA4 et Beacon comptent différemment ; leurs chiffres sont affichés côte à côte, jamais additionnés.",
+  "Rate: share of the previous step. n/a when the previous step is empty or has fewer people than this one (steps are counted independently, so it is not a subset).":
+    "Taux : part de l’étape précédente. n.d. quand l’étape précédente est vide ou compte moins de personnes que celle-ci (les étapes sont comptées indépendamment, ce n’est donc pas un sous-ensemble).",
 };

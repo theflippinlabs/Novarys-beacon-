@@ -4,6 +4,13 @@ import { WEB_CONTENT_TYPES as WEB_TYPES, type ContentType } from "./types";
 
 export type SeoCheck = { rule: string; ok: boolean; message: string };
 
+/** Share of the target query's terms that appear in `text` (the `query_in_title` rule needs 50%). */
+export function queryTermCoverage(query: string, text: string): number {
+  const q = tokens(query);
+  const head = text.toLowerCase();
+  return q.length ? q.filter((t) => head.includes(t)).length / q.length : 1;
+}
+
 const MIN_WORDS: Partial<Record<ContentType, number>> = { LANDING_PAGE: 250, ARTICLE: 400, TUTORIAL: 300, COMPARISON: 200, FAQ: 150 };
 
 /** On-page SEO/GEO checks for a draft. Social formats only get length and TODO checks. */
@@ -31,8 +38,7 @@ export function seoCheck(input: { type: ContentType; body: string; metaTitle: st
     add("sources_cited", /^## Sources$/m.test(body), "Sources section present so answer engines can verify claims.");
     if (input.targetQuery) {
       const q = tokens(input.targetQuery);
-      const head = `${input.metaTitle ?? ""} ${h1[0] ?? ""}`.toLowerCase();
-      const coverage = q.length ? q.filter((t) => head.includes(t)).length / q.length : 1;
+      const coverage = queryTermCoverage(input.targetQuery, `${input.metaTitle ?? ""} ${h1[0] ?? ""}`);
       add("query_in_title", coverage >= 0.5, `${Math.round(coverage * 100)}% of target query terms in title/H1.`);
       // Brand/product-name terms naturally repeat on their own page; stuffing is measured on the other terms.
       const brand = new Set((input.brandTerms ?? []).flatMap((b) => tokens(b)));

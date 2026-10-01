@@ -294,6 +294,7 @@ export async function createApiKeyAction(fd: FormData) {
       .returning();
     await audit(tx, actor, "apikey.create", "api_key", row.id, { kind: i.kind, prefix });
     // The raw key is shown once via a short-lived, path-scoped httpOnly cookie (never in a URL or log); only its HMAC is stored.
+    // The tracking page clears the cookie as soon as it has displayed the key (consumeNewKeyAction).
     (await cookies()).set("beacon_new_key", key, { httpOnly: true, sameSite: "strict", secure: process.env.NODE_ENV === "production", maxAge: 120, path: `/products/${product.slug}/tracking` });
     return { redirect: `/products/${product.slug}/tracking`, ok: "Key created. Copy it now: it will not be shown again." };
   });
@@ -323,4 +324,14 @@ export async function deleteProductAction(fd: FormData) {
     await deleteProduct(tx, actor, p.id);
     return { ok: `Product “${p.name}” deleted.`, redirect: "/products" };
   });
+}
+
+/**
+ * Clears the "shown once" API key cookie: called by the tracking page right
+ * after it displayed the key, so a reload never shows it again. Only removes
+ * the caller's own cookie; reads and writes no data.
+ */
+export async function consumeNewKeyAction(slug: string) {
+  if (typeof slug !== "string" || !/^[a-z0-9][a-z0-9-]{0,199}$/.test(slug)) return;
+  (await cookies()).delete({ name: "beacon_new_key", path: `/products/${slug}/tracking` });
 }
