@@ -33,7 +33,7 @@ Verification commands: `pnpm typecheck`, `pnpm lint`, `pnpm test` (unit), `pnpm 
 - Finding: sessions are opaque 256-bit tokens stored as SHA-256, scrypt passwords, server expiry. Two weaknesses (#42): the client IP came from the first `X-Forwarded-For` entry (client-controlled, so per-IP limits could be dodged), and the hard lockout (10 failures, 15 minutes per account) let anyone lock any member out. `getAuthContext` was resolved several times per request.
 - Fix: `clientIp()` / `ipHashOf()` take the entry added by the outermost trusted proxy (`BEACON_TRUSTED_PROXY_HOPS`, default 1 for Railway) and every caller uses it. The account lockout is replaced by exponential back-off per HMAC(email, IP) (free failures: 4, then 2 s doubling to 15 min) stored in `login_throttle` and incremented with one atomic upsert; unknown emails are throttled the same way, so responses reveal nothing. `getAuthContext` is memoized per request with React `cache()`. `/setup` still requires `BEACON_SETUP_TOKEN` in production while no user exists (runtime check).
 - Tests: `tests/integration/auth.test.ts` (back-off per address, member unaffected from another address, unknown emails, parallel failures counted atomically), `tests/unit/security-hardening.test.ts` (IP selection, back-off curve).
-- Remaining risk: idle session timeout and `__Host-` cookie prefix (#42, P2) are not done in Wave 1. A distributed guessing attack spread over many IPs is only bounded by the per-email fixed-window limit (10 per 15 min).
+- Update (Wave 2): sessions now end after 24 h without use (sliding) or 30 days after sign-in, and the production cookie is `__Host-beacon_session` (`core/auth/session-policy.ts`, `lib/auth/cookie.ts`). Remaining risk: a distributed guessing attack spread over many IPs is only bounded by the per-email fixed-window limit (10 per 15 min).
 
 ## 2. Authorization bypass
 
@@ -151,7 +151,7 @@ Verification commands: `pnpm typecheck`, `pnpm lint`, `pnpm test` (unit), `pnpm 
 - Evidence: `src/services/media.ts`, `src/app/api/media/*`, `src/app/api/agent/upload/route.ts`.
 - Finding: magic-byte sniffing, size and pixel caps, WebP re-encode with metadata stripped, strict response headers (`nosniff`, `default-src 'none'`). Private media were visible organisation-wide (see IDOR).
 - Fix: uploader-only private media; uploads use the shared `sameOrigin()`.
-- Remaining risk (#51): re-encoding still runs inside the DB transaction; object storage is planned.
+- Update (Wave 2): re-encoding runs before any transaction opens (`prepareImage`), and the bytes are stored inside the tenant transaction (`insertImage`). Remaining risk (#51): bytes are still stored in PostgreSQL; object storage is planned.
 
 ## 16. Dependency vulnerabilities
 

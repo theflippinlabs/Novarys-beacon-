@@ -11,7 +11,7 @@ Date: 2026-10-01. Branch `claude/beacon-platform`. This document records the fin
 | Unit tests (`pnpm test`) | PASS | 555 of 555 (i18n completeness and no long dashes included) |
 | Integration tests (`pnpm test:integration`) | PASS | 403 of 403 on PostgreSQL 16 with the real roles: tenant isolation over every tenant table, action authorization matrix, RLS forced |
 | Production build (`pnpm build`) | PASS | Next.js 16 production build succeeds |
-| E2E (`pnpm test:e2e`) | PASS | 11 of 11 Playwright journeys against the production build |
+| E2E (`pnpm test:e2e`) | PASS | 11 of 11 Playwright journeys (the suite runs against `next dev`; the production build itself was exercised by the workflow validation in section 2) |
 | Database migration validation | PASS | Migrations 0000 to 0017 apply on an empty database; a database built from the hand-written migrations and one built from the Drizzle-generated SQL have identical schemas (`pg_dump -s` diff: only one column position differs); `drizzle-kit generate` reports "No schema changes" |
 | Security checks | PASS | See `docs/SECURITY_AUDIT.md`: separate BYPASSRLS system role, startup refuses superuser or BYPASSRLS app roles, strict production environment, nonce CSP and HSTS, SSRF-safe fetches, rate limits, tenant isolation tests. No secrets in the repository (staged diff scanned before each commit) |
 | Production deploy (Railway) | PASS | Web and worker deployments of each Phase 2 commit reached SUCCESS; pre-deploy log: roles provisioned, "migrations applied", `startup.checks_passed` on web and worker |
