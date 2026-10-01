@@ -621,6 +621,20 @@ export default async function ContentDetail({
             </Panel>
           )}
 
+          {(asset.status === "APPROVED" || Boolean(asset.publishedVersionId)) && (
+            <Panel title={t("Export production-ready content")} eyebrow={t("Publishing outside Beacon")}>
+              <p className="text-xs text-chrome">{t("Download the approved version with its meta title, description, sources and JSON-LD structured data, ready for your own site or CMS.")}</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <a href={`/api/content/${asset.id}/export?format=zip`} className="inline-flex min-h-10 items-center border border-line-strong px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-platinum hover:border-blue-bright md:min-h-0">
+                  {t("ZIP (Markdown, JSON-LD, meta)")}
+                </a>
+                <a href={`/api/content/${asset.id}/export?format=md`} className="inline-flex min-h-10 items-center border border-line-strong px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-platinum hover:border-blue-bright md:min-h-0">
+                  {t("Markdown file")}
+                </a>
+              </div>
+            </Panel>
+          )}
+
           {(canRepurpose || data.derivatives.length > 0) && (
             <Panel title={t("Repurpose")} eyebrow={t("Derivatives")}>
               <div className="flex flex-col gap-3">

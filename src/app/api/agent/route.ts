@@ -11,6 +11,8 @@ const Body = z.object({
   conversationId: z.string().uuid().nullish(),
   text: z.string().max(8000),
   mediaIds: z.array(z.string().uuid()).max(4).default([]),
+  /** The user pressed Confirm or Cancel on a pending confirmation (impactful changes). */
+  confirm: z.object({ id: z.string().regex(/^[0-9a-f]{32}$/), decision: z.enum(["confirm", "cancel"]) }).nullish(),
 });
 
 /** Same-origin only (`sameOrigin`): the session cookie authenticates, the Origin check blocks cross-site use. */
@@ -28,7 +30,8 @@ export async function POST(req: Request) {
   } catch {
     return err(400, "Invalid request");
   }
-  if (!body.text.trim() && body.mediaIds.length === 0) return err(400, "Empty message");
+  if (!body.text.trim() && body.mediaIds.length === 0 && !body.confirm) return err(400, "Empty message");
+  if (body.confirm && !body.conversationId) return err(400, "Invalid request");
 
   const locale = await getLocale();
   const actor = { organizationId: ctx.org.id, userId: ctx.user.id, actorType: "USER" as const, ipHash: ipHashOf(req) };
@@ -46,7 +49,7 @@ export async function POST(req: Request) {
         }
       };
       try {
-        for await (const e of runAgentTurn({ ctx, actor, locale, conversationId: body.conversationId, text: body.text, mediaIds: body.mediaIds, signal: abort.signal })) send(e);
+        for await (const e of runAgentTurn({ ctx, actor, locale, conversationId: body.conversationId, text: body.text, mediaIds: body.mediaIds, confirmation: body.confirm ?? null, signal: abort.signal })) send(e);
       } catch (e) {
         log.error("agent.turn_failed", { err: (e as Error).message });
         send({ type: "error", code: "failed" });

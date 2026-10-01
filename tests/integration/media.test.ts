@@ -6,7 +6,7 @@ import { asSystem, closeDb, db, withOrg } from "@/db";
 import { auditLogs, contentAssets, media, organizations, products } from "@/db/schema";
 import { createSession } from "@/lib/auth/service";
 import type { Actor } from "@/lib/audit";
-import { deleteMedia, ingestImage, loadMedia, MAX_UPLOAD_BYTES, MEDIA_ERRORS, mediaUrl, setOrgLogo, setProductLogo } from "@/services/media";
+import { deleteMedia, insertImage, loadMedia, prepareImage, MAX_UPLOAD_BYTES, MEDIA_ERRORS, mediaUrl, setOrgLogo, setProductLogo } from "@/services/media";
 import { GET as mediaGET } from "@/app/api/media/[id]/route";
 import { newOrg, params, uid } from "./helpers";
 
@@ -61,7 +61,11 @@ beforeAll(async () => {
 });
 afterAll(closeDb);
 
-const ingest = (actor: Actor, input: Parameters<typeof ingestImage>[2]) => withOrg(actor.organizationId, (tx) => ingestImage(tx, actor, input));
+/** Upload path: re-encode with no transaction open, then store inside the tenant transaction. */
+const ingest = async (actor: Actor, input: Parameters<typeof prepareImage>[0]) => {
+  const img = await prepareImage(input);
+  return withOrg(actor.organizationId, (tx) => insertImage(tx, actor, img));
+};
 const rejects = async (p: Promise<unknown>) => {
   try {
     await p;
@@ -71,7 +75,7 @@ const rejects = async (p: Promise<unknown>) => {
   throw new Error("Expected rejection");
 };
 
-describe("ingestImage", () => {
+describe("prepareImage + insertImage", () => {
   it("auto-orients, downsizes, re-encodes to WebP and strips EXIF/GPS", async () => {
     const big = await sharp({ create: { width: 4000, height: 1000, channels: 4, background: { r: 10, g: 200, b: 30, alpha: 0.5 } } }).png().toBuffer();
     const r = await ingest(a.actor, { data: big, filename: "wide banner.png", productId: productA, alt: " Banner " });

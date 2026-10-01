@@ -9,19 +9,22 @@ import {
   campaigns,
   commissions,
   crossSellRules,
-  distributionTargets,
   productRelationships,
-  experiments,
   opportunities,
   products,
-  recommendations,
   referralCodes,
 } from "@/db/schema";
 import { act, zCheckbox, zId, zList, zOptText, zOptUrl } from "@/lib/actions";
 import { audit } from "@/lib/audit";
 import { enqueue } from "@/jobs/queue";
 import { createAssetFromOpportunity } from "@/services/content";
-import { addDistributionTarget, setDistributionStatus } from "@/services/distribution";
+import { addDistributionTarget, approveSubmission, prepareSubmission, setDistributionStatus } from "@/services/distribution";
+import { decideRecommendation } from "@/services/autopilot";
+import { createExperiment, designExperiment, enterExperimentCounts, refreshExperimentCounts, setExperimentStatus } from "@/services/experiments";
+import { DISTRIBUTION_CATEGORIES, type DistributionCategory } from "@/core/distribution/venues";
+
+/** Conversion events an experiment can count. */
+const EXPERIMENT_METRICS = ["CTA_CLICK", "PRODUCT_VIEWED", "SIGNUP_STARTED", "SIGNUP_COMPLETED", "TRIAL_STARTED", "ACTIVATION_COMPLETED", "CHECKOUT_STARTED", "SUBSCRIPTION_STARTED"] as const;
 import { setOpportunityStatus } from "@/services/opportunities";
 import { randomToken, hmac } from "@/lib/security/crypto";
 import { safeReferralDestination } from "@/services/tracking";
@@ -91,10 +94,24 @@ const KINDS = z.enum(["DIRECTORY", "LAUNCH_PLATFORM", "COMMUNITY", "SOCIAL_CHANN
 const DSTATUS = z.enum(["DISCOVERED", "QUALIFIED", "PREPARED", "SUBMITTED", "PUBLISHED", "REJECTED", "FOLLOW_UP", "PERFORMING"]);
 
 export async function addDistributionTargetAction(fd: FormData) {
-  return act(fd, "distribution:write", z.object({ name: z.string().trim().min(2).max(120), kind: KINDS, url: zOptUrl, productId: z.union([zId, z.literal("")]).optional(), relevance: z.coerce.number().int().min(1).max(5).optional(), notes: zOptText(1000) }), async ({ tx, actor }, i) => {
-    await addDistributionTarget(tx, actor, { name: i.name, kind: i.kind, url: i.url, productId: i.productId || null, relevance: i.relevance, notes: i.notes });
-    return { ok: "Target added." };
-  });
+  return act(
+    fd,
+    "distribution:write",
+    z.object({
+      name: z.string().trim().min(2).max(120),
+      kind: KINDS,
+      category: z.enum(DISTRIBUTION_CATEGORIES as [DistributionCategory, ...DistributionCategory[]]).or(z.literal("")).optional(),
+      url: zOptUrl,
+      productId: z.union([zId, z.literal("")]).optional(),
+      relevance: z.union([z.coerce.number().int().min(0).max(100), z.literal("")]).optional(),
+      requirements: zOptText(1000),
+      notes: zOptText(1000),
+    }),
+    async ({ tx, actor }, i) => {
+      await addDistributionTarget(tx, actor, { name: i.name, kind: i.kind, category: i.category || null, url: i.url, productId: i.productId || null, relevance: i.relevance === "" || i.relevance === undefined ? null : i.relevance, requirements: i.requirements, notes: i.notes });
+      return { ok: "Target added." };
+    },
+  );
 }
 
 /**
@@ -103,17 +120,30 @@ export async function addDistributionTargetAction(fd: FormData) {
  * third-party platforms on its own.
  */
 export async function setDistributionStatusAction(fd: FormData) {
-  return act(fd, "distribution:write", z.object({ id: zId, status: DSTATUS, publishedUrl: zOptUrl, followUpOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).or(z.literal("")).optional() }), async ({ tx, actor }, i) => {
-    await setDistributionStatus(tx, actor, i.id, i.status, { publishedUrl: i.publishedUrl, followUpOn: i.followUpOn });
-    return { ok: `Moved to ${i.status.replace("_", " ").toLowerCase()}.` };
+  return act(
+    fd,
+    "distribution:write",
+    z.object({ id: zId, status: DSTATUS, publishedUrl: zOptUrl, followUpOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).or(z.literal("")).optional(), result: zOptText(500) }),
+    async ({ tx, actor }, i) => {
+      await setDistributionStatus(tx, actor, i.id, i.status, { publishedUrl: i.publishedUrl, followUpOn: i.followUpOn, result: i.result });
+      return { ok: `Moved to ${i.status.replace("_", " ").toLowerCase()}.` };
+    },
+  );
+}
+
+/** Approval of an external submission: only at PREPARED, tied to the approved listing asset (reset when it changes). */
+export async function approveSubmissionAction(fd: FormData) {
+  return act(fd, "distribution:approve", z.object({ id: zId }), async ({ tx, actor }, i) => {
+    await approveSubmission(tx, actor, i.id);
+    return { ok: "External submission approved." };
   });
 }
 
-export async function approveSubmissionAction(fd: FormData) {
-  return act(fd, "distribution:approve", z.object({ id: zId }), async ({ tx, actor }, i) => {
-    await tx.update(distributionTargets).set({ submissionApprovedBy: actor.userId ?? null, submissionApprovedAt: new Date() }).where(and(eq(distributionTargets.id, i.id), eq(distributionTargets.organizationId, actor.organizationId)));
-    await audit(tx, actor, "distribution.approve", "distribution_target", i.id);
-    return { ok: "External submission approved." };
+/** "Prepare submission": the listing draft goes through the content workflow (human approval). */
+export async function prepareSubmissionAction(fd: FormData) {
+  return act(fd, "content:write", z.object({ id: zId }), async ({ tx, actor }, i) => {
+    const r = await prepareSubmission(tx, actor, i.id);
+    return { ok: r.created ? "Listing draft queued for generation." : "A listing draft already exists." };
   });
 }
 
@@ -188,10 +218,11 @@ export async function setCommissionStatusAction(fd: FormData) {
 }
 
 // ── Autopilot: recommendations, experiments, reports ────────────────────
+/** APPROVE → EXECUTE: approval records the baseline and dispatches a safe execution (a draft, an experiment draft, an audit, targets; never publication). */
 export async function decideRecommendationAction(fd: FormData) {
   return act(fd, "recommendation:decide", z.object({ id: zId, status: z.enum(["APPROVED", "REJECTED", "DONE"]) }), async ({ tx, actor }, i) => {
-    await tx.update(recommendations).set({ status: i.status, decidedBy: actor.userId ?? null, decidedAt: new Date() }).where(and(eq(recommendations.id, i.id), eq(recommendations.organizationId, actor.organizationId)));
-    await audit(tx, actor, "recommendation.decide", "recommendation", i.id, { status: i.status });
+    const r = await decideRecommendation(tx, actor, i.id, i.status);
+    if (i.status === "APPROVED" && r.executionError) return { ok: "Recommendation approved; part of the execution needs attention." };
     return { ok: `Recommendation ${i.status.toLowerCase()}.` };
   });
 }
@@ -204,21 +235,88 @@ export async function runReportAction(fd: FormData) {
 }
 
 export async function addExperimentAction(fd: FormData) {
-  return act(fd, "growth:write", z.object({ name: z.string().trim().min(3).max(160), hypothesis: z.string().trim().min(10).max(1000), primaryMetric: z.string().trim().min(2).max(120), signalToMonitor: zOptText(300), productId: z.union([zId, z.literal("")]).optional() }), async ({ tx, actor }, i) => {
-    await assertOwned(tx, products, i.productId, actor.organizationId, "Product not found");
-    await tx.insert(experiments).values({ organizationId: actor.organizationId, name: i.name, hypothesis: i.hypothesis, primaryMetric: i.primaryMetric, signalToMonitor: i.signalToMonitor, productId: i.productId || null });
-    return { ok: "Experiment drafted." };
+  return act(
+    fd,
+    "growth:write",
+    z.object({
+      name: z.string().trim().min(3).max(160),
+      hypothesis: z.string().trim().min(10).max(1000),
+      primaryMetric: z.string().trim().min(2).max(120),
+      signalToMonitor: zOptText(300),
+      productId: z.union([zId, z.literal("")]).optional(),
+      metricKey: z.enum(EXPERIMENT_METRICS).or(z.literal("")).optional(),
+      control: zOptText(300),
+      variant: zOptText(300),
+    }),
+    async ({ tx, actor }, i) => {
+      await assertOwned(tx, products, i.productId, actor.organizationId, "Product not found");
+      await createExperiment(tx, actor, {
+        name: i.name,
+        hypothesis: i.hypothesis,
+        primaryMetric: i.primaryMetric,
+        signalToMonitor: i.signalToMonitor,
+        productId: i.productId || null,
+        metricKey: i.metricKey || null,
+        control: i.control ? { description: i.control } : {},
+        variant: i.variant ? { description: i.variant } : {},
+      });
+      return { ok: "Experiment drafted." };
+    },
+  );
+}
+
+/** Enforced, audited lifecycle: DRAFT → RUNNING → READY_FOR_REVIEW → CONCLUDED, or ABANDONED. */
+export async function setExperimentStatusAction(fd: FormData) {
+  return act(fd, "growth:write", z.object({ id: zId, status: z.enum(["DRAFT", "RUNNING", "READY_FOR_REVIEW", "CONCLUDED", "ABANDONED"]), result: zOptText(2000) }), async ({ tx, actor }, i) => {
+    await setExperimentStatus(tx, actor, i.id, i.status, i.result);
+    return { ok: `Experiment ${i.status.toLowerCase().replace(/_/g, " ")}.` };
   });
 }
 
-export async function setExperimentStatusAction(fd: FormData) {
-  return act(fd, "growth:write", z.object({ id: zId, status: z.enum(["DRAFT", "RUNNING", "READY_FOR_REVIEW", "CONCLUDED", "ABANDONED"]), result: zOptText(2000) }), async ({ tx, actor }, i) => {
-    const today = new Date().toISOString().slice(0, 10);
-    await tx
-      .update(experiments)
-      .set({ status: i.status, ...(i.status === "RUNNING" ? { startsOn: today } : {}), ...(i.status === "CONCLUDED" || i.status === "ABANDONED" ? { endsOn: today, result: i.result } : {}) })
-      .where(and(eq(experiments.id, i.id), eq(experiments.organizationId, actor.organizationId)));
-    return { ok: `Experiment ${i.status.toLowerCase().replace(/_/g, " ")}.` };
+/** Design: arms, counted event, and the minimum sample size (baseline rate and minimum detectable effect in percent). */
+export async function designExperimentAction(fd: FormData) {
+  return act(
+    fd,
+    "growth:write",
+    z.object({
+      id: zId,
+      metricKey: z.enum(EXPERIMENT_METRICS).or(z.literal("")).optional(),
+      control: zOptText(300),
+      variant: zOptText(300),
+      controlUrl: zOptUrl,
+      variantUrl: zOptUrl,
+      baselinePct: z.union([z.coerce.number().gt(0).lt(100), z.literal("")]).optional(),
+      mdePct: z.union([z.coerce.number().gt(0).max(1000), z.literal("")]).optional(),
+    }),
+    async ({ tx, actor }, i) => {
+      const e = await designExperiment(tx, actor, i.id, {
+        metricKey: i.metricKey === undefined ? undefined : i.metricKey || null,
+        control: { ...(i.control ? { description: i.control } : {}), ...(i.controlUrl ? { url: i.controlUrl } : {}) },
+        variant: { ...(i.variant ? { description: i.variant } : {}), ...(i.variantUrl ? { url: i.variantUrl } : {}) },
+        baselineRate: typeof i.baselinePct === "number" ? i.baselinePct / 100 : null,
+        minDetectableEffect: typeof i.mdePct === "number" ? i.mdePct / 100 : null,
+      });
+      return { ok: e.minSampleSize ? `Minimum sample: ${e.minSampleSize} per arm.` : "Experiment design saved." };
+    },
+  );
+}
+
+export async function refreshExperimentCountsAction(fd: FormData) {
+  return act(fd, "growth:write", z.object({ id: zId }), async ({ tx, actor }, i) => {
+    await refreshExperimentCounts(tx, actor, i.id);
+    return { ok: "Counts refreshed from tracked events." };
+  });
+}
+
+/** Counts entered by a person (shown as "entered manually"); leave every field empty to clear them. */
+export async function enterExperimentCountsAction(fd: FormData) {
+  const n = z.union([z.coerce.number().int().min(0).max(1_000_000_000), z.literal("")]).optional();
+  return act(fd, "growth:write", z.object({ id: zId, controlN: n, controlConversions: n, variantN: n, variantConversions: n }), async ({ tx, actor }, i) => {
+    const vals = [i.controlN, i.controlConversions, i.variantN, i.variantConversions];
+    const empty = vals.every((v) => v === "" || v === undefined);
+    if (!empty && vals.some((v) => v === "" || v === undefined)) throw new Error("Enter all four counts, or none to clear them.");
+    await enterExperimentCounts(tx, actor, i.id, empty ? null : { controlN: i.controlN as number, controlConversions: i.controlConversions as number, variantN: i.variantN as number, variantConversions: i.variantConversions as number });
+    return { ok: empty ? "Counts cleared." : "Counts saved (entered manually)." };
   });
 }
 

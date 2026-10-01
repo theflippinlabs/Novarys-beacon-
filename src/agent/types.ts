@@ -13,6 +13,8 @@ export type AgentToolContext = {
   actor: Actor;
   locale: Locale;
   t: T;
+  /** Aborted when the call times out or the user stops the turn; tools doing non-database waits must honour it. */
+  signal: AbortSignal;
 };
 
 /**
@@ -31,6 +33,13 @@ export type AgentTool<S extends z.ZodObject = z.ZodObject> = {
   /** "read" tools only look; "write" tools change Beacon data (reported to the user as actions). */
   kind: "read" | "write";
   input: S;
+  /**
+   * Impactful writes (e.g. a product's domain or status): return a short,
+   * localised summary of the change when this input needs the user's explicit
+   * confirmation, else null. The tool then only runs after the user pressed
+   * Confirm in the chat.
+   */
+  confirm?: (c: AgentToolContext, input: z.infer<S>) => Promise<string | null>;
   /** Returns JSON-serialisable data. Include app paths (e.g. `link: "/content/<id>"`) the user can open. Throw Error with a clear message on failure. */
   run: (c: AgentToolContext, input: z.infer<S>) => Promise<unknown>;
 };

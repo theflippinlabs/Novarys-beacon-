@@ -24,12 +24,12 @@ export function Panel({ title, eyebrow, actions, children, className, pad = true
   return (
     <section className={cx("min-w-0 border border-line bg-panel/90", className)}>
       {(title || eyebrow || actions) && (
-        <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3">
           <div className="min-w-0">
             {eyebrow && <div className="eyebrow">{eyebrow}</div>}
             {title && <h2 className="truncate text-sm font-medium text-gold-bright">{title}</h2>}
           </div>
-          {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+          {actions && <div className="flex max-w-full flex-wrap items-center gap-2">{actions}</div>}
         </div>
       )}
       <div className={pad ? "p-4" : ""}>{children}</div>
@@ -209,12 +209,61 @@ export async function PotentialBadge({ potential }: { potential: string }) {
   return <Badge tone={potential === "HIGH" ? "gold" : potential === "MEDIUM" ? "neutral" : "muted"}>{t("{level} potential", { level: t(potential) })}</Badge>;
 }
 
-export function EmptyState({ title, children, action }: { title: string; children?: ReactNode; action?: ReactNode }) {
+export type EmptyVariant = "not_connected" | "no_data_yet" | "filtered" | "not_generated";
+export type EmptyAction =
+  | { label: string; href: string }
+  | { label: string; form: { action: (fd: FormData) => void | Promise<void>; fields?: Record<string, string>; back?: string } };
+
+const EMPTY_VARIANT: Record<EmptyVariant, { label: string; tone: keyof typeof TONES }> = {
+  not_connected: { label: "Not connected", tone: "muted" },
+  no_data_yet: { label: "No data yet", tone: "neutral" },
+  filtered: { label: "No results for these filters", tone: "neutral" },
+  not_generated: { label: "Not generated yet", tone: "gold" },
+};
+
+/** True when any of the given filter parameters is set (an empty list then means "filtered", not "never generated"). */
+export function hasActiveFilters(sp: Record<string, string | string[] | undefined>, keys: string[]): boolean {
+  return keys.some((k) => {
+    const v = sp[k];
+    return typeof v === "string" ? v.trim() !== "" : Array.isArray(v) && v.some((x) => x.trim() !== "");
+  });
+}
+
+/**
+ * Structured empty state: what is missing, why it is empty and what to do
+ * next (an action is required). The variant says whether a provider is not
+ * connected, connected without data yet, hidden by active filters, or not
+ * generated yet. `children` can add details (sync status, lists).
+ */
+type EmptyStateProps = { what: string; why: ReactNode; action: EmptyAction; variant: EmptyVariant; secondary?: EmptyAction; children?: ReactNode };
+export async function EmptyState(props: EmptyStateProps) {
+  const { what, why, action, variant, secondary, children } = props;
+  const t = await getT();
+  const v = EMPTY_VARIANT[variant];
+  const renderAction = (a: EmptyAction, primary: boolean) =>
+    "href" in a ? (
+      <LinkButton href={a.href} variant={primary && variant !== "filtered" ? "gold" : "ghost"}>
+        {a.label}
+      </LinkButton>
+    ) : (
+      <form action={a.form.action}>
+        {a.form.back && <HiddenBack path={a.form.back} />}
+        {Object.entries(a.form.fields ?? {}).map(([k, val]) => (
+          <input key={k} type="hidden" name={k} value={val} />
+        ))}
+        <Button variant={primary ? "gold" : "ghost"}>{a.label}</Button>
+      </form>
+    );
   return (
-    <div className="grid-bg flex flex-col items-start gap-3 border border-dashed border-line-strong bg-obsidian/60 p-6">
-      <div className="eyebrow text-chrome">{title}</div>
-      {children && <div className="max-w-2xl text-sm text-chrome">{children}</div>}
-      {action}
+    <div data-empty={variant} className="grid-bg flex flex-col items-start gap-3 border border-dashed border-line-strong bg-obsidian/60 p-5 md:p-6">
+      <Badge tone={v.tone}>{t(v.label)}</Badge>
+      <div className="text-sm font-medium text-platinum">{what}</div>
+      <div className="max-w-2xl text-sm text-chrome">{why}</div>
+      {children && <div className="w-full max-w-2xl text-sm text-chrome">{children}</div>}
+      <div className="flex flex-wrap items-center gap-2">
+        {renderAction(action, true)}
+        {secondary && renderAction(secondary, false)}
+      </div>
     </div>
   );
 }
@@ -235,7 +284,7 @@ export function Button({ children, variant = "ghost", name, value, type = "submi
       title={title}
       disabled={disabled}
       formAction={formAction}
-      className={cx("inline-flex items-center gap-2 border px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.14em] transition-colors disabled:cursor-not-allowed disabled:opacity-40", BTN[variant])}
+      className={cx("inline-flex min-h-10 items-center gap-2 border px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.14em] transition-colors disabled:cursor-not-allowed disabled:opacity-40 md:min-h-0", BTN[variant])}
     >
       {children}
     </button>
@@ -244,7 +293,7 @@ export function Button({ children, variant = "ghost", name, value, type = "submi
 
 export function LinkButton({ href, children, variant = "ghost" }: { href: string; children: ReactNode; variant?: keyof typeof BTN }) {
   return (
-    <Link href={href} className={cx("inline-flex items-center gap-2 border px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.14em] transition-colors", BTN[variant])}>
+    <Link href={href} className={cx("inline-flex min-h-10 items-center gap-2 border px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.14em] transition-colors md:min-h-0", BTN[variant])}>
       {children}
     </Link>
   );
@@ -280,12 +329,25 @@ export function Table({ children }: { children: ReactNode }) {
     </div>
   );
 }
+
+/**
+ * Table from the md breakpoint up, one card per row on phones (no
+ * horizontal page scroll, nothing hidden). Give every Td a `label` (its
+ * column name, shown on the card) and mark the row title with `primary`.
+ */
+export function ResponsiveTable({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <div className={cx("rt md:overflow-x-auto", className)}>
+      <table className="w-full text-left text-sm">{children}</table>
+    </div>
+  );
+}
 export function Th({ children, className }: { children?: ReactNode; className?: string }) {
   return <th className={cx("eyebrow whitespace-nowrap border-b border-line px-3 py-2 font-normal", className)}>{children}</th>;
 }
-export function Td({ children, className, colSpan, title }: { children?: ReactNode; className?: string; colSpan?: number; title?: string }) {
+export function Td({ children, className, colSpan, title, label, primary, full }: { children?: ReactNode; className?: string; colSpan?: number; title?: string; label?: string; primary?: boolean; full?: boolean }) {
   return (
-    <td colSpan={colSpan} title={title} className={cx("border-b border-line/60 px-3 py-2.5 align-top text-chrome", className)}>
+    <td colSpan={colSpan} title={title} data-label={label} data-primary={primary ? "" : undefined} data-full={full ? "" : undefined} className={cx("border-b border-line/60 px-3 py-2.5 align-top text-chrome", className)}>
       {children}
     </td>
   );
@@ -298,7 +360,7 @@ export function Tabs({ items, active }: { items: { href: string; label: string; 
         <Link
           key={t.key}
           href={t.href}
-          className={cx("whitespace-nowrap border-b-2 px-3 py-2 font-mono text-[11px] uppercase tracking-[0.14em]", t.key === active ? "border-blue-bright text-platinum" : "border-transparent text-muted hover:text-chrome")}
+          className={cx("inline-flex min-h-10 items-center whitespace-nowrap border-b-2 px-3 py-2 font-mono text-[11px] uppercase tracking-[0.14em] md:min-h-0", t.key === active ? "border-blue-bright text-platinum" : "border-transparent text-muted hover:text-chrome")}
         >
           {t.label}
         </Link>

@@ -92,6 +92,41 @@
       "when": 1790850743335,
       "tag": "0012_schema_snapshot_sync",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1790850803335,
+      "tag": "0013_briefings_notifications",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1790850863335,
+      "tag": "0014_autopilot_experiments",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1790850923335,
+      "tag": "0015_onboarding_launch",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1790850983335,
+      "tag": "0016_auth_agent",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1790867216352,
+      "tag": "0017_schema_snapshot_sync",
+      "breakpoints": true
     }
   ]
 }

@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { EmptyState, HiddenBack, LinkButton, PageHeader, Panel, Stat, Table, Td, Th, formatValue } from "@/components/ui";
+import { EmptyState, HiddenBack, PageHeader, Panel, Stat, formatValue } from "@/components/ui";
 import { LineChart } from "@/components/charts/line-chart";
+import { LatestBriefing } from "@/components/briefing/latest-briefing";
 import { RangePicker } from "@/components/shell/product-tabs";
 import { prioritizeAttention, type AttentionItem } from "@/core/command/attention";
 import { BEACON_CHANNELS } from "@/services/metrics";
@@ -34,10 +35,15 @@ export default async function CommandCenter({ searchParams }: { searchParams: Pr
     <>
       <PageHeader eyebrow={t("01 / Overview · {date}", { date: today })} title={t("What needs my attention today?")} description={t("{org} ecosystem: {n} product(s). Everything below is measured; unconnected sources are shown as such, never estimated.", { org: ctx.org.branding.displayName ?? ctx.org.name, n: n(c.products) })} actions={<RangePicker base="/" days={days} />} />
 
+      {n(c.products) > 0 && <LatestBriefing />}
+
       {n(c.products) === 0 ? (
-        <EmptyState title={t("Start here")} action={<LinkButton variant="gold" href="/products">{t("Add your first product →")}</LinkButton>}>
-          {t("Beacon has no products yet. Onboard a Novarys application: describe it once, connect its data sources, and Beacon builds its query universe, discovery plan, audits and opportunities.")}
-        </EmptyState>
+        <EmptyState
+          variant="not_generated"
+          what={t("Start here")}
+          why={t("Beacon has no products yet. Onboard a Novarys application: describe it once, connect its data sources, and Beacon builds its query universe, discovery plan, audits and opportunities.")}
+          action={{ label: t("Add your first product →"), href: "/products" }}
+        />
       ) : (
         <div className="grid gap-6 xl:grid-cols-[1fr_24rem]">
           <Panel eyebrow={t("Priority queue")} title={attention.length ? t("{n} item(s), ranked by impact · confidence · effort · urgency", { n: attention.length }) : t("Nothing needs attention")} pad={false}>
@@ -170,22 +176,14 @@ export default async function CommandCenter({ searchParams }: { searchParams: Pr
       </Panel>
 
       <Panel eyebrow={t("Definitions")} title={t("How these numbers are defined")} className="mt-8">
-        <Table>
-          <tbody>
-            <tr>
-              <Th>{t("Attributable to Beacon")}</Th>
-              <Td>{t("Revenue whose acquisition channel is {channels} under the organisation’s attribution rules (default: last non-direct touch, 30-day lookback, referral precedence).", { channels: BEACON_CHANNELS.map(channelLabel).join(", ") })}</Td>
-            </tr>
-            <tr>
-              <Th>{t("AI mentions")}</Th>
-              <Td>{t("Sampled observations from AI-visibility tests run through official APIs. They do not represent every user’s AI response.")}</Td>
-            </tr>
-            <tr>
-              <Th>{t("Deltas")}</Th>
-              <Td>{t("Current window vs the immediately preceding window of equal length. Example: {value} vs previous shows ▲/▼ percentage.", { value: formatValue(1234, "count", undefined, intl) })}</Td>
-            </tr>
-          </tbody>
-        </Table>
+        <dl className="grid gap-4 text-sm md:grid-cols-[14rem_1fr] md:gap-x-6">
+          <dt className="eyebrow pt-0.5">{t("Attributable to Beacon")}</dt>
+          <dd className="text-chrome">{t("Revenue whose acquisition channel is {channels} under the organisation’s attribution rules (default: last non-direct touch, 30-day lookback, referral precedence).", { channels: BEACON_CHANNELS.map(channelLabel).join(", ") })}</dd>
+          <dt className="eyebrow pt-0.5">{t("AI mentions")}</dt>
+          <dd className="text-chrome">{t("Sampled observations from AI-visibility tests run through official APIs. They do not represent every user’s AI response.")}</dd>
+          <dt className="eyebrow pt-0.5">{t("Deltas")}</dt>
+          <dd className="text-chrome">{t("Current window vs the immediately preceding window of equal length. Example: {value} vs previous shows ▲/▼ percentage.", { value: formatValue(1234, "count", undefined, intl) })}</dd>
+        </dl>
       </Panel>
     </>
   );

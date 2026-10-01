@@ -132,6 +132,11 @@ export default async function TrackingPage({ params, searchParams }: { params: P
         <div className="eyebrow mb-2 mt-5">{t("Server: batch (up to 100 events per request)")}</div>
         <pre className="overflow-x-auto border border-line bg-obsidian p-3 text-[12px] text-chrome">{`curl -X POST ${base}/api/v1/events/batch -H "authorization: Bearer $BEACON_SECRET_KEY" -H "content-type: application/json" \\
   -d '{"events":[{"type":"TRIAL_STARTED","identityRef":"user_123","idempotencyKey":"trial:user_123"},{"type":"ACTIVATION_COMPLETED","identityRef":"user_123"}]}'`}</pre>
+        <div className="eyebrow mb-2 mt-5">{t("Growth experiments: tag each arm")}</div>
+        <pre className="overflow-x-auto border border-line bg-obsidian p-3 text-[12px] text-chrome">{`<!-- every event of this page carries properties.experiment and properties.variant -->
+<script async src="${base}/beacon.js" data-key="…" data-product="${slug}" data-experiment="EXPERIMENT_ID" data-variant="variant"></script>
+<script>/* or per event */ beacon.track("SIGNUP_STARTED", { experiment: "EXPERIMENT_ID", variant: "control" })</script>`}</pre>
+        <p className="mt-2 text-[11px] text-muted">{t("properties.experiment is the experiment id shown in Autopilot → Experiments; properties.variant is control or variant. Units are distinct visitors with any tagged event; conversions are those with the experiment's counted event. These two tags are kept even when analytics consent is refused (they identify an arm, not a person).")}</p>
         <div className="eyebrow mb-2 mt-5">{t("Server: revenue (or connect Stripe webhooks in Settings → Integrations)")}</div>
         <pre className="overflow-x-auto border border-line bg-obsidian p-3 text-[12px] text-chrome">{`curl -X POST ${base}/api/v1/revenue -H "authorization: Bearer $BEACON_SECRET_KEY" -H "content-type: application/json" \\
   -d '{"externalId":"inv_001","type":"NEW","amountCents":4900,"mrrDeltaCents":4900,"currency":"EUR","identityRef":"user_123",

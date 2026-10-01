@@ -1,9 +1,13 @@
 import { eq } from "drizzle-orm";
 import type { Metadata } from "next";
 import { updateContentPolicyAction } from "@/app/actions/content";
-import { addMemberAction, changePasswordAction, changeRoleAction, removeMemberAction, setPublicSiteAction, updateOrgSettingsAction } from "@/app/actions/settings";
+import { changePasswordAction, changeRoleAction, inviteMemberAction, updateAgentBudgetAction, removeMemberAction, revokeInvitationAction, setPublicSiteAction, updateOrgSettingsAction } from "@/app/actions/settings";
+import { cookies } from "next/headers";
+import { CopyLink } from "@/components/shell/copy-link";
+import { INVITE_LINK_COOKIE, pendingInvitations } from "@/services/invitations";
+import { agentBudget } from "@/services/agent-usage";
 import { isPublicSiteEnabled } from "@/services/public";
-import { Badge, Button, Field, Flash, HiddenBack, PageHeader, Panel, Table, Td, Th } from "@/components/ui";
+import { Badge, Button, Field, Flash, HiddenBack, PageHeader, Panel, Table, Td, Th, ResponsiveTable } from "@/components/ui";
 import { SettingsTabs } from "@/components/shell/settings-tabs";
 import { asSystem } from "@/db";
 import { memberships, users } from "@/db/schema";
@@ -25,7 +29,19 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<SP> }) {
   const sp = await searchParams;
   const { t } = await getI18n();
-  const { ctx, can } = await pageData(async () => null);
+  const { ctx, can, data } = await pageData(async (tx, c) => ({
+    invites: await pendingInvitations(tx, c.org.id),
+    budget: await agentBudget(tx, c.org.id, c.org.settings),
+  }));
+  // The last invitation link, handed over once to the admin who created it (no email provider needed).
+  let lastInvite: { email: string; link: string } | null = null;
+  try {
+    const raw = (await cookies()).get(INVITE_LINK_COOKIE)?.value;
+    const parsed = raw ? (JSON.parse(raw) as { email?: unknown; link?: unknown }) : null;
+    if (parsed && typeof parsed.email === "string" && typeof parsed.link === "string" && parsed.link.startsWith(env().BEACON_BASE_URL)) lastInvite = { email: parsed.email, link: parsed.link };
+  } catch {
+    lastInvite = null;
+  }
   // Membership rows join the global users table; read them with system privileges, scoped to this org.
   const members = await asSystem((tx) =>
     tx.select({ userId: users.id, email: users.email, name: users.name, role: memberships.role, lastLoginAt: users.lastLoginAt }).from(memberships).innerJoin(users, eq(users.id, memberships.userId)).where(eq(memberships.organizationId, ctx.org.id)),
@@ -149,7 +165,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         </div>
       </Panel>
       <Panel title={t("{n} member(s)", { n: members.length })} eyebrow={t("Team")} className="mt-6" pad={false}>
-        <Table>
+        <ResponsiveTable>
           <thead>
             <tr>
               <Th>{t("Name")}</Th>
@@ -162,9 +178,9 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           <tbody>
             {members.map((m) => (
               <tr key={m.userId}>
-                <Td className="text-platinum">{m.name}</Td>
-                <Td className="text-xs">{m.email}</Td>
-                <Td>
+                <Td primary className="text-platinum">{m.name}</Td>
+                <Td label={t("Email")} className="text-xs">{m.email}</Td>
+                <Td label={t("Role")}>
                   {can("member:manage") && m.userId !== ctx.user.id ? (
                     <form action={changeRoleAction} className="flex gap-2">
                       <HiddenBack path={back} />
@@ -182,7 +198,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
                     <Badge>{enumLabel(t, m.role)}</Badge>
                   )}
                 </Td>
-                <Td className="num text-xs">{m.lastLoginAt?.toISOString().slice(0, 16).replace("T", " ") ?? t("never")}</Td>
+                <Td label={t("Last login")} className="num text-xs">{m.lastLoginAt?.toISOString().slice(0, 16).replace("T", " ") ?? t("never")}</Td>
                 <Td>
                   {can("member:manage") && m.userId !== ctx.user.id && (
                     <form action={removeMemberAction}>
@@ -195,11 +211,35 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
               </tr>
             ))}
           </tbody>
-        </Table>
+        </ResponsiveTable>
+        {can("member:manage") && lastInvite && (
+          <div className="border-t border-line p-4" role="status">
+            <p className="mb-2 text-sm text-chrome">{t("Invitation link for {email} (valid 7 days). Send it to them privately: they set their own password, or sign in if they already use Beacon.", { email: lastInvite.email })}</p>
+            <CopyLink value={lastInvite.link} label={t("Invitation link")} />
+          </div>
+        )}
+        {can("member:manage") && data.invites.length > 0 && (
+          <div className="border-t border-line p-4">
+            <h3 className="eyebrow mb-2">{t("Pending invitations")}</h3>
+            <ul className="flex flex-col gap-2 text-sm">
+              {data.invites.map((inv) => (
+                <li key={inv.id} className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="min-w-0 truncate text-chrome">
+                    {inv.email} <Badge>{enumLabel(t, inv.role)}</Badge> <span className="text-xs text-muted">{t("expires {date}", { date: inv.expiresAt.toISOString().slice(0, 10) })}</span>
+                  </span>
+                  <form action={revokeInvitationAction}>
+                    <HiddenBack path={back} />
+                    <input type="hidden" name="id" value={inv.id} />
+                    <Button variant="danger">{t("Revoke")}</Button>
+                  </form>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {can("member:manage") && (
-          <form action={addMemberAction} className="grid gap-3 border-t border-line p-4 md:grid-cols-5">
+          <form action={inviteMemberAction} className="grid gap-3 border-t border-line p-4 md:grid-cols-[2fr_1fr_auto]">
             <HiddenBack path={back} />
-            <input name="name" placeholder={t("Name")} required aria-label={t("Name")} />
             <input name="email" type="email" placeholder={t("Email")} required aria-label={t("Email")} />
             <select name="role" defaultValue="VIEWER" aria-label={t("Role")}>
               {ROLES.map((r) => (
@@ -208,8 +248,25 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
                 </option>
               ))}
             </select>
-            <input name="password" type="password" placeholder={t("Initial password (new users)")} autoComplete="new-password" aria-label={t("Initial password")} />
-            <Button>{t("Add member")}</Button>
+            <Button>{t("Invite member")}</Button>
+          </form>
+        )}
+      </Panel>
+      <Panel title={t("Beacon agent usage")} eyebrow={data.budget.month} className="mt-6">
+        <p className="text-sm text-chrome">
+          {data.budget.cap === null
+            ? t("{used} tokens used this month. No monthly cap is set.", { used: data.budget.used.toLocaleString("en-GB") })
+            : t("{used} of {cap} tokens used this month ({pct}%).", { used: data.budget.used.toLocaleString("en-GB"), cap: data.budget.cap.toLocaleString("en-GB"), pct: data.budget.pct ?? 0 })}{" "}
+          {data.budget.exceeded && <Badge tone="crit">{t("Monthly budget reached")}</Badge>}
+        </p>
+        <p className="mt-1 text-xs text-muted">{t("{n} agent requests this month. The cap protects the organisation's Anthropic spend; the agent stops with a clear message when it is reached.", { n: data.budget.requests })}</p>
+        {can("settings:manage") && (
+          <form action={updateAgentBudgetAction} className="mt-3 flex flex-wrap items-end gap-3">
+            <HiddenBack path={back} />
+            <Field label={t("Monthly token cap (empty: default)")}>
+              <input name="monthlyTokenCap" type="number" min={0} max={1000000000} step={1000} defaultValue={ctx.org.settings.agent?.monthlyTokenCap ?? ""} />
+            </Field>
+            <Button>{t("Save")}</Button>
           </form>
         )}
       </Panel>

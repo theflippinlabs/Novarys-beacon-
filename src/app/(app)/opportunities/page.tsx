@@ -66,7 +66,21 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
         <SelectFilter name="status" label={t("Status")} value={f.status} all={enumLabel(t, "OPEN")} options={["ACCEPTED", "IN_PROGRESS", "DONE", "DISMISSED", "OBSOLETE", "ALL"].map((v) => ({ value: v, label: enumLabel(t, v) }))} />
       </FilterBar>
       {data.rows.length === 0 ? (
-        <EmptyState title={t("No opportunities")}>{t("Opportunities appear after product analysis, audits, AI-visibility tests and data syncs. Nothing is shown without evidence.")}</EmptyState>
+        f.product || f.potential || f.category || f.type || (f.status !== "OPEN" && f.status !== "ALL") ? (
+          <EmptyState
+            variant="filtered"
+            what={t("No opportunities match these filters.")}
+            why={t("Other opportunities exist outside this product, potential, category, type or status.")}
+            action={{ label: t("Clear filters"), href: "/opportunities" }}
+          />
+        ) : (
+          <EmptyState
+            variant="not_generated"
+            what={t("No opportunities")}
+            why={t("Opportunities appear after product analysis, audits, AI-visibility tests and data syncs. Nothing is shown without evidence.")}
+            action={can("job:run") ? { label: t("Generate opportunities"), form: { action: regenerateOpportunitiesAction, fields: { productId: data.product?.id ?? "" }, back } } : { label: t("Open products"), href: "/products" }}
+          />
+        )
       ) : (
         <div className="grid gap-3">
           {data.rows.map(({ o, productName }) => (

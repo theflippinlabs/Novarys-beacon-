@@ -32,7 +32,7 @@ async function run<T = Record<string, unknown>>(o: Org, name: string, input: unk
   const parsed = t.input.parse(input);
   const ctx = await authFor(o, role);
   const out = await withOrg(o.org.id, (tx) => {
-    const c: AgentToolContext = { tx, ctx, actor: o.actor, locale: "en", t: makeT(null) };
+    const c: AgentToolContext = { tx, ctx, actor: o.actor, locale: "en", t: makeT(null), signal: new AbortController().signal };
     return t.run(c, parsed);
   });
   return JSON.parse(JSON.stringify(out)) as T;
@@ -157,6 +157,9 @@ describe("agent tools: write flow", () => {
   it("distribution targets stop at PREPARED; submission stages are not accepted", async () => {
     const t = await run<{ added: { id: string; status: string } }>(a, "add_distribution_target", { name: "Example Directory", kind: "DIRECTORY", url: "https://directory.example/", product: slug });
     expect(t.added.status).toBe("DISCOVERED");
+    // Server-side state machine: DISCOVERED → QUALIFIED → PREPARED (no skipping).
+    await expect(run(a, "set_distribution_target_status", { id: t.added.id, status: "PREPARED" })).rejects.toThrow(/cannot move/);
+    expect((await run<{ status: string }>(a, "set_distribution_target_status", { id: t.added.id, status: "QUALIFIED" })).status).toBe("QUALIFIED");
     expect((await run<{ status: string }>(a, "set_distribution_target_status", { id: t.added.id, status: "PREPARED" })).status).toBe("PREPARED");
     expect(() => tool("set_distribution_target_status").input.parse({ id: t.added.id, status: "SUBMITTED" })).toThrow();
   });

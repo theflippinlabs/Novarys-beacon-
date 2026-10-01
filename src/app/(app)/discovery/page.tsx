@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, sql } from "drizzle-orm";
+import { Pager } from "@/components/shell/pager";
+import { decodeCursor, PAGE_SIZE, pageOf } from "@/core/util/cursor";
+import { afterCursor } from "@/lib/paginate";
 import { createPageContentAction, runAuditAction, syncPlanAction } from "@/app/actions/discovery";
 import { Badge, Button, EmptyState, Field, Flash, HiddenBack, PageHeader, Panel, StatusBadge, Table, Td, Th } from "@/components/ui";
 import { FilterBar, SelectFilter } from "@/components/shell/filters";
@@ -27,20 +30,25 @@ export default async function DiscoveryPage({ searchParams }: { searchParams: Pr
   const slug = sp1(sp, "product");
   const type = sp1(sp, "type");
   const status = sp1(sp, "status");
+  const cursor = decodeCursor(sp1(sp, "cursor"));
   const { data, can, ctx } = await pageData(async (tx, ctx) => {
     const prods = await tx.select().from(products).where(eq(products.organizationId, ctx.org.id)).orderBy(products.name);
     const product = slug ? prods.find((p) => p.slug === slug) ?? null : prods[0] ?? null;
-    if (!product) return { prods, product: null, list: [], audits: [], sitemapCount: 0, sitemaps: null, domains: [] as string[] };
-    const list = await tx
-      .select()
-      .from(pages)
-      .where(and(eq(pages.organizationId, ctx.org.id), eq(pages.productId, product.id), type ? eq(pages.type, type as never) : undefined, status ? eq(pages.status, status as never) : undefined))
-      .orderBy(pages.type, pages.path);
+    if (!product) return { prods, product: null, list: [], listTotal: 0, listNext: null, audits: [], sitemapCount: 0, sitemaps: null, domains: [] as string[] };
+    const where = and(eq(pages.organizationId, ctx.org.id), eq(pages.productId, product.id), type ? eq(pages.type, type as never) : undefined, status ? eq(pages.status, status as never) : undefined);
+    const [{ listTotal }] = await tx.select({ listTotal: count() }).from(pages).where(where);
+    // Paginated by path (cursor, 50 per page): paths group pages by type under the product.
+    const listPage = pageOf(
+      await tx.select().from(pages).where(and(where, afterCursor(pages.path, pages.id, cursor, "asc"))).orderBy(asc(pages.path), asc(pages.id)).limit(PAGE_SIZE + 1),
+      PAGE_SIZE,
+      (r) => ({ v: r.path, id: r.id }),
+    );
+    const list = listPage.items;
     const audits = await tx.select().from(seoAudits).where(eq(seoAudits.productId, product.id)).orderBy(desc(seoAudits.createdAt)).limit(8);
     const sm = await tx.execute<{ n: number }>(sql`select count(*)::int as n from pages where product_id = ${product.id} and status = 'PUBLISHED'`);
     const sitemaps = await sitemapOverview(tx, ctx.org.id, ctx.org.slug, product.id);
     const domains = await verifiedDomainNames(tx, ctx.org.id);
-    return { prods, product, list, audits, sitemapCount: Number(sm.rows[0]?.n ?? 0), sitemaps, domains };
+    return { prods, product, list, listTotal, listNext: listPage.next, audits, sitemapCount: Number(sm.rows[0]?.n ?? 0), sitemaps, domains };
   });
   const { product } = data;
   const back = `/discovery?product=${product?.slug ?? ""}`;
@@ -50,7 +58,7 @@ export default async function DiscoveryPage({ searchParams }: { searchParams: Pr
       <PageHeader eyebrow={t("03 / Discovery")} title={t("Discovery engine")} description={t("Planned discovery pages per product, gated by information completeness, uniqueness, factual confidence, intent match, duplicate similarity and usefulness. Low-quality pages stay drafts.")} />
       <Flash searchParams={sp} />
       {!product ? (
-        <EmptyState title={t("No products")}>{t("Add a product first.")}</EmptyState>
+        <EmptyState variant="not_generated" what={t("No products")} why={t("Discovery plans pages and audits sites per product.")} action={{ label: t("Add a product first."), href: "/products" }} />
       ) : (
         <>
           <FilterBar action="/discovery">
@@ -135,9 +143,21 @@ export default async function DiscoveryPage({ searchParams }: { searchParams: Pr
                 </Table>
               ) : (
                 <div className="p-4">
-                  <EmptyState title={t("No pages planned")}>{t("Run product analysis (or “Re-plan pages”). Pages are only planned when the knowledge graph holds enough facts.")}</EmptyState>
+                  {type || status ? (
+                    <EmptyState variant="filtered" what={t("No pages match these filters.")} why={t("Other pages of this product have a different type or status.")} action={{ label: t("Clear filters"), href: `/discovery?product=${product.slug}` }} />
+                  ) : (
+                    <EmptyState
+                      variant="not_generated"
+                      what={t("No pages planned")}
+                      why={t("Run product analysis (or “Re-plan pages”). Pages are only planned when the knowledge graph holds enough facts.")}
+                      action={can("query:write") ? { label: t("Re-plan pages"), form: { action: syncPlanAction, fields: { productId: product.id }, back } } : { label: t("Open the knowledge graph"), href: `/products/${product.slug}/knowledge` }}
+                    />
+                  )}
                 </div>
               )}
+              <div className="px-4 pb-3">
+                <Pager path="/discovery" params={{ product: product.slug, type, status }} shown={data.list.length} total={data.listTotal} next={data.listNext} current={sp1(sp, "cursor")} />
+              </div>
             </Panel>
 
             <div className="flex flex-col gap-6">

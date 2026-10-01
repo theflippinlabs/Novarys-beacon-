@@ -8,7 +8,8 @@ import { assertOwned } from "@/lib/owned";
 import { act, zBoolTri, zCheckbox, zId, zList, zOptText, zOptUrl } from "@/lib/actions";
 import { audit } from "@/lib/audit";
 import { normalizeDomain, parseCtas, parseNamed, parsePricing, parseSocial, parseSources, splitLines } from "@/core/knowledge/parse";
-import { ONBOARDING_STEPS } from "@/services/onboarding";
+import { setOnboardingStep } from "@/services/onboarding";
+import { INFO_PARTS, isFlowStep, isInfoPart, nextPosition, onboardingHref, parsePosition, partKey, type FlowStepKey, type InfoPartKey } from "@/core/onboarding/steps";
 import { createProduct, deleteProduct, getProductBySlug, replacePricing, syncCompetitors, syncFacets, syncSources, updateProduct } from "@/services/products";
 import { generateApiKey } from "@/services/tracking";
 import { addComparisonFact, addFaq } from "@/services/knowledge";
@@ -21,7 +22,8 @@ import { saveIntegration } from "@/services/visibility";
 export async function createProductAction(fd: FormData) {
   return act(fd, "product:write", z.object({ name: z.string().trim().min(2).max(80), slug: zOptText(80) }), async ({ tx, actor }, input) => {
     const p = await createProduct(tx, actor, input);
-    return { redirect: `/products/${p.slug}/onboarding?step=1`, ok: `${p.name} created. Describe it once, Beacon does the rest.` };
+    await setOnboardingStep(tx, actor, p.id, "product", "done");
+    return { redirect: `/products/${p.slug}/onboarding?step=website`, ok: `${p.name} created. Describe it once, Beacon does the rest.` };
   });
 }
 
@@ -37,7 +39,11 @@ const STATUS = z.enum(["UNKNOWN", "IN_DEVELOPMENT", "BETA", "LIVE", "DEPRECATED"
 
 const StepSchema = z.object({
   productId: zId,
-  step: z.coerce.number().int().min(1).max(ONBOARDING_STEPS.length),
+  /** Knowledge form section (1 identity, 2 website, 3..11 and 14 product information, 12 analytics, 13 search console). */
+  step: z.coerce.number().int().min(1).max(14),
+  /** Position in the onboarding flow (defaults to the step that holds the section). */
+  flow: z.string().max(40).optional(),
+  part: z.string().max(40).optional(),
   intent: z.enum(["next", "save", "skip"]).default("next"),
   name: z.string().trim().min(2).max(80).optional(),
   logoUrl: zLogoUrl,
@@ -146,14 +152,14 @@ export async function saveOnboardingStepAction(fd: FormData) {
           break;
       }
     }
-    const last = i.step === ONBOARDING_STEPS.length;
-    await tx.update(products).set({ onboardingStep: Math.max(product.onboardingStep, Math.min(ONBOARDING_STEPS.length, i.step + 1)) }).where(eq(products.id, product.id));
-    if (i.intent === "save") return { ok: "Saved." };
-    if (last) {
-      await enqueue("product.analyze", { productId: product.id }, { organizationId: actor.organizationId, idempotencyKey: `analyze:${product.id}:${Date.now()}` });
-      return { redirect: `/products/${product.slug}`, ok: "Onboarding complete, product analysis queued." };
+    const pos = isFlowStep(i.flow) ? { step: i.flow as FlowStepKey, part: isInfoPart(i.part) ? (i.part as InfoPartKey) : null } : parsePosition(String(i.step), undefined);
+    if (pos && i.intent !== "save") {
+      const key = pos.step === "info" ? partKey(pos.part ?? INFO_PARTS[0].key) : pos.step;
+      await setOnboardingStep(tx, actor, product.id, key, i.intent === "skip" ? "skipped" : "done");
     }
-    return { redirect: `/products/${product.slug}/onboarding?step=${i.step + 1}` };
+    if (i.intent === "save") return { ok: "Saved." };
+    const next = pos ? nextPosition(pos.step, pos.part) : null;
+    return { redirect: next ? onboardingHref(product.slug, next) : `/products/${product.slug}` };
   });
 }
 

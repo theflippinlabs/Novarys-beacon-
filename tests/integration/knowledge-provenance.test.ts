@@ -145,7 +145,7 @@ describe("re-verification on every edit path", () => {
     const org = (await asSystem((tx) => tx.query.organizations.findFirst({ where: eq(organizations.id, A.org.id) })))!;
     const slug = (await q((tx) => tx.query.products.findFirst({ where: eq(products.id, productId) })))!.slug;
     const out = (await q((tx) => {
-      const c: AgentToolContext = { tx, ctx: { user: { id: A.user.id, email: A.email, name: "Owner" }, org: { id: org.id, slug: org.slug, name: org.name, settings: org.settings, branding: org.branding }, role: "OWNER", sessionTokenHash: "t" }, actor: { ...A.actor, via: "agent" }, locale: "en", t: makeT(null) };
+      const c: AgentToolContext = { tx, ctx: { user: { id: A.user.id, email: A.email, name: "Owner" }, org: { id: org.id, slug: org.slug, name: org.name, settings: org.settings, branding: org.branding }, role: "OWNER", sessionTokenHash: "t" }, actor: { ...A.actor, via: "agent" }, locale: "en", t: makeT(null), signal: new AbortController().signal };
       return tool.run(c, tool.input.parse({ product: slug, category: "Live moderation" }));
     })) as { needsReverification: boolean; fieldsToReverify: string[] };
     expect(out).toMatchObject({ needsReverification: true, fieldsToReverify: ["category"] });

@@ -3,10 +3,15 @@ import { cache } from "react";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { ipHashOf } from "@/lib/http";
+import { pickSessionToken, sessionCookieName } from "@/core/auth/session-policy";
 import { can, ForbiddenError, type Permission } from "./rbac";
 import { resolveSession, type AuthContext } from "./service";
 
-export const SESSION_COOKIE = "beacon_session";
+const PRODUCTION = process.env.NODE_ENV === "production";
+/** `__Host-beacon_session` in production (Secure, Path=/, no Domain), `beacon_session` in development and tests. */
+export const SESSION_COOKIE = sessionCookieName(PRODUCTION);
+/** Reads the session token, falling back to the pre-`__Host-` cookie name (migrated by the proxy on the next page load). */
+export const sessionTokenFrom = (get: (name: string) => string | undefined) => pickSessionToken(get, PRODUCTION).token;
 
 /**
  * The signed-in member for this request. Memoized per request with React
@@ -14,7 +19,7 @@ export const SESSION_COOKIE = "beacon_session";
  */
 export const getAuthContext = cache(async (): Promise<AuthContext | null> => {
   const store = await cookies();
-  return resolveSession(store.get(SESSION_COOKIE)?.value);
+  return resolveSession(sessionTokenFrom((n) => store.get(n)?.value));
 });
 
 /** For pages/layouts: redirects to /login when unauthenticated. */

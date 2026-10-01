@@ -11,6 +11,7 @@ import { listMedia, mediaUrl, setProductLogo } from "@/services/media";
 import { computeAndStoreScore, latestScoreDetail, latestScores, scoreInput } from "@/services/score";
 import { audit } from "@/lib/audit";
 import { defineTool } from "../types";
+import { enumLabel } from "@/i18n/core";
 import { agentActor, capped, idRef, iso, limitInput, LIST_CAP, productLinks, productRef, requirePermission, resolveProduct, trim } from "./util";
 
 const STATUS = z.enum(["UNKNOWN", "IN_DEVELOPMENT", "BETA", "LIVE", "DEPRECATED"]);
@@ -194,10 +195,19 @@ export const updateProductTool = defineTool({
   name: "update_product",
   label: "Updating a product",
   description:
-    "Update a product's core fields (name, domain, status, category, keywords, descriptions, URLs, languages, countries, API/free-trial flags). Only send the fields to change. Only use facts the user gave you or that come from the product's own site. Changing any human-verified value (descriptions, category, status, URLs, flags…) sends that claim back to review so a human re-verifies it in the app.",
+    "Update a product's core fields (name, domain, status, category, keywords, descriptions, URLs, languages, countries, API/free-trial flags). Only send the fields to change. Only use facts the user gave you or that come from the product's own site. Changing any human-verified value (descriptions, category, status, URLs, flags…) sends that claim back to review so a human re-verifies it in the app. Changing the domain or the status first asks the user to confirm (result status needs_confirmation).",
   permission: "product:write",
   kind: "write",
   input: z.object({ product: productRef(), name: z.string().trim().min(2).max(80).optional().describe("New product name."), ...productFields }),
+  // Changing where a product lives (domain) or its lifecycle status needs the user's explicit confirmation.
+  confirm: async (c, input) => {
+    const p = await resolveProduct(c.tx, c.ctx.org.id, input.product);
+    const patch = toPatch({ domain: input.domain, status: input.status });
+    const changes: string[] = [];
+    if (patch.domain !== undefined && patch.domain !== p.domain) changes.push(c.t("domain from {from} to {to}", { from: p.domain ?? c.t("none"), to: patch.domain ?? c.t("none") }));
+    if (patch.status !== undefined && patch.status !== p.status) changes.push(c.t("status from {from} to {to}", { from: enumLabel(c.t, p.status), to: enumLabel(c.t, patch.status) }));
+    return changes.length ? c.t("Change the {changes} of {product}.", { changes: changes.join(", "), product: p.name }) : null;
+  },
   run: async (c, input) => {
     requirePermission(c, "product:write");
     const { product, name, ...fields } = input;

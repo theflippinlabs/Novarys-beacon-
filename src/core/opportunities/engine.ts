@@ -2,6 +2,7 @@ import type { Intent } from "@/core/queries/classify";
 import type { PageType } from "@/core/discovery/urls";
 import type { ContentGap } from "@/core/content/gaps";
 import type { OpportunityAction, OpportunityNextAction, OpportunitySources, ScoringRationale } from "@/db/schema";
+import { learningAdjustment, type LearningTally } from "@/core/autopilot/loop";
 
 export type Potential = "LOW" | "MEDIUM" | "HIGH";
 
@@ -89,6 +90,8 @@ export type OpportunitySignals = {
   crossSell?: { productId: string; productName: string; sharedIdentities: number; relationship: string | null; hasRule: boolean }[];
   /** Conversions recorded for the product, and whether a referral program exists. */
   referral?: { conversions90d: number; activeReferralCodes: number; affiliates: number } | null;
+  /** Autopilot learning: measured outcome tally per opportunity type (adjusts confidence by at most one point). */
+  learning?: Record<string, LearningTally>;
 };
 
 /**
@@ -651,5 +654,21 @@ export function generateOpportunities(s: OpportunitySignals): OpportunityDraft[]
     );
   }
 
-  return out.sort((a, b) => b.priorityScore - a.priorityScore || a.fingerprint.localeCompare(b.fingerprint));
+  return applyLearning(out, s.learning).sort((a, b) => b.priorityScore - a.priorityScore || a.fingerprint.localeCompare(b.fingerprint));
+}
+
+/**
+ * Autopilot learning: each type's measured outcomes move its confidence
+ * factor by at most one point (core/autopilot/loop.ts), still within 1 to 5;
+ * priority and potential follow, and the rationale says why.
+ */
+export function applyLearning(drafts: OpportunityDraft[], learning?: Record<string, LearningTally>): OpportunityDraft[] {
+  if (!learning) return drafts;
+  return drafts.map((d) => {
+    const adj = learningAdjustment(learning[d.type]);
+    if (!adj.rationale) return d;
+    if (!adj.delta) return { ...d, scoringRationale: { ...d.scoringRationale, learning: adj.rationale } };
+    const confidence = clamp5(d.confidence + adj.delta);
+    return { ...d, confidence, potential: potentialFrom(d.impact, confidence), priorityScore: priority(d.impact, confidence, d.effort, d.urgency), scoringRationale: { ...d.scoringRationale, learning: adj.rationale } };
+  });
 }

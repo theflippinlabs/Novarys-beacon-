@@ -2,7 +2,7 @@ import { withOrg } from "@/db";
 import { getAuthContext } from "@/lib/auth/session";
 import { can } from "@/lib/auth/rbac";
 import { err, ipHashOf, json, limited, sameOrigin } from "@/lib/http";
-import { ingestImage, MAX_UPLOAD_BYTES } from "@/services/media";
+import { insertImage, MAX_UPLOAD_BYTES, prepareImage } from "@/services/media";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +23,9 @@ export async function POST(req: Request) {
   try {
     const actor = { organizationId: ctx.org.id, userId: ctx.user.id, actorType: "USER" as const, ipHash: ipHashOf(req) };
     const data = Buffer.from(await file.arrayBuffer());
-    const out = await withOrg(ctx.org.id, (tx) => ingestImage(tx, actor, { data, filename: file.name || "photo", visibility: "PRIVATE" }));
+    // Re-encode before opening the transaction (no connection held during sharp work).
+    const img = await prepareImage({ data, filename: file.name || "photo", visibility: "PRIVATE" });
+    const out = await withOrg(ctx.org.id, (tx) => insertImage(tx, actor, img));
     return json({ id: out.id, url: out.url, width: out.width, height: out.height });
   } catch (e) {
     return err(400, (e as Error).message);

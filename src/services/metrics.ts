@@ -288,15 +288,33 @@ export async function availability(tx: Tx, organizationId: string, productId: st
 
 export type Kpis = Awaited<ReturnType<typeof kpis>>;
 
+/**
+ * Daily visitors, signups, subscriptions and AI-referred visitors over the
+ * last `days` days: one scan of the window grouped by day (FILTER aggregates),
+ * left-joined to generate_series so days without events read 0.
+ */
 export async function dailySeries(tx: Tx, organizationId: string, days: number, productId?: string | null) {
-  const pf = productId ? sql`and product_id = ${productId}` : sql``;
+  const pf = productId ? sql`and e.product_id = ${productId}` : sql``;
   const r = await tx.execute<{ day: string; visitors: number; signups: number; subs: number; ai: number }>(sql`
-    select to_char(d, 'YYYY-MM-DD') as day,
-      coalesce((select count(distinct visitor_id) from conversion_events where organization_id = ${organizationId} and type = 'PAGE_VIEW' and occurred_at >= d and occurred_at < d + interval '1 day' ${pf}), 0)::int as visitors,
-      coalesce((select count(*) from conversion_events where organization_id = ${organizationId} and type::text in (${typeList("SIGNUP_COMPLETED")}) and occurred_at >= d and occurred_at < d + interval '1 day' ${pf}), 0)::int as signups,
-      coalesce((select count(*) from conversion_events where organization_id = ${organizationId} and type::text in (${typeList("SUBSCRIPTION_STARTED")}) and occurred_at >= d and occurred_at < d + interval '1 day' ${pf}), 0)::int as subs,
-      coalesce((select count(distinct visitor_id) from conversion_events where organization_id = ${organizationId} and type = 'PAGE_VIEW' and channel = 'AI_REFERRAL' and occurred_at >= d and occurred_at < d + interval '1 day' ${pf}), 0)::int as ai
-    from generate_series(current_date - ${days - 1}::int, current_date, interval '1 day') d`);
+    with agg as (
+      select (e.occurred_at)::date as d,
+        count(distinct e.visitor_id) filter (where e.type = 'PAGE_VIEW') as visitors,
+        count(*) filter (where e.type::text in (${typeList("SIGNUP_COMPLETED")})) as signups,
+        count(*) filter (where e.type::text in (${typeList("SUBSCRIPTION_STARTED")})) as subs,
+        count(distinct e.visitor_id) filter (where e.type = 'PAGE_VIEW' and e.channel = 'AI_REFERRAL') as ai
+      from conversion_events e
+      where e.organization_id = ${organizationId}
+        and e.occurred_at >= (current_date - ${days - 1}::int)::timestamp
+        and e.occurred_at < (current_date + 1)::timestamp
+        ${pf}
+      group by 1
+    )
+    select to_char(g.d, 'YYYY-MM-DD') as day,
+      coalesce(agg.visitors, 0)::int as visitors, coalesce(agg.signups, 0)::int as signups,
+      coalesce(agg.subs, 0)::int as subs, coalesce(agg.ai, 0)::int as ai
+    from generate_series(current_date - ${days - 1}::int, current_date, interval '1 day') g(d)
+    left join agg on agg.d = g.d::date
+    order by g.d`);
   return r.rows.map((x) => ({ day: x.day, visitors: Number(x.visitors), signups: Number(x.signups), subs: Number(x.subs), ai: Number(x.ai) }));
 }
 

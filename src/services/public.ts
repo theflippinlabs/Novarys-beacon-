@@ -1,7 +1,7 @@
 import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
 import type { Tx } from "@/db";
 import { contentAssets, contentVersions, organizations, pages, products } from "@/db/schema";
-import { loadProductGraph } from "@/core/knowledge/load";
+import { loadProductGraphs } from "@/core/knowledge/load";
 import { verifiedOnly, type ProductGraph } from "@/core/knowledge/types";
 
 /** Public surfaces are on unless an admin switched them off (existing organisations default to on). */
@@ -20,13 +20,9 @@ export async function orgBySlug(tx: Tx, slug: string) {
 /** Verified-only graphs of an organisation's live, onboarded products. */
 export async function publicGraphs(tx: Tx, organizationId: string): Promise<ProductGraph[]> {
   const prods = await tx.select().from(products).where(eq(products.organizationId, organizationId)).orderBy(asc(products.name));
-  const out: ProductGraph[] = [];
-  for (const p of prods) {
-    if (p.status === "DEPRECATED" || !p.onboardingCompletedAt) continue;
-    const g = await loadProductGraph(tx, organizationId, p.id);
-    if (g) out.push(verifiedOnly(g));
-  }
-  return out;
+  const live = prods.filter((p) => p.status !== "DEPRECATED" && p.onboardingCompletedAt);
+  // One query per table for all products (no N+1).
+  return (await loadProductGraphs(tx, organizationId, live)).map(verifiedOnly);
 }
 
 /**
@@ -45,4 +41,28 @@ export async function publishedPages(tx: Tx, organizationId: string, productId?:
   if (!rows.length) return [];
   const versions = await tx.select().from(contentVersions).where(inArray(contentVersions.id, rows.map((r) => r.asset.publishedVersionId!)));
   return rows.map((r) => ({ ...r, version: versions.find((v) => v.id === r.asset.publishedVersionId) ?? null })).filter((r) => r.version);
+}
+
+/** One published page by organisation and path, with its published version (no other page is loaded). */
+export async function publishedPageByPath(tx: Tx, organizationId: string, path: string) {
+  const [r] = await tx
+    .select({ page: pages, asset: contentAssets, product: products, version: contentVersions })
+    .from(pages)
+    .innerJoin(contentAssets, eq(contentAssets.id, pages.contentAssetId))
+    .innerJoin(products, eq(products.id, pages.productId))
+    .innerJoin(contentVersions, eq(contentVersions.id, contentAssets.publishedVersionId))
+    .where(and(eq(pages.organizationId, organizationId), eq(pages.path, path), eq(pages.status, "PUBLISHED")))
+    .limit(1);
+  return r ?? null;
+}
+
+/** Light list (no bodies) of a product's published pages, for related-page links. */
+export async function publishedSiblings(tx: Tx, organizationId: string, productId: string) {
+  return tx
+    .select({ id: pages.id, productId: pages.productId, path: pages.path, type: pages.type, metaTitle: contentVersions.metaTitle, assetTitle: contentAssets.title })
+    .from(pages)
+    .innerJoin(contentAssets, eq(contentAssets.id, pages.contentAssetId))
+    .innerJoin(contentVersions, eq(contentVersions.id, contentAssets.publishedVersionId))
+    .where(and(eq(pages.organizationId, organizationId), eq(pages.productId, productId), eq(pages.status, "PUBLISHED")))
+    .orderBy(asc(pages.path));
 }

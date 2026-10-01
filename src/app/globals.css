@@ -123,6 +123,24 @@
   table {
     border-collapse: collapse;
   }
+  /* Touch screens: every control is at least 40 px tall (WCAG target size); checkboxes are enlarged. */
+  @media (max-width: 767.98px), (pointer: coarse) {
+    button,
+    select,
+    summary,
+    input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]) {
+      min-height: 2.5rem;
+    }
+    input[type="checkbox"],
+    input[type="radio"] {
+      width: 1.25rem;
+      height: 1.25rem;
+    }
+  }
+  /* Grid items never widen their track past the viewport (long URLs, wide tables): they shrink and wrap instead. */
+  .grid > * {
+    min-width: 0;
+  }
 }
 
 @layer components {
@@ -227,5 +245,96 @@
     max-width: 100%;
     height: auto;
     border: 1px solid var(--color-line);
+  }
+}
+
+/*
+ * Responsive tables (ResponsiveTable in components/ui): a normal table from
+ * the md breakpoint up, one card per row below it. Cells carry their column
+ * name in data-label; the first cell (data-primary) is the card title.
+ * One DOM for both layouts: nothing is hidden or duplicated on phones.
+ */
+@media (max-width: 767.98px) {
+  .rt table,
+  .rt tbody,
+  .rt tr,
+  .rt td {
+    display: block;
+    width: 100%;
+  }
+  .rt thead {
+    display: none;
+  }
+  .rt table,
+  .rt tr,
+  .rt td {
+    min-width: 0;
+  }
+  .rt tbody {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 0.75rem;
+  }
+  .rt tr {
+    border: 1px solid var(--color-line);
+    background: rgb(4 6 12 / 0.5);
+    padding: 0.5rem 0.75rem;
+  }
+  .rt td {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+    border: 0;
+    padding: 0.3rem 0;
+    text-align: right;
+    max-width: none;
+    overflow-wrap: anywhere;
+  }
+  .rt td > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .rt td[data-label]::before {
+    content: attr(data-label);
+    flex-shrink: 0;
+    max-width: 45%;
+    text-align: left;
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--color-muted);
+    padding-top: 0.15rem;
+  }
+  .rt td[data-primary] {
+    display: block;
+    text-align: left;
+    color: var(--color-platinum);
+    font-size: 0.9rem;
+    border-bottom: 1px solid var(--color-line);
+    padding-bottom: 0.45rem;
+    margin-bottom: 0.25rem;
+  }
+  .rt td[data-primary]::before {
+    display: none;
+  }
+  .rt td[data-full] {
+    display: block;
+    text-align: left;
+  }
+  .rt td[data-full]::before {
+    display: block;
+    max-width: none;
+    margin-bottom: 0.25rem;
+  }
+  .rt td:empty {
+    display: none;
+  }
+  /* Touch targets: buttons, links styled as buttons and selects inside cards. */
+  .rt button,
+  .rt select {
+    min-height: 2.5rem;
   }
 }

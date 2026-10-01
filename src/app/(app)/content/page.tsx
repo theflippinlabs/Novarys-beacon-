@@ -1,5 +1,8 @@
 import Link from "next/link";
-import { and, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq } from "drizzle-orm";
+import { Pager } from "@/components/shell/pager";
+import { decodeCursor, PAGE_SIZE, pageOf } from "@/core/util/cursor";
+import { afterCursor, msKey, tsCursor } from "@/lib/paginate";
 import { createContentAction } from "@/app/actions/content";
 import {
   Button,
@@ -37,6 +40,7 @@ export default async function ContentPage({
     status: sp1(sp, "status"),
     type: sp1(sp, "type"),
   };
+  const cursor = decodeCursor(sp1(sp, "cursor"));
   const { data, can } = await pageData(async (tx, ctx) => {
     const prods = await tx
       .select()
@@ -46,20 +50,26 @@ export default async function ContentPage({
     const product = f.product
       ? prods.find((p) => p.slug === f.product)
       : undefined;
-    const assets = await tx
-      .select({ a: contentAssets, productName: products.name })
-      .from(contentAssets)
-      .leftJoin(products, eq(products.id, contentAssets.productId))
-      .where(
-        and(
-          eq(contentAssets.organizationId, ctx.org.id),
-          product ? eq(contentAssets.productId, product.id) : undefined,
-          f.status ? eq(contentAssets.status, f.status as never) : undefined,
-          f.type ? eq(contentAssets.type, f.type as never) : undefined,
-        ),
-      )
-      .orderBy(desc(contentAssets.updatedAt))
-      .limit(300);
+    const filters = and(
+      eq(contentAssets.organizationId, ctx.org.id),
+      product ? eq(contentAssets.productId, product.id) : undefined,
+      f.status ? eq(contentAssets.status, f.status as never) : undefined,
+      f.type ? eq(contentAssets.type, f.type as never) : undefined,
+    );
+    // Cursor pagination (50 per page, most recently updated first) instead of a silent cap.
+    const [{ total }] = await tx.select({ total: count() }).from(contentAssets).where(filters);
+    const page = pageOf(
+      await tx
+        .select({ a: contentAssets, productName: products.name })
+        .from(contentAssets)
+        .leftJoin(products, eq(products.id, contentAssets.productId))
+        .where(and(filters, afterCursor(contentAssets.updatedAt, contentAssets.id, cursor, "desc", "timestamp")))
+        .orderBy(desc(msKey(contentAssets.updatedAt)), desc(contentAssets.id))
+        .limit(PAGE_SIZE + 1),
+      PAGE_SIZE,
+      (r) => tsCursor(r.a.updatedAt, r.a.id),
+    );
+    const assets = page.items;
     const qs = await tx
       .select({ id: queries.id, query: queries.query })
       .from(queries)
@@ -72,7 +82,7 @@ export default async function ContentPage({
       )
       .orderBy(desc(queries.importance))
       .limit(200);
-    return { prods, product, assets, qs };
+    return { prods, product, assets, total, next: page.next, qs };
   });
   const cols = [...PIPELINE, "REJECTED"] as const;
   const back = `/content${f.product ? `?product=${f.product}` : ""}`;
@@ -109,11 +119,17 @@ export default async function ContentPage({
       <div className="grid gap-6 2xl:grid-cols-[1fr_22rem]">
         <div className="min-w-0">
           {data.assets.length === 0 ? (
-            <EmptyState title={t("No content yet")}>
-              {t(
-                "Create an asset here, from a planned page in Discovery, or from an opportunity.",
-              )}
-            </EmptyState>
+            f.product || f.status || f.type ? (
+              <EmptyState variant="filtered" what={t("No content matches these filters.")} why={t("Other assets exist for another product, stage or format.")} action={{ label: t("Clear filters"), href: "/content" }} />
+            ) : (
+              <EmptyState
+                variant="not_generated"
+                what={t("No content yet")}
+                why={t("Create an asset here, from a planned page in Discovery, or from an opportunity.")}
+                action={{ label: t("Open planned pages"), href: "/discovery" }}
+                secondary={can("content:write") && data.prods.length > 0 ? { label: t("New content"), href: "#new-content" } : undefined}
+              />
+            )
           ) : (
             <>
               {/* Phones: a list grouped by stage instead of the wide board. */}
@@ -199,11 +215,12 @@ export default async function ContentPage({
                   })}
                 </div>
               </div>
+              <Pager path="/content" params={f} shown={data.assets.length} total={data.total} next={data.next} current={sp1(sp, "cursor")} />
             </>
           )}
         </div>
         {can("content:write") && data.prods.length > 0 && (
-          <Panel title={t("New content")} eyebrow={t("Workspace")}>
+          <Panel title={<span id="new-content">{t("New content")}</span>} eyebrow={t("Workspace")}>
             <form action={createContentAction} className="flex flex-col gap-3">
               <HiddenBack path={back} />
               <Field label={t("Product")}>

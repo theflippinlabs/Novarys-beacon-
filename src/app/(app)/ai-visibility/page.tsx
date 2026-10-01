@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { and, desc, eq } from "drizzle-orm";
 import { addPromptAction, runAiTestsAction, togglePromptAction } from "@/app/actions/growth";
-import { Badge, Button, EmptyState, Field, Flash, HiddenBack, LinkButton, PageHeader, Panel, Table, Td, Th } from "@/components/ui";
+import { Badge, Button, EmptyState, Field, Flash, HiddenBack, PageHeader, Panel, Td, Th, ResponsiveTable } from "@/components/ui";
 import { FilterBar, SelectFilter } from "@/components/shell/filters";
 import { LineChart } from "@/components/charts/line-chart";
 import { aiVisibilityPrompts, aiVisibilityTests, products } from "@/db/schema";
@@ -64,9 +64,12 @@ export default async function AiVisibilityPage({ searchParams }: { searchParams:
       </FilterBar>
       {data.providers.length === 0 && (
         <div className="mb-6">
-          <EmptyState title={t("No AI provider configured")} action={<LinkButton href="/settings/integrations">{t("Configure providers")}</LinkButton>}>
-            {t("Connect Anthropic, OpenAI or Perplexity API keys (stored encrypted) to run sampled tests. Prompts can be prepared now.")}
-          </EmptyState>
+          <EmptyState
+            variant="not_connected"
+            what={t("No AI provider configured")}
+            why={t("Connect Anthropic, OpenAI or Perplexity API keys (stored encrypted) to run sampled tests. Prompts can be prepared now.")}
+            action={{ label: t("Configure providers"), href: "/settings/integrations" }}
+          />
         </div>
       )}
       <div className="grid gap-6 xl:grid-cols-[1fr_22rem]">
@@ -115,7 +118,7 @@ export default async function AiVisibilityPage({ searchParams }: { searchParams:
 
       <Panel title={t("{n} tracked prompt(s)", { n: data.summaries.length })} eyebrow={t("Last 90 days")} className="mt-6" pad={false}>
         {data.summaries.length ? (
-          <Table>
+          <ResponsiveTable>
             <thead>
               <tr>
                 <Th>{t("Prompt")}</Th>
@@ -131,14 +134,14 @@ export default async function AiVisibilityPage({ searchParams }: { searchParams:
                 const own = data.product ? s.last?.productsMentioned.find((m) => m.productId === data.product!.id) : s.last?.productsMentioned[0];
                 return (
                   <tr key={s.prompt.id} id={`prompt-${s.prompt.id}`}>
-                    <Td className="max-w-md">
+                    <Td primary className="max-w-md">
                       <div className="text-platinum">{s.prompt.prompt}</div>
                       <div className="text-[11px] text-muted">{s.prompt.category ?? ""}</div>
                     </Td>
-                    <Td className="text-xs">{s.testsRun ? t("Observed in {x} of {y} sampled responses", { x: s.mentions, y: s.testsRun }) : t("No sampled response yet")}</Td>
-                    <Td className="text-xs">{s.testsRun ? t("Cited in {x} of {y} sampled responses", { x: s.cited, y: s.testsRun }) : t("n/a")}</Td>
-                    <Td className="text-xs">{s.competitors.join(", ") || t("None")}</Td>
-                    <Td className="text-xs" title={t("Order of first appearance among detected entities in the latest answer; not a ranking")}>
+                    <Td label={t("Mentioned")} className="text-xs">{s.testsRun ? t("Observed in {x} of {y} sampled responses", { x: s.mentions, y: s.testsRun }) : t("No sampled response yet")}</Td>
+                    <Td label={t("Own domain cited")} className="text-xs">{s.testsRun ? t("Cited in {x} of {y} sampled responses", { x: s.cited, y: s.testsRun }) : t("n/a")}</Td>
+                    <Td label={t("Competitors observed")} className="text-xs">{s.competitors.join(", ") || t("None")}</Td>
+                    <Td label={t("Latest response")} className="text-xs" title={t("Order of first appearance among detected entities in the latest answer; not a ranking")}>
                       {s.last ? (
                         <Link href={`/ai-visibility/runs/${s.last.id}`} className="hover:text-blue-bright">
                           {own ? t("order of appearance {n}", { n: own.position }) : t("not mentioned")}
@@ -170,7 +173,7 @@ export default async function AiVisibilityPage({ searchParams }: { searchParams:
                 );
               })}
             </tbody>
-          </Table>
+          </ResponsiveTable>
         ) : (
           <p className="p-4 text-sm text-muted">{t("No prompts tracked yet.")}</p>
         )}

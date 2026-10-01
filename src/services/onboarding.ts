@@ -1,30 +1,16 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import type { Tx } from "@/db";
-import { apiKeys, conversionEvents, distributionTargets, integrations, products } from "@/db/schema";
+import { products } from "@/db/schema";
 import { computeCompleteness } from "@/core/knowledge/completeness";
 import { loadProductGraph } from "@/core/knowledge/load";
 import { buildAnswerBlocks } from "@/core/geo/entity";
-import { DISTRIBUTION_CATALOG } from "@/core/distribution/catalog";
+import { seedDistributionTargets } from "./distribution";
 import { generateQueryUniverse } from "./queries";
 import { syncPagePlan } from "./discovery";
-import { latestAudit } from "./seo";
-
-export const ONBOARDING_STEPS = [
-  "Identity",
-  "Website",
-  "Category",
-  "Description",
-  "Audience",
-  "Problems solved",
-  "Features",
-  "Pricing",
-  "Competitors",
-  "Integrations",
-  "Proof / sources",
-  "Analytics",
-  "Search Console",
-  "Conversion events",
-] as const;
+import { markStep, normalizeSteps, stepIndex, type FlowStepKey, type InfoPartKey, type StepStatus, type StoredOnboardingSteps } from "@/core/onboarding/steps";
+import type { Product } from "@/core/knowledge/types";
+import { audit, type Actor } from "@/lib/audit";
+import { enqueue } from "@/jobs/queue";
 
 /**
  * PRODUCT ANALYSIS: runs after onboarding (as a background job):
@@ -32,54 +18,48 @@ export const ONBOARDING_STEPS = [
  * GEO/AEO questions → distribution suggestions. The technical audit,
  * opportunities and score are enqueued as follow-up jobs by the handler.
  */
-export async function analyzeProduct(tx: Tx, organizationId: string, productId: string) {
+export async function analyzeProduct(tx: Tx, organizationId: string, productId: string, opts: { completeOnboarding?: boolean } = {}) {
   const g = await loadProductGraph(tx, organizationId, productId);
   if (!g) throw new Error("Product not found");
   const completeness = computeCompleteness(g);
   const queries = await generateQueryUniverse(tx, organizationId, productId);
   const plan = await syncPagePlan(tx, organizationId, productId);
   const geo = buildAnswerBlocks(g);
-  const existing = await tx.select({ name: distributionTargets.name }).from(distributionTargets).where(and(eq(distributionTargets.organizationId, organizationId), eq(distributionTargets.productId, productId)));
-  let suggested = 0;
-  for (const d of DISTRIBUTION_CATALOG) {
-    if (existing.some((e) => e.name === d.name)) continue;
-    await tx.insert(distributionTargets).values({ organizationId, productId, kind: d.kind, name: d.name, url: d.url, status: "DISCOVERED", notes: "Suggested from the Beacon venue catalogue. Qualify relevance before preparing a submission." });
-    suggested++;
-  }
-  await tx.update(products).set({ onboardingCompletedAt: new Date() }).where(eq(products.id, productId));
+  // Distribution: catalogue venues that fit the product (relevance from category, facets, stage and AI citation sources).
+  const suggested = await seedDistributionTargets(tx, organizationId, productId, g);
+  // Run from the onboarding QUERY UNIVERSE step, the analysis does not complete onboarding (the final step does).
+  if (opts.completeOnboarding !== false) await tx.update(products).set({ onboardingCompletedAt: new Date() }).where(and(eq(products.id, productId), isNull(products.onboardingCompletedAt)));
   return { completeness: completeness.score, queries, pages: { planned: plan.planned, skipped: plan.skipped.length }, geo: { answers: geo.answers.length, gaps: geo.gaps.length }, distributionSuggested: suggested };
 }
 
-export type ChecklistItem = { label: string; done: boolean; href: string; detail?: string };
+/** Launch checklist (Phase 2): see services/launch.ts. */
+export { productLaunchChecklist as launchChecklist } from "./launch";
 
-/** Launch checklist: every item is derived from real state, nothing is self-reported. */
-export async function launchChecklist(tx: Tx, organizationId: string, productId: string): Promise<ChecklistItem[]> {
-  const g = await loadProductGraph(tx, organizationId, productId);
-  if (!g) throw new Error("Product not found");
-  const p = g.product;
-  const c = computeCompleteness(g);
-  const audit = await latestAudit(tx, organizationId, productId);
-  const stats = (
-    await tx.execute<{ q: number; pages: number; published: number }>(sql`
-    select (select count(*) from queries where product_id = ${productId} and status = 'ACTIVE')::int as q,
-      (select count(*) from pages where product_id = ${productId})::int as pages,
-      (select count(*) from pages where product_id = ${productId} and status = 'PUBLISHED')::int as published`)
-  ).rows[0];
-  const keys = await tx.select().from(apiKeys).where(and(eq(apiKeys.organizationId, organizationId), eq(apiKeys.productId, productId)));
-  const events = await tx.select({ n: sql<number>`count(*)::int` }).from(conversionEvents).where(eq(conversionEvents.productId, productId));
-  const integ = await tx.select().from(integrations).where(and(eq(integrations.organizationId, organizationId), eq(integrations.productId, productId)));
-  const base = `/products/${p.slug}`;
-  return [
-    { label: "Knowledge graph ≥ 70% complete", done: c.score >= 0.7, href: `${base}/knowledge`, detail: `${Math.round(c.score * 100)}%` },
-    { label: "Canonical domain set", done: Boolean(p.domain), href: `${base}/knowledge` },
-    { label: "Conversion URL declared", done: p.conversionUrls.length > 0, href: `${base}/knowledge` },
-    { label: "≥ 10 active queries curated", done: Number(stats?.q ?? 0) >= 10, href: `/queries?product=${p.slug}`, detail: `${stats?.q ?? 0} active` },
-    { label: "Technical audit run", done: Boolean(audit), href: `/discovery?product=${p.slug}` },
-    { label: "Discovery pages planned", done: Number(stats?.pages ?? 0) > 0, href: `/discovery?product=${p.slug}`, detail: `${stats?.pages ?? 0} planned` },
-    { label: "Product page published", done: Number(stats?.published ?? 0) > 0, href: `/content?product=${p.slug}` },
-    { label: "Tracking keys created", done: keys.some((k) => !k.revokedAt), href: `${base}/tracking` },
-    { label: "First events received", done: Number(events[0]?.n ?? 0) > 0, href: `${base}/tracking` },
-    { label: "Search Console connected", done: integ.some((i) => i.provider === "GOOGLE_SEARCH_CONSOLE" && i.status === "CONNECTED"), href: `/settings/integrations` },
-    { label: "Analytics connected", done: integ.some((i) => i.provider === "GOOGLE_ANALYTICS" && i.status === "CONNECTED"), href: `/settings/integrations` },
-  ];
+/** Normalised per-step onboarding status of a product (legacy integer progress is mapped once). */
+export function stepsOf(p: Pick<Product, "onboardingSteps" | "onboardingStep" | "onboardingCompletedAt">): StoredOnboardingSteps {
+  return normalizeSteps(p.onboardingSteps, { onboardingStep: p.onboardingStep, completedAt: p.onboardingCompletedAt });
+}
+
+/** Record a step (or PRODUCT INFORMATION sub-step) as done, skipped or pending; returns the new status map. */
+export async function setOnboardingStep(tx: Tx, actor: Actor, productId: string, key: FlowStepKey | `info:${InfoPartKey}`, status: StepStatus) {
+  const p = await tx.query.products.findFirst({ where: and(eq(products.id, productId), eq(products.organizationId, actor.organizationId)) });
+  if (!p) throw new Error("Product not found");
+  const steps = markStep(stepsOf(p), key, status);
+  const flowKey = (key.startsWith("info:") ? "info" : key) as FlowStepKey;
+  // The legacy integer keeps the furthest flow position reached (shown by older clients).
+  await tx
+    .update(products)
+    .set({ onboardingSteps: steps, onboardingStep: Math.max(p.onboardingStep, stepIndex(flowKey) + 1) })
+    .where(and(eq(products.id, productId), eq(products.organizationId, actor.organizationId)));
+  if (status !== "pending") await audit(tx, actor, `onboarding.step.${status}`, "product", productId, { step: key });
+  return steps;
+}
+
+/** Final step: onboarding is complete; the full product analysis (queries, page plan, opportunities, score) is queued. */
+export async function finishOnboarding(tx: Tx, actor: Actor, productId: string) {
+  const steps = await setOnboardingStep(tx, actor, productId, "score", "done");
+  await tx.update(products).set({ onboardingCompletedAt: new Date() }).where(and(eq(products.id, productId), eq(products.organizationId, actor.organizationId), isNull(products.onboardingCompletedAt)));
+  await enqueue("product.analyze", { productId }, { organizationId: actor.organizationId, idempotencyKey: `analyze:${productId}:${Date.now()}` });
+  await audit(tx, actor, "onboarding.complete", "product", productId, { skipped: Object.entries(steps).filter(([, v]) => v.status === "skipped").map(([k]) => k) });
+  return steps;
 }

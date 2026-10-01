@@ -34,7 +34,7 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
         }
       />
       {!data.audits.length ? (
-        <EmptyState title={t("No audits yet.")}>{t("Run a technical audit from the Discovery page.")}</EmptyState>
+        <EmptyState variant="not_generated" what={t("No audits yet.")} why={t("The crawl history lists every technical audit of this product with what changed since the previous one.")} action={{ label: t("Run a technical audit"), href: `/discovery?product=${slug ?? ""}` }} />
       ) : (
         <Panel pad={false}>
           <Table>

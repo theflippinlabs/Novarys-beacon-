@@ -97,6 +97,12 @@ export default async function OpportunityDetail({ params, searchParams }: { para
                   <dd className="mt-0.5 text-chrome">{o.scoringRationale[k] ? t(o.scoringRationale[k]!) : t("No rationale recorded (generated before scoring rationale existed).")}</dd>
                 </div>
               ))}
+              {o.scoringRationale.learning && (
+                <div>
+                  <dt className="eyebrow">{t("Autopilot learning")}</dt>
+                  <dd className="mt-0.5 text-chrome">{t(o.scoringRationale.learning)}</dd>
+                </div>
+              )}
             </dl>
             <p className="num mt-3 text-xs text-muted">{t("{impact} × {confidence} × {urgency} ÷ {effort} = {priority}", { impact: o.impact, confidence: o.confidence, urgency: o.urgency, effort: o.effort, priority: o.priorityScore })}</p>
           </Panel>

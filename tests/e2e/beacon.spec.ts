@@ -35,9 +35,14 @@ async function eventually(p: Page, check: () => Promise<boolean>, { timeout = 90
 async function saveStep(p: Page, fields: Record<string, string>, opts: { select?: Record<string, string> } = {}) {
   for (const [name, value] of Object.entries(fields)) await p.fill(`[name="${name}"]`, value);
   for (const [name, value] of Object.entries(opts.select ?? {})) await p.selectOption(`select[name="${name}"]`, value);
-  const step = new URL(p.url()).searchParams.get("step");
-  await p.click("button:has-text('Save & continue →'), button:has-text('Finish & analyse →')");
-  await p.waitForURL((u) => u.searchParams.get("step") !== step || !u.pathname.endsWith("/onboarding"), { timeout: 60_000 });
+  await advance(p, "button:has-text('Save & continue →')");
+}
+
+/** Click a wizard button and wait until the position (step and sub-step) changes or the wizard is left. */
+async function advance(p: Page, selector = "button:has-text('Continue →')") {
+  const before = new URL(p.url()).search;
+  await p.click(selector);
+  await p.waitForURL((u) => !u.pathname.endsWith("/onboarding") || u.search.replace(/[?&](ok|error)=[^&]*/g, "") !== before.replace(/[?&](ok|error)=[^&]*/g, ""), { timeout: 60_000 });
 }
 
 test.beforeAll(async ({ browser }) => {
@@ -71,8 +76,12 @@ test("create product through onboarding", async () => {
   await page.goto("/products");
   await page.fill('input[name="name"]', "Acme Live");
   await page.click("text=Add product →");
-  await expect(page).toHaveURL(/\/products\/acme-live\/onboarding\?step=1/);
+  // The product exists: the wizard continues at WEBSITE; the identity step is still editable.
+  await expect(page).toHaveURL(/\/products\/acme-live\/onboarding\?step=website/);
+  await expect(page.getByLabel("Onboarding progress")).toBeVisible();
+  await page.goto("/products/acme-live/onboarding?step=product");
   await saveStep(page, {}, { select: { status: "LIVE" } });
+  await expect(page).toHaveURL(/step=website/);
   await saveStep(page, { domain: "acme-live.example", languages: "en, fr", supportedCountries: "FR, US", documentationUrl: "https://acme-live.example/docs", pricingUrl: "https://acme-live.example/pricing" });
   await saveStep(page, { category: "TikTok LIVE moderation software", keywords: "tiktok live moderation" }, { select: { apiAvailable: "false", freeTrial: "true" } });
   await saveStep(page, {
@@ -98,9 +107,29 @@ test("create product through onboarding", async () => {
   await saveStep(page, { competitors: "Rival Mod | rivalmod.example" });
   await saveStep(page, { integrations: "" });
   await saveStep(page, { sources: "Acme Live website | https://acme-live.example | WEBSITE\nAcme Live docs | https://acme-live.example/docs | DOCUMENTATION\nAcme Live pricing | https://acme-live.example/pricing | PRICING" });
-  await saveStep(page, {}); // analytics (optional)
-  await saveStep(page, {}); // search console (optional)
   await saveStep(page, { ctas: "Start free trial | https://acme-live.example/signup | TRY_FREE" });
+  // VERIFY KNOWLEDGE lists the unverified facts with their sources (verification happens in the next test).
+  await expect(page).toHaveURL(/step=verify/);
+  await expect(page.getByText("Facts waiting for verification")).toBeVisible();
+  await advance(page);
+  await expect(page).toHaveURL(/step=search/);
+  await advance(page, "button:has-text('Skip (leave unknown)')"); // search data (optional)
+  await advance(page, "button:has-text('Skip (leave unknown)')"); // analytics (optional)
+  await expect(page).toHaveURL(/step=crawl/);
+  await advance(page, "button:has-text('Skip this step')");
+  // QUERY UNIVERSE: candidates generated from the knowledge graph.
+  await expect(page).toHaveURL(/step=queries/);
+  await page.click("button:has-text('Generate query universe')");
+  await expect(page.getByText(/candidate queries in \d+ clusters/)).toBeVisible();
+  await advance(page);
+  await expect(page).toHaveURL(/step=gaps/);
+  await advance(page);
+  await expect(page).toHaveURL(/step=opportunities/);
+  await advance(page);
+  await expect(page).toHaveURL(/step=score/);
+  // Skipped steps are shown as skipped, never as done.
+  await expect(page.getByLabel(/^7\. Initial crawl: Skipped$/)).toBeVisible();
+  await advance(page, "button:has-text('Finish & analyse →')");
   await expect(page).toHaveURL(/\/products\/acme-live(\?|$)/);
   await expect(page.getByText("Onboarding complete")).toBeVisible();
   // Product analysis (embedded worker) produces the query universe and page plan.
@@ -238,12 +267,18 @@ test("tracking keys, events and analytics", async () => {
 });
 
 test("RBAC: a viewer cannot mutate", async () => {
+  // Members are invited: the invitee sets their own password on the invitation page.
   await page.goto("/settings");
+  await page.fill('form:has(button:has-text("Invite member")) input[name="email"]', "viewer@beacon.test");
+  await page.click("button:has-text('Invite member')");
+  await expect(page.getByText("Invitation created for viewer@beacon.test.")).toBeVisible();
+  const link = await page.getByLabel("Invitation link").inputValue();
+  await page.context().clearCookies();
+  await page.goto(link.replace(/^https?:\/\/[^/]+/, ""));
   await page.fill('input[name="name"]', "Viewer");
-  await page.fill('input[name="email"]', "viewer@beacon.test");
   await page.fill('input[name="password"]', "viewer-password-123");
-  await page.click("button:has-text('Add member')");
-  await expect(page.getByText("viewer@beacon.test added as viewer.")).toBeVisible();
+  await page.fill('input[name="confirm"]', "viewer-password-123");
+  await page.click("text=Create my account and accept →");
   await page.context().clearCookies();
   await page.goto("/login");
   await page.fill('input[name="email"]', "viewer@beacon.test");
@@ -302,8 +337,9 @@ test("edit and delete a product", async ({ page }) => {
   await page.goto("/products");
   await page.fill('input[name="name"]', "Throwaway App");
   await page.getByRole("button", { name: "Add product →" }).click();
+  await expect(page).toHaveURL(/\/products\/throwaway-app\/onboarding/);
   await page.goto("/products/throwaway-app");
-  await expect(page.getByRole("link", { name: "Continue editing →" })).toHaveAttribute("href", /\/products\/throwaway-app\/onboarding\?step=\d+/);
+  await expect(page.getByRole("link", { name: "Continue editing →" })).toHaveAttribute("href", /\/products\/throwaway-app\/onboarding\?step=\w+/);
 
   // The logo is chosen from the device right next to the field, then saved with the step.
   await page.goto("/products/throwaway-app/onboarding?step=1");

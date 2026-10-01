@@ -10,7 +10,8 @@ export type ChatItem =
   | { kind: "user"; key: string; text: string; images: string[] }
   | { kind: "assistant"; key: string; text: string }
   | { kind: "tool"; key: string; id: string; label: string; status: "running" | "ok" | "error"; links: string[]; error?: string }
-  | { kind: "notice"; key: string; tone: "error" | "info"; text: string; link?: { href: string; label: string } };
+  | { kind: "notice"; key: string; tone: "error" | "info"; text: string; link?: { href: string; label: string } }
+  | { kind: "confirm"; key: string; id: string; summary: string; state: "pending" | "resolved" };
 
 type Attachment = { localId: string; preview: string; id?: string; error?: string };
 
@@ -82,11 +83,12 @@ function Markdown({ text }: { text: string }) {
   return <div className="prose-beacon text-[0.95rem] [&_p]:my-1.5" dangerouslySetInnerHTML={{ __html: renderMarkdown(stripLongDashes(text)) }} />;
 }
 
-export function AgentChat({ conversationId: initialId, initialItems }: { conversationId: string | null; initialItems: ChatItem[] }) {
+export function AgentChat({ conversationId: initialId, initialItems, initialInput }: { conversationId: string | null; initialItems: ChatItem[]; initialInput?: string }) {
   const { t, locale } = useI18n();
   const [conversationId, setConversationId] = useState(initialId);
   const [items, setItems] = useState<ChatItem[]>(initialItems);
-  const [input, setInput] = useState("");
+  // A prompt handed over from the command palette (/agent?q=...) is prefilled, never sent automatically.
+  const [input, setInput] = useState(initialInput ?? "");
   const [busy, setBusy] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [listening, setListening] = useState(false);
@@ -179,17 +181,19 @@ export function AgentChat({ conversationId: initialId, initialItems }: { convers
     rec.start();
   }
 
-  async function send(textOverride?: string) {
+  async function send(textOverride?: string, confirm?: { id: string; decision: "confirm" | "cancel" }) {
     const text = (textOverride ?? input).trim();
-    const ready = attachments.filter((a) => a.id);
-    if ((!text && !ready.length) || busy || attachments.some((a) => !a.id && !a.error)) return;
+    const ready = confirm ? [] : attachments.filter((a) => a.id);
+    if ((!text && !ready.length) || busy || (!confirm && attachments.some((a) => !a.id && !a.error))) return;
     recognition.current?.stop();
     setBusy(true);
-    setInput("");
-    setAttachments([]);
+    if (!confirm) {
+      setInput("");
+      setAttachments([]);
+    }
     const assistantKey = nextKey();
     let reply = "";
-    patch((p) => [...p, { kind: "user", key: nextKey(), text, images: ready.map((a) => a.preview) }]);
+    patch((p) => [...p.map((x) => (confirm && x.kind === "confirm" && x.id === confirm.id ? { ...x, state: "resolved" as const } : x)), { kind: "user", key: nextKey(), text, images: ready.map((a) => a.preview) }]);
 
     const abort = new AbortController();
     abortRef.current = abort;
@@ -197,7 +201,7 @@ export function AgentChat({ conversationId: initialId, initialItems }: { convers
       const res = await fetch("/api/agent", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ conversationId, text, mediaIds: ready.map((a) => a.id) }),
+        body: JSON.stringify({ conversationId, text: confirm ? "" : text, mediaIds: ready.map((a) => a.id), confirm: confirm ?? null }),
         signal: abort.signal,
       });
       if (!res.ok || !res.body) {
@@ -221,6 +225,7 @@ export function AgentChat({ conversationId: initialId, initialItems }: { convers
             | { type: "text"; delta: string }
             | { type: "tool_start"; id: string; label: string }
             | { type: "tool_end"; id: string; ok: boolean; links: string[]; error?: string }
+            | { type: "confirm"; id: string; summary: string }
             | { type: "error"; code: string; message?: string }
             | { type: "done" };
           if (ev.type === "conversation") {
@@ -242,6 +247,9 @@ export function AgentChat({ conversationId: initialId, initialItems }: { convers
             segment = nextKey(); // text after a tool call starts a new bubble
           } else if (ev.type === "tool_end") {
             patch((p) => p.map((x) => (x.kind === "tool" && x.id === ev.id ? { ...x, status: ev.ok ? "ok" : "error", links: ev.links, error: ev.error } : x)));
+          } else if (ev.type === "confirm") {
+            patch((p) => [...p, { kind: "confirm", key: nextKey(), id: ev.id, summary: ev.summary, state: "pending" }]);
+            segment = nextKey();
           } else if (ev.type === "error") {
             const notice: ChatItem =
               ev.code === "not_connected"
@@ -323,6 +331,23 @@ export function AgentChat({ conversationId: initialId, initialItems }: { convers
                   {linkLabel(href, t)} →
                 </Link>
               ))}
+            </div>
+          ) : it.kind === "confirm" ? (
+            <div key={it.key} role="group" aria-label={t("Confirmation needed")} className="rounded-xl border border-gold/50 bg-gold/5 px-4 py-3 text-sm">
+              <div className="eyebrow mb-1 text-gold">{t("Confirmation needed")}</div>
+              <p className="text-chrome">{it.summary}</p>
+              {it.state === "pending" ? (
+                <div className="mt-3 flex gap-2">
+                  <button type="button" disabled={busy} onClick={() => void send(t("Confirm"), { id: it.id, decision: "confirm" })} className="rounded-full bg-gradient-to-b from-gold-bright to-gold px-4 py-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-obsidian disabled:opacity-40">
+                    {t("Confirm")}
+                  </button>
+                  <button type="button" disabled={busy} onClick={() => void send(t("Cancel"), { id: it.id, decision: "cancel" })} className="rounded-full border border-line-strong px-4 py-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-chrome hover:text-platinum disabled:opacity-40">
+                    {t("Cancel")}
+                  </button>
+                </div>
+              ) : (
+                <div className="mt-2 text-xs text-muted">{t("Answered")}</div>
+              )}
             </div>
           ) : (
             <div key={it.key} role="status" className={`rounded-xl border px-4 py-3 text-sm ${it.tone === "error" ? "border-crit/50 text-crit" : "border-line-strong text-chrome"}`}>

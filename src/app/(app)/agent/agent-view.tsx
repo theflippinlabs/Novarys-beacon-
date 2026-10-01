@@ -7,7 +7,7 @@ import { getI18n } from "@/i18n/server";
 import type { AuthContext } from "@/lib/auth/service";
 
 /** Shared layout for /agent and /agent/[id]. */
-export async function AgentView({ ctx, conversationId, title, items }: { ctx: AuthContext; conversationId: string | null; title?: string; items: ChatItem[] }) {
+export async function AgentView({ ctx, conversationId, title, items, initialInput }: { ctx: AuthContext; conversationId: string | null; title?: string; items: ChatItem[]; initialInput?: string }) {
   const { t, intl } = await getI18n();
   const history = await listConversations(ctx);
   return (
@@ -42,7 +42,7 @@ export async function AgentView({ ctx, conversationId, title, items }: { ctx: Au
           </Link>
         </div>
       </header>
-      <AgentChat key={conversationId ?? "new"} conversationId={conversationId} initialItems={items} />
+      <AgentChat key={conversationId ?? `new:${initialInput ?? ""}`} conversationId={conversationId} initialItems={items} initialInput={initialInput} />
     </div>
   );
 }

@@ -2,7 +2,7 @@ import { inSequence } from "@/db";
 import Link from "next/link";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { deleteProductAction, runProductAnalysisAction } from "@/app/actions/products";
-import { Badge, Button, EmptyState, Flash, HiddenBack, KV, LinkButton, Meter, PageHeader, Panel, PotentialBadge, Stat, StatusBadge, Table, Td, Th } from "@/components/ui";
+import { Badge, Button, EmptyState, Flash, HiddenBack, KV, LinkButton, Meter, PageHeader, Panel, PotentialBadge, Stat, StatusBadge, Td, Th, ResponsiveTable } from "@/components/ui";
 import { LineChart } from "@/components/charts/line-chart";
 import { ProductTabs, RangePicker } from "@/components/shell/product-tabs";
 import { experiments, jobs, opportunities } from "@/db/schema";
@@ -11,7 +11,9 @@ import { scoreHistory, storedScoreWithDiff } from "@/services/score";
 import { recomputeScoreAction } from "@/app/actions/knowledge";
 import { latestAudit } from "@/services/seo";
 import { promptSummaries } from "@/services/ai-visibility";
-import { launchChecklist } from "@/services/onboarding";
+import { launchChecklist, stepsOf } from "@/services/onboarding";
+import { onboardingHref, resumeAt } from "@/core/onboarding/steps";
+import { enumLabel } from "@/i18n/core";
 import { metricSeries } from "@/services/visibility";
 import { loadProductGraph } from "@/core/knowledge/load";
 import { addDays, isoDay } from "@/core/util/text";
@@ -65,12 +67,12 @@ export default async function ProductDashboard({ params, searchParams }: { param
       <PageHeader
         eyebrow={t("Product · {category}", { category: p.category ?? t("category unknown") })}
         title={p.name}
-        description={p.shortDescription ?? <span className="text-muted">{t("No short description yet. Complete onboarding step 4.")}</span>}
+        description={p.shortDescription ?? <span className="text-muted">{t("No short description yet. Add it in onboarding, Product information.")}</span>}
         actions={
           <>
             <RangePicker base={base} days={days} />
             {can("product:write") && (
-              <LinkButton variant="gold" href={`${base}/onboarding?step=${p.onboardingCompletedAt ? 1 : Math.max(1, p.onboardingStep)}`}>
+              <LinkButton variant="gold" href={p.onboardingCompletedAt ? `${base}/onboarding?step=product` : onboardingHref(p.slug, resumeAt(stepsOf(p)))}>
                 {p.onboardingCompletedAt ? t("Edit product") : t("Continue editing →")}
               </LinkButton>
             )}
@@ -229,9 +231,12 @@ export default async function ProductDashboard({ params, searchParams }: { param
                 ]}
               />
             ) : (
-              <EmptyState title={t("Search data not connected")} action={<LinkButton href={`${base}/onboarding?step=13`}>{t("Connect Search Console")}</LinkButton>}>
-                {t("Beacon never estimates search traffic. Connect Search Console or Bing Webmaster to import measured impressions and clicks.")}
-              </EmptyState>
+              <EmptyState
+                variant={k.discovery.organicClicks.state === "NOT_CONNECTED" ? "not_connected" : "no_data_yet"}
+                what={k.discovery.organicClicks.state === "NOT_CONNECTED" ? t("No Search Console data yet.") : t("Search data connected, no rows imported yet.")}
+                why={k.discovery.organicClicks.state === "NOT_CONNECTED" ? t("Beacon never estimates search traffic. Connect Search Console or Bing Webmaster to import measured impressions and clicks.") : t("Data appears after the first sync and the history import complete.")}
+                action={{ label: k.discovery.organicClicks.state === "NOT_CONNECTED" ? t("Connect Google Search Console") : t("Integration settings"), href: k.discovery.organicClicks.state === "NOT_CONNECTED" ? `${base}/onboarding?step=search` : "/settings/integrations" }}
+              />
             )}
           </Panel>
           <Panel title={t("Visitors & signups · last {days} days", { days })} eyebrow={t("Acquisition")}>
@@ -244,9 +249,12 @@ export default async function ProductDashboard({ params, searchParams }: { param
                 ]}
               />
             ) : (
-              <EmptyState title={t("No first-party events yet")} action={<LinkButton href={`${base}/tracking`}>{t("Install tracker")}</LinkButton>}>
-                {t("Install the Beacon tracker to measure visitors, CTA clicks and conversions.")}
-              </EmptyState>
+              <EmptyState
+                variant={k.acquisition.visitors.state === "NOT_CONNECTED" ? "not_connected" : "no_data_yet"}
+                what={t("No first-party events yet")}
+                why={k.acquisition.visitors.state === "NOT_CONNECTED" ? t("Install the Beacon tracker to measure visitors, CTA clicks and conversions.") : t("A tracking key exists but no event has arrived yet. Check that the snippet is installed on the product site.")}
+                action={{ label: t("Install tracker"), href: `${base}/tracking` }}
+              />
             )}
           </Panel>
         </div>
@@ -290,7 +298,7 @@ export default async function ProductDashboard({ params, searchParams }: { param
         </Panel>
         <Panel title={t("AI observations")} eyebrow={t("Sampled AI visibility")} pad={false} actions={<Link className="eyebrow hover:text-chrome" href="/ai-visibility">{t("Open →")}</Link>}>
           {data.ai.length ? (
-            <Table>
+            <ResponsiveTable>
               <thead>
                 <tr>
                   <Th>{t("Prompt")}</Th>
@@ -302,14 +310,14 @@ export default async function ProductDashboard({ params, searchParams }: { param
               <tbody>
                 {data.ai.slice(0, 6).map((a) => (
                   <tr key={a.prompt.id}>
-                    <Td className="max-w-xs">{a.prompt.prompt}</Td>
-                    <Td className="num">{a.testsRun}</Td>
-                    <Td className="num">{a.testsRun ? `${a.mentions}/${a.testsRun}` : t("n/a")}</Td>
-                    <Td className="text-xs">{a.competitors.join(", ") || t("None")}</Td>
+                    <Td primary className="max-w-xs">{a.prompt.prompt}</Td>
+                    <Td label={t("Tests")} className="num">{a.testsRun}</Td>
+                    <Td label={t("Mentioned")} className="num">{a.testsRun ? `${a.mentions}/${a.testsRun}` : t("n/a")}</Td>
+                    <Td label={t("Competitors seen")} className="text-xs">{a.competitors.join(", ") || t("None")}</Td>
                   </tr>
                 ))}
               </tbody>
-            </Table>
+            </ResponsiveTable>
           ) : (
             <div className="p-4 text-sm text-muted">{t("No AI visibility prompts for this product.")}</div>
           )}
@@ -317,17 +325,28 @@ export default async function ProductDashboard({ params, searchParams }: { param
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-3">
-        <Panel title={t("Launch checklist")} eyebrow={t("Readiness")} className="lg:col-span-2">
+        <Panel
+          title={t("Launch checklist")}
+          eyebrow={p.launchMode === "OFF" ? t("Readiness") : t("Launch mode: {mode}", { mode: enumLabel(t, p.launchMode) })}
+          className="lg:col-span-2"
+          actions={
+            <Link className="eyebrow inline-flex min-h-10 items-center hover:text-chrome md:min-h-0" href={`${base}/launch`}>
+              {t("Launch view →")}
+            </Link>
+          }
+        >
           <ul className="grid gap-2 sm:grid-cols-2">
-            {data.checklist.map((c) => (
-              <li key={c.label}>
-                <Link href={c.href} className="flex items-center gap-3 border border-line px-3 py-2 text-sm hover:border-line-strong">
-                  <span className={c.done ? "text-ok" : "text-muted"}>{c.done ? "✓" : "○"}</span>
-                  <span className={c.done ? "text-chrome" : "text-platinum"}>{t(c.label)}</span>
-                  {c.detail && <span className="num ml-auto text-xs text-muted">{t(c.detail)}</span>}
-                </Link>
-              </li>
-            ))}
+            {data.checklist
+              .filter((c) => c.phase === "PRE_LAUNCH")
+              .map((c) => (
+                <li key={c.key}>
+                  <Link href={c.href} className="flex min-h-10 items-center gap-3 border border-line px-3 py-2 text-sm hover:border-line-strong">
+                    <span className={c.status === "DONE" ? "text-ok" : c.blocking ? "text-warn" : "text-muted"}>{c.status === "DONE" ? "✓" : "○"}</span>
+                    <span className={c.status === "DONE" ? "text-chrome" : "text-platinum"}>{t(c.label)}</span>
+                    {c.status === "NOT_CONNECTED" ? <span className="ml-auto text-[11px] text-muted">{t("Not connected")}</span> : c.blocking && c.status !== "DONE" ? <span className="ml-auto"><Badge tone="warn">{t("Blocking")}</Badge></span> : null}
+                  </Link>
+                </li>
+              ))}
           </ul>
         </Panel>
         <Panel title={t("Competitors & experiments")} eyebrow={t("Context")}>

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { cache } from "react";
 import { eq, inArray } from "drizzle-orm";
 import { asSystem } from "@/db";
 import { queries, queryClusters } from "@/db/schema";
@@ -10,23 +11,27 @@ import { canonicalUrl } from "@/core/discovery/urls";
 import { serializeJsonLd } from "@/core/seo/schema-org";
 import { env } from "@/lib/env";
 import { buildMediaUrl, mediaIdFromUrl } from "@/core/media/image";
-import { orgBySlug, publishedPages } from "@/services/public";
+import { orgBySlug, publishedPageByPath, publishedSiblings } from "@/services/public";
 import { getT } from "@/i18n/server";
 import { pageRateLimited } from "@/lib/http";
 
 export const dynamic = "force-dynamic";
 
-async function load(orgSlug: string, path: string[]) {
-  const p = `/${path.map((s) => s.toLowerCase()).join("/")}`;
+/**
+ * Loads only the requested page (by organisation and path) plus a light list
+ * of its product's published pages for related links. Memoized per request
+ * with React `cache()`, so generateMetadata and the page share one load.
+ */
+const load = cache(async (orgSlug: string, pathKey: string) => {
+  const p = `/${pathKey.toLowerCase()}`;
   return asSystem(async (tx) => {
     const org = await orgBySlug(tx, orgSlug);
     if (!org) return null;
-    const rows = await publishedPages(tx, org.id);
-    const row = rows.find((r) => r.page.path === p);
-    if (!row) return null;
+    const row = await publishedPageByPath(tx, org.id, p);
+    if (!row?.page.productId) return null;
     // Topic cluster of each page of the product: its query cluster when known, else its page type.
-    const same = rows.filter((r) => r.page.productId === row.page.productId);
-    const ids = same.map((r) => r.page.id);
+    const same = await publishedSiblings(tx, org.id, row.page.productId);
+    const ids = same.map((r) => r.id);
     const qc = ids.length
       ? await tx
           .select({ pageId: queries.pageId, cluster: queryClusters.slug })
@@ -35,15 +40,16 @@ async function load(orgSlug: string, path: string[]) {
           .where(inArray(queries.pageId, ids))
       : [];
     const clusterOf = new Map(qc.map((q) => [q.pageId!, q.cluster]));
-    const items = same.map((r) => ({ id: r.page.id, productId: r.page.productId, path: r.page.path, title: r.version?.metaTitle ?? r.asset.title, cluster: clusterOf.get(r.page.id) ?? `type:${r.page.type}` }));
-    const related = relatedPages(items.find((i) => i.id === row.page.id)!, items);
+    const items = same.map((r) => ({ id: r.id, productId: r.productId, path: r.path, title: r.metaTitle ?? r.assetTitle, cluster: clusterOf.get(r.id) ?? `type:${r.type}` }));
+    const self = items.find((i) => i.id === row.page.id);
+    const related = self ? relatedPages(self, items) : [];
     return { org, row, related };
   });
-}
+});
 
 export async function generateMetadata({ params }: { params: Promise<{ org: string; path: string[] }> }): Promise<Metadata> {
   const { org, path } = await params;
-  const d = await load(org, path);
+  const d = await load(org, path.join("/"));
   if (!d) return {};
   const v = d.row.version!;
   const self = `${env().BEACON_BASE_URL}/p/${org}${d.row.page.path}`;
@@ -66,7 +72,7 @@ export default async function PublicPage({ params }: { params: Promise<{ org: st
     const t = await getT();
     return <main className="mx-auto max-w-2xl px-4 py-16 text-sm text-chrome">{t("Too many requests. Try again in a minute.")}</main>;
   }
-  const d = await load(org, path);
+  const d = await load(org, path.join("/"));
   if (!d) notFound();
   const v = d.row.version!;
   const t = await getT();

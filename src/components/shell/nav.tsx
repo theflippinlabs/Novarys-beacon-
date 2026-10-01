@@ -28,6 +28,7 @@ export const SECTIONS: Section[] = [
   { href: "/conversions", label: "Conversions", icon: I(<path d="M4 4h16l-6 8v6l-4 2v-8z" />) },
   { href: "/referrals", label: "Referrals", icon: I(<><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5M17 7v6M14 10h6" /></>) },
   { href: "/revenue", label: "Revenue", icon: I(<><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" /></>) },
+  { href: "/reports", label: "Reports", icon: I(<><path d="M6 3h12v18H6z" /><path d="M9 8h6M9 12h6M9 16h3" /></>) },
   { href: "/autopilot", label: "Autopilot", icon: I(<><circle cx="12" cy="12" r="8.5" /><path d="M12 7v5l3.5 2" /></>) },
   { href: "/settings", label: "Settings", icon: I(<><circle cx="12" cy="12" r="3" /><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1" /></>) },
 ];
@@ -37,6 +38,27 @@ const TABS = ["/", "/products", "/agent", "/content"];
 
 function isActive(path: string, href: string) {
   return href === "/" ? path === "/" : path === href || path.startsWith(`${href}/`);
+}
+
+const BELL = I(
+  <>
+    <path d="M6 16.5V11a6 6 0 1112 0v5.5l1.5 2h-15z" />
+    <path d="M10 20.5a2 2 0 004 0" />
+  </>,
+);
+
+/** Notification bell with the unread count (header on mobile, sidebar on desktop). */
+export function NotificationBell({ unread, className = "" }: { unread: number; className?: string }) {
+  const path = usePathname();
+  const { t } = useI18n();
+  const active = isActive(path, "/notifications");
+  const label = unread ? t("Notifications, {n} unread", { n: unread }) : t("Notifications");
+  return (
+    <Link href="/notifications" aria-label={label} title={label} aria-current={active ? "page" : undefined} className={`relative inline-grid h-9 w-9 shrink-0 place-items-center rounded-full border transition-colors ${active ? "border-blue-bright text-blue-bright" : "border-line-strong text-chrome hover:text-platinum"} ${className}`}>
+      {BELL}
+      {unread > 0 && <span className="num absolute -right-1 -top-1 min-w-[1.1rem] rounded-full bg-gold px-1 text-center text-[10px] font-semibold leading-[1.1rem] text-obsidian">{unread > 99 ? "99+" : unread}</span>}
+    </Link>
+  );
 }
 
 /** Desktop sidebar navigation (lg and up). */

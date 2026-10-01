@@ -2,9 +2,11 @@ import { and, eq, gt, sql } from "drizzle-orm";
 import { asSystem, type Tx } from "@/db";
 import { memberships, organizations, sessions, users } from "@/db/schema";
 import { hashPassword, hmac, randomToken, sha256, verifyPassword } from "@/lib/security/crypto";
+import { SESSION_ABSOLUTE_MS, sessionVerdict } from "@/core/auth/session-policy";
 import type { Role } from "./rbac";
 
-export const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+/** Absolute session lifetime (the cookie's max age); inactivity ends a session sooner (see core/auth/session-policy). */
+export const SESSION_TTL_MS = SESSION_ABSOLUTE_MS;
 /** Failures per (email, ip) tolerated before back-off starts. */
 export const LOGIN_FREE_FAILURES = 4;
 export const LOGIN_MAX_BACKOFF_SEC = 900;
@@ -107,11 +109,11 @@ export async function purgeLoginThrottle(olderThanHours = 24) {
   await asSystem((tx) => tx.execute(sql`delete from login_throttle where updated_at < now() - make_interval(hours => ${olderThanHours})`));
 }
 
-export async function createSession(userId: string, meta: { ipHash?: string; userAgent?: string } = {}) {
+export async function createSession(userId: string, meta: { ipHash?: string; userAgent?: string; organizationId?: string } = {}) {
   const token = randomToken(32);
   const tokenHash = sha256(token);
   await asSystem(async (tx) => {
-    const membership = await tx.query.memberships.findFirst({ where: eq(memberships.userId, userId) });
+    const membership = await tx.query.memberships.findFirst({ where: meta.organizationId ? and(eq(memberships.userId, userId), eq(memberships.organizationId, meta.organizationId)) : eq(memberships.userId, userId) });
     await tx.insert(sessions).values({
       tokenHash,
       userId,
@@ -128,8 +130,17 @@ export async function resolveSession(token: string | undefined | null): Promise<
   if (!token || token.length < 20 || token.length > 200) return null;
   const tokenHash = sha256(token);
   return asSystem(async (tx) => {
-    const session = await tx.query.sessions.findFirst({ where: and(eq(sessions.tokenHash, tokenHash), gt(sessions.expiresAt, new Date())) });
+    const now = new Date();
+    const session = await tx.query.sessions.findFirst({ where: and(eq(sessions.tokenHash, tokenHash), gt(sessions.expiresAt, now)) });
     if (!session?.organizationId) return null;
+    const verdict = sessionVerdict(session, now);
+    if (!verdict.valid) {
+      // Idle or past the absolute maximum: the session is over for good.
+      await tx.delete(sessions).where(eq(sessions.tokenHash, tokenHash));
+      return null;
+    }
+    // Sliding renewal of the idle window, written at most once an hour.
+    if (verdict.touch) await tx.update(sessions).set({ lastSeenAt: now }).where(eq(sessions.tokenHash, tokenHash));
     return loadContext(tx, session.userId, session.organizationId, tokenHash);
   });
 }
@@ -157,5 +168,5 @@ export async function destroySession(token: string) {
 }
 
 export async function purgeExpiredSessions() {
-  await asSystem((tx) => tx.execute(sql`delete from sessions where expires_at < now()`));
+  await asSystem((tx) => tx.execute(sql`delete from sessions where expires_at < now() or last_seen_at < now() - interval '24 hours'`));
 }

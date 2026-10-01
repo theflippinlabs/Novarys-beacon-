@@ -1,9 +1,11 @@
-import { and, desc, eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import type { Metadata } from "next";
-import { addCrossSellRuleAction, addExperimentAction, addRelationshipAction, decideRecommendationAction, removeRelationshipAction, runReportAction, setExperimentStatusAction, toggleCrossSellRuleAction } from "@/app/actions/growth";
+import { addCrossSellRuleAction, addExperimentAction, addRelationshipAction, removeRelationshipAction, runReportAction, toggleCrossSellRuleAction } from "@/app/actions/growth";
+import { AutopilotLoop } from "./loop";
+import { Experiments } from "./experiments";
 import { listRelationships, RELATIONSHIP_TYPES, ruleFunnels } from "@/services/ecosystem";
-import { Badge, Button, EmptyState, Field, Flash, HiddenBack, PageHeader, Panel, StatusBadge, Table, Td, Th, formatValue } from "@/components/ui";
-import { crossSellRules, experiments, growthReports, products, recommendations } from "@/db/schema";
+import { Badge, Button, EmptyState, Field, Flash, HiddenBack, PageHeader, Panel, Table, Td, Th, formatValue } from "@/components/ui";
+import { crossSellRules, growthReports, products } from "@/db/schema";
 import type { GrowthAnalysis } from "@/core/autopilot/analyst";
 import { loadProductGraph } from "@/core/knowledge/load";
 import { recommendProducts } from "@/core/sales/recommend";
@@ -18,13 +20,11 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function AutopilotPage({ searchParams }: { searchParams: Promise<SP> }) {
   const sp = await searchParams;
-  const { t, intl, locale } = await getI18n();
+  const { t, intl } = await getI18n();
   const need = sp1(sp, "need")?.slice(0, 500);
-  const { data, can } = await pageData(async (tx, ctx) => {
+  const { data, can, ctx } = await pageData(async (tx, ctx) => {
     const org = ctx.org.id;
     const report = await tx.query.growthReports.findFirst({ where: eq(growthReports.organizationId, org), orderBy: desc(growthReports.createdAt) });
-    const recs = await tx.select().from(recommendations).where(and(eq(recommendations.organizationId, org), eq(recommendations.status, "PROPOSED"))).orderBy(desc(recommendations.createdAt)).limit(30);
-    const exps = await tx.select().from(experiments).where(eq(experiments.organizationId, org)).orderBy(desc(experiments.updatedAt));
     const prods = await tx.select().from(products).where(eq(products.organizationId, org)).orderBy(products.name);
     const rules = await tx.select().from(crossSellRules).where(eq(crossSellRules.organizationId, org));
     const ruleStats = await ruleFunnels(tx, org);
@@ -38,18 +38,12 @@ export default async function AutopilotPage({ searchParams }: { searchParams: Pr
       }
       recommendation = recommendProducts(need, graphs, { complementaryPairs: new Set(rules.map((r) => `${r.sourceProductId}:${r.destinationProductId}`)) });
     }
-    return { report, recs, exps, prods, rules, ruleStats, relationships, recommendation };
+    return { report, prods, rules, ruleStats, relationships, recommendation };
   });
   const back = "/autopilot";
   const s = data.report?.sections as GrowthAnalysis | undefined;
   const pname = (id: string) => data.prods.find((p) => p.id === id)?.name ?? t("n/a");
   const rel = (id: string | null) => (id ? data.relationships.find((x) => x.id === id) : undefined);
-  /** Enum value in lower case (English output keeps the raw value when `raw` is set). */
-  const lower = (v: string, raw = false) => (locale === "en" && raw ? v : enumLabel(t, v).toLocaleLowerCase(intl));
-  const recBody = (body: string) => {
-    const m = /^From opportunity \((\w+), (\w+) potential\)\.$/.exec(body);
-    return m ? t("From opportunity ({type}, {potential} potential).", { type: lower(m[1], true), potential: lower(m[2], true) }) : t(body);
-  };
   const matchLabel = (kind: string) => enumLabel(t, kind).toLocaleLowerCase(intl);
 
   return (
@@ -74,7 +68,12 @@ export default async function AutopilotPage({ searchParams }: { searchParams: Pr
       <Flash searchParams={sp} />
 
       {!s ? (
-        <EmptyState title={t("No growth report yet")}>{t("The analyst runs weekly via the scheduler, or on demand. It only reports on connected, measured data.")}</EmptyState>
+        <EmptyState
+          variant="not_generated"
+          what={t("No growth report yet")}
+          why={t("The analyst runs weekly via the scheduler, or on demand. It only reports on connected, measured data.")}
+          action={can("job:run") ? { label: t("Analyse now"), form: { action: runReportAction, fields: { days: "7" }, back } } : { label: t("Open the overview"), href: "/" }}
+        />
       ) : (
         <div className="grid gap-6 xl:grid-cols-2">
           <Panel title={`${data.report!.periodStart} → ${data.report!.periodEnd}`} eyebrow={t("What happened")}>
@@ -98,7 +97,7 @@ export default async function AutopilotPage({ searchParams }: { searchParams: Pr
             <ul className="flex flex-col gap-2">
               {s.whyItMayHaveHappened.map((w, i) => (
                 <li key={i} className="text-sm">
-                  <Badge tone={w.evidence === "CORRELATION" ? "warn" : "muted"}>{enumLabel(t, w.evidence)}</Badge> <span className="text-chrome">{t(w.observation)}</span>
+                  <Badge tone={w.evidence === "CORRELATION" ? "warn" : "muted"}>{enumLabel(t, w.evidence)}</Badge> {w.product && <Badge tone="muted">{w.product}</Badge>} <span className="text-chrome">{t(w.observation)}</span>
                   {w.relatedEvents.length > 0 && <div className="mt-1 text-xs text-muted">{t("Coinciding: {events}", { events: w.relatedEvents.map((e) => t(e)).join("; ") })}</div>}
                 </li>
               ))}
@@ -120,6 +119,17 @@ export default async function AutopilotPage({ searchParams }: { searchParams: Pr
                     <div className="text-xs text-muted">
                       {t(e.hypothesis)} · {t("Monitor: {signal}", { signal: t(e.signalToMonitor) })}
                     </div>
+                    {can("growth:write") && (
+                      <form action={addExperimentAction} className="mt-1">
+                        <HiddenBack path={`${back}#experiments`} />
+                        <input type="hidden" name="name" value={e.name.slice(0, 160)} />
+                        <input type="hidden" name="hypothesis" value={e.hypothesis} />
+                        <input type="hidden" name="primaryMetric" value={e.primaryMetric} />
+                        <input type="hidden" name="signalToMonitor" value={e.signalToMonitor.slice(0, 300)} />
+                        {e.primaryMetric === "CTA click rate" && <input type="hidden" name="metricKey" value="CTA_CLICK" />}
+                        <button className="eyebrow text-blue-bright hover:text-cyan">{t("Create experiment")}</button>
+                      </form>
+                    )}
                   </li>
                 ))
               ) : (
@@ -141,143 +151,9 @@ export default async function AutopilotPage({ searchParams }: { searchParams: Pr
         </div>
       )}
 
-      <Panel title={t("{n} recommendation(s) awaiting a decision", { n: data.recs.length })} eyebrow={t("Approval queue")} className="mt-6" pad={false}>
-        {data.recs.length ? (
-          <Table>
-            <tbody>
-              {data.recs.map((r) => (
-                <tr key={r.id}>
-                  <Td>
-                    <Badge tone="muted">{enumLabel(t, r.kind)}</Badge>
-                  </Td>
-                  <Td className="text-platinum">
-                    {t(r.title)}
-                    <div className="text-xs text-muted">{recBody(r.body)}</div>
-                  </Td>
-                  <Td>{r.requiresApproval ? <Badge tone="gold">{t("requires approval")}</Badge> : <Badge tone="muted">{t("informational")}</Badge>}</Td>
-                  <Td>
-                    {can("recommendation:decide") && (
-                      <form action={decideRecommendationAction} className="flex gap-2">
-                        <HiddenBack path={back} />
-                        <input type="hidden" name="id" value={r.id} />
-                        <Button name="status" value="APPROVED">
-                          {t("Approve")}
-                        </Button>
-                        <Button name="status" value="REJECTED" variant="danger">
-                          {t("Reject")}
-                        </Button>
-                      </form>
-                    )}
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
-        ) : (
-          <p className="p-4 text-sm text-muted">{t("Nothing to decide.")}</p>
-        )}
-      </Panel>
+      <AutopilotLoop orgId={ctx.org.id} canDecide={can("recommendation:decide")} back={back} />
 
-      <div id="experiments" className="mt-6 grid gap-6 xl:grid-cols-[1fr_22rem]">
-        <Panel title={t("Experiments")} eyebrow={t("Hypothesis → signal → result")} pad={false}>
-          {data.exps.length ? (
-            <Table>
-              <thead>
-                <tr>
-                  <Th>{t("Experiment")}</Th>
-                  <Th>{t("Metric")}</Th>
-                  <Th>{t("Status")}</Th>
-                  <Th />
-                </tr>
-              </thead>
-              <tbody>
-                {data.exps.map((e) => (
-                  <tr key={e.id}>
-                    <Td>
-                      <div className="text-platinum">{e.name}</div>
-                      <div className="text-xs text-muted">{e.hypothesis}</div>
-                      {e.result && <div className="mt-1 text-xs text-chrome">{t("Result: {result}", { result: e.result })}</div>}
-                    </Td>
-                    <Td className="text-xs">
-                      {e.primaryMetric}
-                      {e.signalToMonitor && <div className="text-muted">{e.signalToMonitor}</div>}
-                    </Td>
-                    <Td>
-                      <StatusBadge status={e.status} />
-                      <div className="num mt-1 text-[10px] text-muted">
-                        {e.startsOn ?? ""} {e.endsOn ? `→ ${e.endsOn}` : ""}
-                      </div>
-                    </Td>
-                    <Td>
-                      {can("growth:write") && !["CONCLUDED", "ABANDONED"].includes(e.status) && (
-                        <form action={setExperimentStatusAction} className="flex flex-col gap-1">
-                          <HiddenBack path={back} />
-                          <input type="hidden" name="id" value={e.id} />
-                          {e.status === "DRAFT" && (
-                            <Button name="status" value="RUNNING">
-                              {t("Start")}
-                            </Button>
-                          )}
-                          {e.status === "RUNNING" && (
-                            <Button name="status" value="READY_FOR_REVIEW">
-                              {t("Ready for review")}
-                            </Button>
-                          )}
-                          {e.status === "READY_FOR_REVIEW" && (
-                            <>
-                              <input name="result" placeholder={t("Observed result")} aria-label={t("Result")} />
-                              <Button name="status" value="CONCLUDED">
-                                {t("Conclude")}
-                              </Button>
-                            </>
-                          )}
-                          <button name="status" value="ABANDONED" className="eyebrow text-left hover:text-crit">
-                            {t("abandon")}
-                          </button>
-                        </form>
-                      )}
-                    </Td>
-                  </tr>
-                ))}
-              </tbody>
-            </Table>
-          ) : (
-            <p className="p-4 text-sm text-muted">{t("No experiments yet.")}</p>
-          )}
-        </Panel>
-        {can("growth:write") && (
-          <Panel title={t("New experiment")}>
-            <form action={addExperimentAction} className="flex flex-col gap-3">
-              <HiddenBack path={back} />
-              <Field label={t("Name")}>
-                <input name="name" required maxLength={160} />
-              </Field>
-              <Field label={t("Hypothesis")}>
-                <textarea name="hypothesis" required minLength={10} className="min-h-16" />
-              </Field>
-              <Field label={t("Primary metric")}>
-                <input name="primaryMetric" required placeholder={t("CTA click rate")} />
-              </Field>
-              <Field label={t("Signal to monitor")}>
-                <input name="signalToMonitor" placeholder={t("CTA_CLICK / PAGE_VIEW over 28 days")} />
-              </Field>
-              <Field label={t("Product")}>
-                <select name="productId" defaultValue="">
-                  <option value="">{t("Ecosystem")}</option>
-                  {data.prods.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <div>
-                <Button>{t("Create")}</Button>
-              </div>
-            </form>
-          </Panel>
-        )}
-      </div>
+      <Experiments orgId={ctx.org.id} canWrite={can("growth:write")} back={back} />
 
       <div id="cross-sell" className="mt-6 grid gap-6 xl:grid-cols-[1fr_22rem]">
         <Panel title={t("Cross-sell rules")} eyebrow={t("Ecosystem recommendations · consent-gated · frequency-capped")} pad={false}>

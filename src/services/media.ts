@@ -86,35 +86,57 @@ async function assertContentAsset(tx: Tx, organizationId: string, assetId: strin
   if (!a) throw new Error("Content asset not found");
 }
 
+/** A validated, re-encoded image ready to be stored (no database work done yet). */
+export type PreparedImage = {
+  bytes: Buffer;
+  width: number;
+  height: number;
+  filename: string;
+  alt: string | null;
+  productId: string | null;
+  contentAssetId: string | null;
+  visibility: "PUBLIC" | "PRIVATE";
+};
+
 /**
- * Validates and stores an uploaded image for `actor.organizationId`. The
- * original bytes are never kept: only the re-encoded, metadata-free WebP.
+ * Step 1 of an upload, run BEFORE any transaction is opened: validates and
+ * re-encodes the image (CPU-heavy sharp work never holds a database
+ * connection). The original bytes are never kept: only the metadata-free WebP.
  */
-export async function ingestImage(tx: Tx, actor: Actor, input: MediaInput): Promise<{ id: string; url: string; width: number; height: number; sizeBytes: number }> {
-  const productId = input.productId || null;
-  const contentAssetId = input.contentAssetId || null;
-  if (productId) await assertProduct(tx, actor.organizationId, productId);
-  if (contentAssetId) await assertContentAsset(tx, actor.organizationId, contentAssetId);
+export async function prepareImage(input: MediaInput): Promise<PreparedImage> {
   const img = await reencode(input.data);
-  const alt = input.alt?.trim().slice(0, 300) || null;
+  return {
+    ...img,
+    filename: storedFilename(input.filename),
+    alt: input.alt?.trim().slice(0, 300) || null,
+    productId: input.productId || null,
+    contentAssetId: input.contentAssetId || null,
+    visibility: input.visibility ?? "PUBLIC",
+  };
+}
+
+/** Step 2 of an upload, inside the tenant transaction: checks ownership of the targets, stores and audits. */
+export async function insertImage(tx: Tx, actor: Actor, img: PreparedImage): Promise<{ id: string; url: string; width: number; height: number; sizeBytes: number }> {
+  if (img.productId) await assertProduct(tx, actor.organizationId, img.productId);
+  if (img.contentAssetId) await assertContentAsset(tx, actor.organizationId, img.contentAssetId);
   const [row] = await tx
     .insert(media)
     .values({
       organizationId: actor.organizationId,
-      productId,
-      contentAssetId,
-      visibility: input.visibility ?? "PUBLIC",
-      filename: storedFilename(input.filename),
+      productId: img.productId,
+      contentAssetId: img.contentAssetId,
+      visibility: img.visibility,
+      filename: img.filename,
       mime: "image/webp",
       width: img.width,
       height: img.height,
       sizeBytes: img.bytes.length,
-      alt,
+      alt: img.alt,
       bytes: img.bytes,
       createdBy: actor.actorType === "USER" || !actor.actorType ? (actor.userId ?? null) : null,
     })
     .returning({ id: media.id });
-  await audit(tx, actor, "media.upload", "media", row.id, { productId, contentAssetId, visibility: input.visibility ?? "PUBLIC", width: img.width, height: img.height, sizeBytes: img.bytes.length });
+  await audit(tx, actor, "media.upload", "media", row.id, { productId: img.productId, contentAssetId: img.contentAssetId, visibility: img.visibility, width: img.width, height: img.height, sizeBytes: img.bytes.length });
   return { id: row.id, url: mediaUrl(row.id), width: img.width, height: img.height, sizeBytes: img.bytes.length };
 }
 

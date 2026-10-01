@@ -4,6 +4,7 @@ import { closeDb, withOrg } from "@/db";
 import { auditLogs, distributionTargets, pages, productFacets, productPricing, products, queries } from "@/db/schema";
 import { loadProductGraph } from "@/core/knowledge/load";
 import { DISTRIBUTION_CATALOG } from "@/core/distribution/catalog";
+import { SEED_RELEVANCE } from "@/core/distribution/relevance";
 import { createProduct, syncCompetitors, syncFacets, syncSources, replacePricing, updateProduct } from "@/services/products";
 import { analyzeProduct, launchChecklist } from "@/services/onboarding";
 import { createKey, newOrg } from "./helpers";
@@ -113,23 +114,26 @@ describe("product knowledge graph + onboarding analysis", () => {
 
   it("launchChecklist reflects real state before analysis", async () => {
     const items = await withOrg(orgId, (tx) => launchChecklist(tx, orgId, productId));
-    const done = Object.fromEntries(items.map((i) => [i.label, i.done]));
-    expect(done["Canonical domain set"]).toBe(true);
-    expect(done["Conversion URL declared"]).toBe(true);
-    expect(done["Discovery pages planned"]).toBe(false);
-    expect(done["Technical audit run"]).toBe(false);
-    expect(done["Tracking keys created"]).toBe(false);
-    expect(done["First events received"]).toBe(false);
-    expect(done["Product page published"]).toBe(false);
-    expect(done["Search Console connected"]).toBe(false);
-    expect(done["≥ 10 active queries curated"]).toBe(false);
+    const status = Object.fromEntries(items.map((i) => [i.key, i.status]));
+    // The domain is set but not verified, so the canonical site is not ready.
+    expect(status.site).toBe("TODO");
+    expect(items.find((i) => i.key === "site")!.evidence.text).toMatch(/not a verified domain/);
+    expect(status.core_pages).toBe("TODO");
+    expect(status.conversion_tracking).toBe("TODO");
+    expect(status.query_baseline).toBe("TODO");
+    // Providers that are not connected are reported as such, never as a measured zero.
+    expect(status.search_console).toBe("NOT_CONNECTED");
+    expect(status.analytics).toBe("NOT_CONNECTED");
+    expect(items.filter((i) => i.blocking).map((i) => i.key).sort()).toEqual(["conversion_tracking", "core_pages", "knowledge", "site"]);
   });
 
   it("analyzeProduct generates CANDIDATE queries, plans pages, suggests distribution venues and completes onboarding", async () => {
     const res = await withOrg(orgId, (tx) => analyzeProduct(tx, orgId, productId));
     expect(res.queries.inserted).toBeGreaterThan(5);
     expect(res.pages.planned).toBeGreaterThan(0);
-    expect(res.distributionSuggested).toBe(DISTRIBUTION_CATALOG.length);
+    // Fit-based seeding: venues that apply to the product, not the whole catalogue.
+    expect(res.distributionSuggested).toBeGreaterThan(0);
+    expect(res.distributionSuggested).toBeLessThan(DISTRIBUTION_CATALOG.length);
     expect(res.completeness).toBeGreaterThan(0);
     expect(res.completeness).toBeLessThan(1);
 
@@ -146,7 +150,9 @@ describe("product knowledge graph + onboarding analysis", () => {
     for (const p of ps) expect(typeof p.quality.publishable).toBe("boolean");
 
     const dts = await withOrg(orgId, (tx) => tx.select().from(distributionTargets).where(eq(distributionTargets.productId, productId)));
-    expect(dts.map((d) => d.name).sort()).toEqual(DISTRIBUTION_CATALOG.map((d) => d.name).sort());
+    expect(dts).toHaveLength(res.distributionSuggested);
+    for (const d of dts) expect(d.relevance).toBeGreaterThanOrEqual(SEED_RELEVANCE);
+    expect(dts.every((d) => DISTRIBUTION_CATALOG.some((v) => v.key === d.catalogKey && v.name === d.name))).toBe(true);
     expect(new Set(dts.map((d) => d.status))).toEqual(new Set(["DISCOVERED"]));
 
     const p = await withOrg(orgId, (tx) => tx.query.products.findFirst({ where: eq(products.id, productId) }));
@@ -163,12 +169,14 @@ describe("product knowledge graph + onboarding analysis", () => {
   it("launchChecklist reflects state after analysis and key creation", async () => {
     await createKey(orgId, "PUBLISHABLE", { productId, allowedOrigins: ["clipstudio.example"] });
     const items = await withOrg(orgId, (tx) => launchChecklist(tx, orgId, productId));
-    const byLabel = Object.fromEntries(items.map((i) => [i.label, i]));
-    expect(byLabel["Discovery pages planned"].done).toBe(true);
-    expect(byLabel["Tracking keys created"].done).toBe(true);
-    expect(byLabel["≥ 10 active queries curated"]).toMatchObject({ done: false, detail: "0 active" }); // CANDIDATE queries are not curated
-    expect(byLabel["Product page published"].done).toBe(false);
-    expect(byLabel["Canonical domain set"].href).toBe("/products/clip-studio-pro/knowledge");
+    const byKey = Object.fromEntries(items.map((i) => [i.key, i]));
+    // A key without any event is not "conversion tracking ready".
+    expect(byKey.conversion_tracking).toMatchObject({ status: "TODO", evidence: { params: { keys: 1, events: 0 } } });
+    // CANDIDATE queries are not curated: the baseline needs active queries.
+    expect(byKey.query_baseline).toMatchObject({ status: "TODO", evidence: { params: { n: 0 } } });
+    // The PRODUCT page is planned, not published.
+    expect(byKey.core_pages).toMatchObject({ status: "TODO", evidence: { text: "The product page is planned but not published." } });
+    expect(byKey.knowledge.href).toBe("/products/clip-studio-pro/knowledge");
   });
 
   it("analyzeProduct of an unknown product throws", async () => {

@@ -7,7 +7,7 @@
  */
 import { eq } from "drizzle-orm";
 import { asSystem, closeDb } from "./index";
-import { providerCredentials } from "./schema";
+import { notificationWebhooks, providerCredentials } from "./schema";
 import { decryptSecret, encryptSecret, needsReencryption } from "@/lib/security/crypto";
 
 export async function rotateProviderCredentials(opts: { organizationId?: string } = {}): Promise<{ total: number; rotated: number; failed: string[] }> {
@@ -33,12 +33,39 @@ export async function rotateProviderCredentials(opts: { organizationId?: string 
   return { total: rows.length, rotated, failed };
 }
 
+/** Same for notification webhook signing secrets (AAD: "notification_webhook:<id>"). */
+export async function rotateNotificationWebhookSecrets(opts: { organizationId?: string } = {}): Promise<{ total: number; rotated: number; failed: string[] }> {
+  const rows = await asSystem((tx) =>
+    tx
+      .select({ id: notificationWebhooks.id, ciphertext: notificationWebhooks.secretCiphertext, keyVersion: notificationWebhooks.keyVersion })
+      .from(notificationWebhooks)
+      .where(opts.organizationId ? eq(notificationWebhooks.organizationId, opts.organizationId) : undefined),
+  );
+  let rotated = 0;
+  const failed: string[] = [];
+  for (const r of rows) {
+    if (!needsReencryption(r.ciphertext)) continue;
+    try {
+      const aad = `notification_webhook:${r.id}`;
+      const next = encryptSecret(decryptSecret(r.ciphertext, aad), aad);
+      await asSystem((tx) => tx.update(notificationWebhooks).set({ secretCiphertext: next, keyVersion: r.keyVersion + 1 }).where(eq(notificationWebhooks.id, r.id)));
+      rotated++;
+    } catch (e) {
+      failed.push(`${r.id}: ${(e as Error).message}`);
+    }
+  }
+  return { total: rows.length, rotated, failed };
+}
+
 async function main() {
   const res = await rotateProviderCredentials();
   console.log(`provider credentials: ${res.total} total, ${res.rotated} re-encrypted, ${res.failed.length} failed`);
   for (const f of res.failed) console.error(`  ${f}`);
+  const hooks = await rotateNotificationWebhookSecrets();
+  console.log(`notification webhooks: ${hooks.total} total, ${hooks.rotated} re-encrypted, ${hooks.failed.length} failed`);
+  for (const f of hooks.failed) console.error(`  ${f}`);
   await closeDb();
-  if (res.failed.length) process.exit(1);
+  if (res.failed.length || hooks.failed.length) process.exit(1);
 }
 
 if (process.argv[1] && /rotate-secrets\.ts$/.test(process.argv[1])) {

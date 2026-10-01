@@ -3,22 +3,13 @@
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { authenticate, createOrganizationWithOwner, createSession, destroySession, hasAnyUser, SESSION_TTL_MS } from "@/lib/auth/service";
-import { SESSION_COOKIE, clientIpHash } from "@/lib/auth/session";
+import { authenticate, createOrganizationWithOwner, createSession, destroySession, hasAnyUser } from "@/lib/auth/service";
+import { SESSION_COOKIE, clientIpHash, sessionTokenFrom } from "@/lib/auth/session";
+import { SESSION_COOKIE_LEGACY } from "@/core/auth/session-policy";
+import { setSessionCookie } from "@/lib/auth/cookie";
 import { rateLimit } from "@/lib/security/rate-limit";
 import { hmac, safeEqual } from "@/lib/security/crypto";
 import { slugify } from "@/core/util/text";
-
-async function setSessionCookie(token: string) {
-  const store = await cookies();
-  store.set(SESSION_COOKIE, token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: Math.floor(SESSION_TTL_MS / 1000),
-  });
-}
 
 const LoginSchema = z.object({ email: z.string().email().max(320), password: z.string().min(1).max(256) });
 
@@ -38,9 +29,10 @@ export async function loginAction(fd: FormData) {
 
 export async function logoutAction() {
   const store = await cookies();
-  const token = store.get(SESSION_COOKIE)?.value;
+  const token = sessionTokenFrom((n) => store.get(n)?.value);
   if (token) await destroySession(token);
   store.delete(SESSION_COOKIE);
+  if (SESSION_COOKIE !== SESSION_COOKIE_LEGACY) store.delete(SESSION_COOKIE_LEGACY);
   redirect("/login");
 }
 

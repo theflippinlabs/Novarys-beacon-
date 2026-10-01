@@ -2,7 +2,10 @@ import Image from "next/image";
 import Link from "next/link";
 import { logoutAction } from "@/app/actions/auth";
 import { LocaleToggle } from "@/components/shell/locale-toggle";
-import { MobileTabBar, Nav } from "@/components/shell/nav";
+import { CommandPalette, SearchButton } from "@/components/shell/command-palette";
+import { MobileTabBar, Nav, NotificationBell } from "@/components/shell/nav";
+import { withOrg } from "@/db";
+import { unreadCount } from "@/services/notifications";
 import { getT } from "@/i18n/server";
 import { requireAuth } from "@/lib/auth/session";
 
@@ -10,6 +13,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const ctx = await requireAuth();
   const t = await getT();
   const orgName = ctx.org.branding.displayName ?? ctx.org.name;
+  const unread = await withOrg(ctx.org.id, (tx) => unreadCount(tx, ctx.org.id, ctx.user.id)).catch(() => 0);
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[15rem_1fr]">
       {/* Mobile header */}
@@ -22,7 +26,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               <div className="truncate text-[10px] text-muted">{orgName}</div>
             </div>
           </Link>
-          <LocaleToggle />
+          <div className="flex items-center gap-2">
+            <SearchButton variant="mobile" />
+            <NotificationBell unread={unread} />
+            <LocaleToggle />
+          </div>
         </div>
         <div className="h-px bg-gradient-to-r from-transparent via-blue/60 to-transparent" />
       </header>
@@ -34,10 +42,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <div className="flex items-center gap-2">
               <Image src="/brand/beacon-emblem-64.png" alt="" width={28} height={28} priority />
               <span className="text-gradient-chrome font-mono text-xs font-semibold uppercase tracking-[0.3em]">Beacon</span>
+              <NotificationBell unread={unread} className="ml-auto" />
             </div>
             <div className="eyebrow mt-1.5">{orgName}</div>
           </div>
           <div className="flex-1 overflow-y-auto px-2 pb-2">
+            <SearchButton variant="sidebar" />
             <Nav />
           </div>
           <div className="border-t border-line px-5 py-4">
@@ -57,6 +67,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <div className="mx-auto max-w-[1400px]">{children}</div>
       </main>
 
+      <CommandPalette />
       <MobileTabBar userName={ctx.user.name} role={t(ctx.role)} />
     </div>
   );

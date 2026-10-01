@@ -130,11 +130,22 @@ export type SafeResponse = {
 
 export async function safeFetch(
   rawUrl: string,
-  opts: { method?: "GET" | "HEAD"; maxBytes?: number; timeoutMs?: number; maxRedirects?: number; userAgent?: string; acceptEncoding?: string } = {},
+  opts: {
+    method?: "GET" | "HEAD" | "POST";
+    maxBytes?: number;
+    timeoutMs?: number;
+    maxRedirects?: number;
+    userAgent?: string;
+    acceptEncoding?: string;
+    /** Request body (POST); redirects are never followed for a POST. */
+    body?: string;
+    /** Extra request headers (e.g. content-type, signatures). */
+    headers?: Record<string, string>;
+  } = {},
 ): Promise<SafeResponse> {
   const maxBytes = opts.maxBytes ?? 2 * 1024 * 1024;
   const timeoutMs = opts.timeoutMs ?? 15_000;
-  const maxRedirects = opts.maxRedirects ?? 5;
+  const maxRedirects = opts.method === "POST" ? 0 : (opts.maxRedirects ?? 5);
   const started = Date.now();
   const redirects: string[] = [];
   const redirectStatuses: number[] = [];
@@ -142,8 +153,8 @@ export async function safeFetch(
 
   for (let hop = 0; hop <= maxRedirects; hop++) {
     const url = assertSafeUrl(current);
-    const res = await requestOnce(url, opts.method ?? "GET", maxBytes, Math.max(1000, timeoutMs - (Date.now() - started)), opts.userAgent, opts.acceptEncoding);
-    if (res.status >= 300 && res.status < 400 && res.headers.location) {
+    const res = await requestOnce(url, opts.method ?? "GET", maxBytes, Math.max(1000, timeoutMs - (Date.now() - started)), opts.userAgent, opts.acceptEncoding, opts.body, opts.headers);
+    if (res.status >= 300 && res.status < 400 && res.headers.location && opts.method !== "POST") {
       redirects.push(current);
       redirectStatuses.push(res.status);
       current = new URL(res.headers.location, url).toString();
@@ -154,7 +165,7 @@ export async function safeFetch(
   throw new SsrfError("Too many redirects");
 }
 
-function requestOnce(url: URL, method: string, maxBytes: number, timeoutMs: number, userAgent?: string, acceptEncoding = "identity") {
+function requestOnce(url: URL, method: string, maxBytes: number, timeoutMs: number, userAgent?: string, acceptEncoding = "identity", body?: string, extraHeaders?: Record<string, string>) {
   return new Promise<Omit<SafeResponse, "url" | "elapsedMs" | "redirects">>((resolve, reject) => {
     const mod = url.protocol === "https:" ? https : http;
     const req = mod.request(
@@ -168,6 +179,8 @@ function requestOnce(url: URL, method: string, maxBytes: number, timeoutMs: numb
           accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.5",
           // Only "identity" unless a caller (gzip sitemaps) decodes the raw bytes itself.
           "accept-encoding": acceptEncoding,
+          ...(extraHeaders ?? {}),
+          ...(body !== undefined ? { "content-length": String(Buffer.byteLength(body)) } : {}),
         },
       },
       (res) => {
@@ -205,6 +218,6 @@ function requestOnce(url: URL, method: string, maxBytes: number, timeoutMs: numb
     req.on("close", () => clearTimeout(deadline));
     req.on("timeout", () => req.destroy(new Error("Request timed out")));
     req.on("error", reject);
-    req.end();
+    req.end(body);
   });
 }

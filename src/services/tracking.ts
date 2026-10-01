@@ -109,6 +109,16 @@ export const EventSchema = z.object({
 });
 export type IncomingEvent = z.infer<typeof EventSchema>;
 
+/**
+ * Growth experiments: events may carry properties.experiment (the experiment
+ * id) and properties.variant ("control" or "variant"). These two tags are kept
+ * even when analytics consent is refused: they identify an arm, not a person.
+ */
+export function experimentTags(p: IncomingEvent["properties"]): Record<string, string> {
+  if (!p || typeof p.experiment !== "string" || typeof p.variant !== "string") return {};
+  return { experiment: p.experiment.slice(0, 80), variant: p.variant.trim().toLowerCase().slice(0, 40) };
+}
+
 export class IngestError extends Error {
   constructor(
     public status: number,
@@ -282,7 +292,7 @@ export async function ingestEvent(tx: Tx, key: ResolvedKey, ev: IncomingEvent, m
     // Analytics consent refused: the event is counted, but with no visitor, identity, session, touch or IP linkage.
     [row] = await tx
       .insert(conversionEvents)
-      .values({ organizationId: orgId, productId: product.id, type, pagePath: url?.pathname ?? null, pageUrl: stripQuery(url), ctaId: ev.ctaId ?? null, channel: "UNATTRIBUTED", attributionRule: "consent-denied", properties: {}, idempotencyKey: ev.idempotencyKey ?? null, occurredAt })
+      .values({ organizationId: orgId, productId: product.id, type, pagePath: url?.pathname ?? null, pageUrl: stripQuery(url), ctaId: ev.ctaId ?? null, channel: "UNATTRIBUTED", attributionRule: "consent-denied", properties: experimentTags(ev.properties), idempotencyKey: ev.idempotencyKey ?? null, occurredAt })
       .onConflictDoNothing()
       .returning({ id: conversionEvents.id });
   } else {

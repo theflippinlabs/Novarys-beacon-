@@ -32,6 +32,10 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import type { AuditDiff } from "@/core/seo/diff";
+import type { ExecutedRef, ExecutionPlan, MeasurementSnapshot, RecommendationOutcome, RecommendationTarget } from "@/core/autopilot/loop";
+import type { ExperimentArm } from "@/core/experiments/stats";
+import type { StoredOnboardingSteps } from "@/core/onboarding/steps";
+import type { LaunchBaseline, LaunchMode } from "@/core/launch/checklist";
 
 const id = () => uuid("id").primaryKey().defaultRandom();
 const orgId = () =>
@@ -203,6 +207,21 @@ export const affiliateStatusEnum = pgEnum("affiliate_status", ["PENDING", "ACTIV
 export const crossSellEventEnum = pgEnum("cross_sell_event_type", ["IMPRESSION", "CLICK", "CONVERSION", "DISMISS"]);
 export const experimentStatusEnum = pgEnum("experiment_status", ["DRAFT", "RUNNING", "READY_FOR_REVIEW", "CONCLUDED", "ABANDONED"]);
 export const recommendationStatusEnum = pgEnum("recommendation_status", ["PROPOSED", "APPROVED", "REJECTED", "DONE"]);
+export const recommendationOutcomeEnum = pgEnum("recommendation_outcome", ["IMPROVED", "NO_CHANGE", "DECLINED", "INSUFFICIENT_DATA"]);
+export const experimentWinnerEnum = pgEnum("experiment_winner", ["CONTROL", "VARIANT", "INCONCLUSIVE"]);
+export const distributionCategoryEnum = pgEnum("distribution_category", [
+  "SOFTWARE_DIRECTORY",
+  "INDUSTRY_DIRECTORY",
+  "PRODUCT_DISCOVERY",
+  "REVIEW_PLATFORM",
+  "DEVELOPER_COMMUNITY",
+  "NEWSLETTER",
+  "PUBLICATION",
+  "PARTNER",
+  "CREATOR",
+  "AGENCY",
+  "COMMUNITY",
+]);
 export const integrationProviderEnum = pgEnum("integration_provider", [
   "GOOGLE_SEARCH_CONSOLE",
   "GOOGLE_ANALYTICS",
@@ -237,6 +256,8 @@ export const organizations = pgTable("organizations", {
       knowledge?: { staleAfterDays?: number };
       /** Content approval policy: when on, the approver of a version must not be its author. */
       content?: { requireDistinctApprover?: boolean };
+      /** Beacon agent: monthly token cap (input + output) for the organisation; default from BEACON_AGENT_MONTHLY_TOKEN_CAP. */
+      agent?: { monthlyTokenCap?: number | null };
     }>()
     .notNull()
     .default({}),
@@ -282,8 +303,34 @@ export const sessions = pgTable(
     ipHash: text("ip_hash"),
     userAgent: text("user_agent"),
     createdAt: createdAt(),
+    /** Last authenticated use (sliding idle timeout, renewed at most hourly). `expiresAt` is the absolute maximum. */
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("sessions_user_idx").on(t.userId), index("sessions_expires_idx").on(t.expiresAt)],
+  (t) => [index("sessions_user_idx").on(t.userId), index("sessions_expires_idx").on(t.expiresAt), index("sessions_last_seen_idx").on(t.lastSeenAt)],
+);
+
+/**
+ * Invitations to join an organisation. Only the SHA-256 of the token is
+ * stored; the invitee sets their own password (or signs in to an existing
+ * account) on /invite/[token]. Nobody is attached to an organisation
+ * without accepting.
+ */
+export const invitations = pgTable(
+  "invitations",
+  {
+    id: id(),
+    organizationId: orgId(),
+    email: text("email").notNull(),
+    role: roleEnum("role").notNull().default("VIEWER"),
+    tokenHash: text("token_hash").notNull().unique(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    invitedBy: uuid("invited_by").references(() => users.id, { onDelete: "set null" }),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    acceptedBy: uuid("accepted_by").references(() => users.id, { onDelete: "set null" }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("invitations_org_email_idx").on(t.organizationId, t.email)],
 );
 
 export const apiKeys = pgTable(
@@ -380,11 +427,22 @@ export const products = pgTable(
     semanticEntities: jsonb("semantic_entities").$type<{ name: string; type: string; sameAs?: string }[]>().notNull().default([]),
     onboardingStep: integer("onboarding_step").notNull().default(0),
     onboardingCompletedAt: timestamp("onboarding_completed_at", { withTimezone: true }),
+    /** Per-step onboarding status (core/onboarding/steps.ts): done / skipped / pending with timestamps. */
+    onboardingSteps: jsonb("onboarding_steps").$type<StoredOnboardingSteps>().notNull().default({}),
+    /** Launch mode (core/launch/checklist.ts): planned launch day, mode, the moment it was launched and the query baseline. */
+    launchDate: date("launch_date"),
+    launchMode: text("launch_mode").$type<LaunchMode>().notNull().default("OFF"),
+    launchedAt: timestamp("launched_at", { withTimezone: true }),
+    launchBaseline: jsonb("launch_baseline").$type<LaunchBaseline>(),
     lastVerifiedAt: timestamp("last_verified_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [uniqueIndex("products_org_slug_uq").on(t.organizationId, t.slug), index("products_org_idx").on(t.organizationId)],
+  (t) => [
+    uniqueIndex("products_org_slug_uq").on(t.organizationId, t.slug),
+    index("products_org_idx").on(t.organizationId),
+    check("products_launch_mode_ck", sql`${t.launchMode} IN ('PRE_LAUNCH', 'LAUNCH', 'POST_LAUNCH', 'OFF')`),
+  ],
 );
 
 export const productSources = pgTable(
@@ -932,6 +990,41 @@ export const verifiedDomains = pgTable(
   (t) => [uniqueIndex("verified_domains_uq").on(t.organizationId, t.domain)],
 );
 
+export const knowledgeProposalKindEnum = pgEnum("knowledge_proposal_kind", ["CLAIM", "FACET", "PRICING", "SOCIAL", "LOGO"]);
+
+/**
+ * Facts proposed by website extraction (onboarding WEBSITE step), each with
+ * the crawled URL it was read from. A human accepts a proposal into the
+ * knowledge graph (it stays UNVERIFIED there) or rejects it.
+ */
+export const knowledgeProposals = pgTable(
+  "knowledge_proposals",
+  {
+    id: id(),
+    organizationId: orgId(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    kind: knowledgeProposalKindEnum("kind").notNull(),
+    /** Claim field, facet kind, social network or "plan". */
+    field: text("field").notNull(),
+    value: text("value").notNull(),
+    details: jsonb("details").$type<Record<string, string | number | null>>().notNull().default({}),
+    /** Where on the page it was read (title, meta_description, h1, heading, json_ld, link…). */
+    origin: text("origin").notNull(),
+    sourceUrl: text("source_url").notNull(),
+    status: text("status").$type<"PROPOSED" | "ACCEPTED" | "REJECTED">().notNull().default("PROPOSED"),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    decidedBy: uuid("decided_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("knowledge_proposals_uq").on(t.productId, t.kind, t.field, t.value),
+    index("knowledge_proposals_org_product_idx").on(t.organizationId, t.productId, t.status),
+    check("knowledge_proposals_status_ck", sql`${t.status} IN ('PROPOSED', 'ACCEPTED', 'REJECTED')`),
+  ],
+);
+
 // ─── Visibility monitoring ──────────────────────────────────────────────
 /** Daily time series imported from providers or computed from first-party events. */
 export const visibilityMetrics = pgTable(
@@ -1058,7 +1151,7 @@ export const aiCitations = pgTable(
 // ─── Intelligence ───────────────────────────────────────────────────────
 export type OpportunityAction = { order: number; action: string; kind: string; done?: boolean };
 /** Each factor is 1 to 5; the rationale says why. */
-export type ScoringRationale = Partial<Record<"impact" | "confidence" | "effort" | "urgency", string>>;
+export type ScoringRationale = Partial<Record<"impact" | "confidence" | "effort" | "urgency" | "learning", string>>;
 export type OpportunityNextAction = { label: string; href: string };
 export type OpportunitySources = { queryIds?: string[]; testIds?: string[]; urls?: string[]; clusterId?: string };
 
@@ -1129,26 +1222,95 @@ export const recommendations = pgTable(
     status: recommendationStatusEnum("status").notNull().default("PROPOSED"),
     decidedBy: uuid("decided_by").references(() => users.id, { onDelete: "set null" }),
     decidedAt: timestamp("decided_at", { withTimezone: true }),
+    /** Autopilot loop (see core/autopilot/loop.ts): the opportunity it comes from, or ANALYST for report findings. */
+    opportunityId: uuid("opportunity_id").references(() => opportunities.id, { onDelete: "set null" }),
+    source: text("source").$type<"OPPORTUNITY" | "ANALYST">().notNull().default("ANALYST"),
+    /** One open (PROPOSED or APPROVED) recommendation per key: weekly runs never duplicate. */
+    dedupeKey: text("dedupe_key"),
+    targetRef: jsonb("target_ref").$type<RecommendationTarget>().notNull().default({}),
+    /** Metric values at approval, with their sources and window. */
+    baseline: jsonb("baseline").$type<MeasurementSnapshot | null>(),
+    executionPlan: jsonb("execution_plan").$type<ExecutionPlan | null>(),
+    executionError: text("execution_error"),
+    executedAt: timestamp("executed_at", { withTimezone: true }),
+    executedRef: jsonb("executed_ref").$type<ExecutedRef[] | null>(),
+    measureAfter: date("measure_after"),
+    measuredAt: timestamp("measured_at", { withTimezone: true }),
+    outcome: jsonb("outcome").$type<RecommendationOutcome | null>(),
+    outcomeLabel: recommendationOutcomeEnum("outcome_label"),
     createdAt: createdAt(),
   },
-  (t) => [index("recommendations_org_status_idx").on(t.organizationId, t.status)],
+  (t) => [
+    index("recommendations_org_status_idx").on(t.organizationId, t.status),
+    uniqueIndex("recommendations_open_opportunity_uq").on(t.organizationId, t.opportunityId).where(sql`status IN ('PROPOSED', 'APPROVED') AND opportunity_id IS NOT NULL`),
+    uniqueIndex("recommendations_open_dedupe_uq").on(t.organizationId, t.dedupeKey).where(sql`status IN ('PROPOSED', 'APPROVED') AND dedupe_key IS NOT NULL`),
+    index("recommendations_measure_idx").on(t.measureAfter).where(sql`executed_at IS NOT NULL AND outcome_label IS NULL`),
+  ],
 );
 
-export const experiments = pgTable("experiments", {
-  id: id(),
-  organizationId: orgId(),
-  productId: uuid("product_id").references(() => products.id, { onDelete: "cascade" }),
-  name: text("name").notNull(),
-  hypothesis: text("hypothesis").notNull(),
-  primaryMetric: text("primary_metric").notNull(),
-  signalToMonitor: text("signal_to_monitor"),
-  status: experimentStatusEnum("status").notNull().default("DRAFT"),
-  startsOn: date("starts_on"),
-  endsOn: date("ends_on"),
-  result: text("result"),
-  createdAt: createdAt(),
-  updatedAt: updatedAt(),
-});
+/** Running tally of measured autopilot outcomes per opportunity type (feeds the confidence factor, within bounds). */
+export const autopilotLearning = pgTable(
+  "autopilot_learning",
+  {
+    id: id(),
+    organizationId: orgId(),
+    opportunityType: text("opportunity_type").notNull(),
+    improved: integer("improved").notNull().default(0),
+    noChange: integer("no_change").notNull().default(0),
+    declined: integer("declined").notNull().default(0),
+    insufficient: integer("insufficient").notNull().default(0),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex("autopilot_learning_uq").on(t.organizationId, t.opportunityType)],
+);
+
+export const experiments = pgTable(
+  "experiments",
+  {
+    id: id(),
+    organizationId: orgId(),
+    productId: uuid("product_id").references(() => products.id, { onDelete: "cascade" }),
+    /** Set when the experiment was drafted by an approved autopilot recommendation. */
+    recommendationId: uuid("recommendation_id").references((): AnyPgColumn => recommendations.id, { onDelete: "set null" }),
+    name: text("name").notNull(),
+    hypothesis: text("hypothesis").notNull(),
+    primaryMetric: text("primary_metric").notNull(),
+    signalToMonitor: text("signal_to_monitor"),
+    status: experimentStatusEnum("status").notNull().default("DRAFT"),
+    startsOn: date("starts_on"),
+    endsOn: date("ends_on"),
+    result: text("result"),
+    /** Design: what each arm shows, the conversion event counted, and the sample size planned for it. */
+    control: jsonb("control").$type<ExperimentArm>().notNull().default({}),
+    variant: jsonb("variant").$type<ExperimentArm>().notNull().default({}),
+    metricKey: text("metric_key"),
+    baselineRate: doublePrecision("baseline_rate"),
+    minDetectableEffect: doublePrecision("min_detectable_effect"),
+    minSampleSize: integer("min_sample_size"),
+    /** Counts per arm: TRACKER (conversion_events tagged with properties.experiment / variant) or MANUAL (entered by a person). */
+    controlN: integer("control_n"),
+    controlConversions: integer("control_conversions"),
+    variantN: integer("variant_n"),
+    variantConversions: integer("variant_conversions"),
+    countsSource: text("counts_source").$type<"TRACKER" | "MANUAL">(),
+    countsUpdatedAt: timestamp("counts_updated_at", { withTimezone: true }),
+    testMethod: text("test_method").$type<"Z_TEST" | "FISHER_EXACT">(),
+    pValue: doublePrecision("p_value"),
+    confidence: doublePrecision("confidence"),
+    winner: experimentWinnerEnum("winner"),
+    resultExplanation: text("result_explanation"),
+    resultComputedAt: timestamp("result_computed_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index("experiments_org_status_idx").on(t.organizationId, t.status),
+    check(
+      "experiments_counts_ck",
+      sql`(control_n IS NULL OR control_n >= 0) AND (variant_n IS NULL OR variant_n >= 0) AND (control_conversions IS NULL OR (control_conversions >= 0 AND (control_n IS NULL OR control_conversions <= control_n))) AND (variant_conversions IS NULL OR (variant_conversions >= 0 AND (variant_n IS NULL OR variant_conversions <= variant_n)))`,
+    ),
+  ],
+);
 
 export const aiRuns = pgTable(
   "ai_runs",
@@ -1212,10 +1374,29 @@ export const distributionTargets = pgTable(
     submittedAt: timestamp("submitted_at", { withTimezone: true }),
     publishedUrl: text("published_url"),
     followUpOn: date("follow_up_on"),
+    category: distributionCategoryEnum("category"),
+    /** relevance is 0 to 100; the reason says what it was computed from. */
+    relevanceReason: text("relevance_reason"),
+    requirements: text("requirements"),
+    /** Catalogue venue key (core/distribution/venues.ts) when seeded from the catalogue. */
+    catalogKey: text("catalog_key"),
+    lastAction: text("last_action"),
+    lastActionAt: timestamp("last_action_at", { withTimezone: true }),
+    result: text("result"),
+    /** Generated when the target is PREPARED; traffic and conversions are measured by this campaign. */
+    utmCampaign: text("utm_campaign"),
+    /** Submission approval is tied to this approved listing asset version; it resets when the asset changes. */
+    approvedAssetId: uuid("approved_asset_id").references(() => contentAssets.id, { onDelete: "set null" }),
+    approvedVersionId: uuid("approved_version_id").references(() => contentVersions.id, { onDelete: "set null" }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [index("distribution_targets_org_status_idx").on(t.organizationId, t.status)],
+  (t) => [
+    index("distribution_targets_org_status_idx").on(t.organizationId, t.status),
+    index("distribution_targets_org_category_idx").on(t.organizationId, t.category),
+    uniqueIndex("distribution_targets_utm_uq").on(t.organizationId, t.utmCampaign).where(sql`utm_campaign IS NOT NULL`),
+    check("distribution_targets_relevance_ck", sql`relevance IS NULL OR (relevance >= 0 AND relevance <= 100)`),
+  ],
 );
 
 // ─── Novarys ID (unified identity, privacy-first) ───────────────────────
@@ -1710,9 +1891,27 @@ export const agentMessages = pgTable(
     seq: integer("seq").notNull(),
     role: text("role").$type<"user" | "assistant">().notNull(),
     content: jsonb("content").$type<unknown[]>().notNull(),
+    /** "message" (replayed) or "summary" (a running summary of every message up to `summaryThroughSeq`, appended, never replacing history). */
+    kind: text("kind").$type<"message" | "summary">().notNull().default("message"),
+    summaryThroughSeq: integer("summary_through_seq"),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("agent_messages_seq_uq").on(t.conversationId, t.seq)],
+);
+
+/** Monthly Anthropic token usage of the Beacon agent per organisation (budget enforcement). */
+export const agentUsage = pgTable(
+  "agent_usage",
+  {
+    organizationId: orgId(),
+    /** UTC month, "YYYY-MM". */
+    month: text("month").notNull(),
+    inputTokens: bigint("input_tokens", { mode: "number" }).notNull().default(0),
+    outputTokens: bigint("output_tokens", { mode: "number" }).notNull().default(0),
+    requests: integer("requests").notNull().default(0),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ name: "agent_usage_pk", columns: [t.organizationId, t.month] })],
 );
 
 // ─── Measurement (Phase 2) ──────────────────────────────────────────────
@@ -1828,6 +2027,126 @@ export const productRelationships = pgTable(
   ],
 );
 
+// ─── Briefings, reports, notifications (Phase 2 wave 2) ──────────────────
+export const notificationKindEnum = pgEnum("notification_kind", [
+  "CRITICAL_SEO_ISSUE",
+  "TRAFFIC_DROP",
+  "QUERY_ENTERED_TOP",
+  "INTEGRATION_DISCONNECTED",
+  "CRAWL_FAILED",
+  "CONTENT_AWAITING_APPROVAL",
+  "CONVERSION_ANOMALY",
+  "HIGH_PRIORITY_OPPORTUNITY",
+]);
+export const notificationChannelEnum = pgEnum("notification_channel", ["IN_APP", "EMAIL", "WEBHOOK"]);
+export const reportKindEnum = pgEnum("report_kind", ["WEEKLY"]);
+
+/** Daily Beacon briefing: a snapshot of measured state, deltas against the previous stored briefing, and the top 5 actions (core/briefing). */
+export const briefings = pgTable(
+  "briefings",
+  {
+    id: id(),
+    organizationId: orgId(),
+    productId: uuid("product_id").references(() => products.id, { onDelete: "cascade" }),
+    previousId: uuid("previous_id").references((): AnyPgColumn => briefings.id, { onDelete: "set null" }),
+    periodStart: timestamp("period_start", { withTimezone: true }).notNull(),
+    periodEnd: timestamp("period_end", { withTimezone: true }).notNull(),
+    generatedAt: timestamp("generated_at", { withTimezone: true }).notNull().defaultNow(),
+    kpis: jsonb("kpis").$type<Record<string, unknown>>().notNull().default({}),
+    deltas: jsonb("deltas").$type<unknown[]>().notNull().default([]),
+    items: jsonb("items").$type<Record<string, unknown>>().notNull().default({}),
+    topActions: jsonb("top_actions").$type<unknown[]>().notNull().default([]),
+    generatedBy: text("generated_by").notNull().default("beacon-briefing:rules-v1"),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  },
+  (t) => [index("briefings_org_product_generated_idx").on(t.organizationId, t.productId, t.generatedAt)],
+);
+
+/** Executive reports (weekly): payload holds measured data only; labels are rendered through t() (core/reports). */
+export const reports = pgTable(
+  "reports",
+  {
+    id: id(),
+    organizationId: orgId(),
+    kind: reportKindEnum("kind").notNull().default("WEEKLY"),
+    periodStart: date("period_start").notNull(),
+    periodEnd: date("period_end").notNull(),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default({}),
+    generatedBy: text("generated_by").notNull().default("beacon-report:rules-v1"),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex("reports_period_uq").on(t.organizationId, t.kind, t.periodStart, t.periodEnd), index("reports_org_created_idx").on(t.organizationId, t.createdAt)],
+);
+
+/**
+ * Notifications. `user_id` null is the organisation-wide digest (dedupe ledger
+ * and webhook record); member rows are each member's inbox. One digest per
+ * kind per day (`dedupe_key`), unique per organisation and user.
+ */
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: id(),
+    organizationId: orgId(),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }),
+    kind: notificationKindEnum("kind").notNull(),
+    severity: severityEnum("severity").notNull().default("INFO"),
+    titleKey: text("title_key").notNull(),
+    params: jsonb("params").$type<Record<string, unknown>>().notNull().default({}),
+    link: text("link"),
+    dedupeKey: text("dedupe_key").notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    readAt: timestamp("read_at", { withTimezone: true }),
+    emailedAt: timestamp("emailed_at", { withTimezone: true }),
+  },
+  (t) => [
+    unique("notifications_dedupe_uq").on(t.organizationId, t.userId, t.dedupeKey).nullsNotDistinct(),
+    index("notifications_inbox_idx").on(t.organizationId, t.userId, t.readAt, t.updatedAt),
+    index("notifications_org_kind_idx").on(t.organizationId, t.kind, t.createdAt),
+  ],
+);
+
+/** Per member (IN_APP, EMAIL) and organisation-level (`user_id` null: WEBHOOK switch and evaluation thresholds) preferences. */
+export const notificationPreferences = pgTable(
+  "notification_preferences",
+  {
+    id: id(),
+    organizationId: orgId(),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }),
+    kind: notificationKindEnum("kind").notNull(),
+    channel: notificationChannelEnum("channel").notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    threshold: jsonb("threshold").$type<Record<string, unknown>>().notNull().default({}),
+    updatedAt: updatedAt(),
+  },
+  (t) => [unique("notification_preferences_uq").on(t.organizationId, t.userId, t.kind, t.channel).nullsNotDistinct()],
+);
+
+/** Outgoing signed webhooks (HMAC-SHA256); the signing secret is encrypted at rest (AES-256-GCM envelope). */
+export const notificationWebhooks = pgTable(
+  "notification_webhooks",
+  {
+    id: id(),
+    organizationId: orgId(),
+    url: text("url").notNull(),
+    secretCiphertext: text("secret_ciphertext").notNull(),
+    keyVersion: integer("key_version").notNull().default(1),
+    /** Kinds delivered; empty means every kind. */
+    kinds: text("kinds").array().notNull().default(sql`'{}'::text[]`),
+    active: boolean("active").notNull().default(true),
+    lastDeliveryAt: timestamp("last_delivery_at", { withTimezone: true }),
+    lastStatus: integer("last_status"),
+    lastError: text("last_error"),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("notification_webhooks_org_idx").on(t.organizationId, t.active)],
+);
+
 export const TENANT_TABLES = [
   "memberships",
   "api_keys",
@@ -1887,4 +2206,13 @@ export const TENANT_TABLES = [
   "crawl_links",
   "sitemap_snapshots",
   "verified_domains",
+  "agent_usage",
+  "invitations",
+  "knowledge_proposals",
+  "briefings",
+  "reports",
+  "notifications",
+  "notification_preferences",
+  "notification_webhooks",
+  "autopilot_learning",
 ] as const;

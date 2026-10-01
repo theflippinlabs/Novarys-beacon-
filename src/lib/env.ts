@@ -23,6 +23,8 @@ const schema = z.object({
   BEACON_TRUSTED_PROXY_HOPS: z.coerce.number().int().min(0).max(10).default(1),
   /** Optional secret that unlocks the detailed /api/health output via the x-beacon-health-secret header. */
   BEACON_HEALTH_SECRET: z.string().optional(),
+  /** Beacon agent: default monthly token cap per organisation (input + output tokens; 0 = no cap). Organisations can override it in Settings. */
+  BEACON_AGENT_MONTHLY_TOKEN_CAP: z.coerce.number().int().min(0).default(20_000_000),
   BEACON_EMBEDDED_WORKER: z.enum(["true", "false"]).default("false"),
   BEACON_WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(32).default(2),
   ANTHROPIC_API_KEY: z.string().optional(),
@@ -38,6 +40,9 @@ const schema = z.object({
   /** Google OAuth client for Search Console (optional; the service-account path works without it). */
   GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),
   GOOGLE_OAUTH_CLIENT_SECRET: z.string().optional(),
+  /** Email notifications through Resend's HTTPS API; both are required, otherwise the email channel shows "Not connected". */
+  RESEND_API_KEY: z.string().optional(),
+  BEACON_EMAIL_FROM: z.string().optional(),
 });
 
 type Parsed = z.infer<typeof schema>;

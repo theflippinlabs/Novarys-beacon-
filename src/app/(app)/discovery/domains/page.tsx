@@ -80,9 +80,9 @@ export default async function DomainsPage({ searchParams }: { searchParams: Prom
               )}
             </Panel>
           ))}
-          {!data.domains.length && <EmptyState title={t("No domains yet")}>{t("Add the domain of a product site to audit it.")}</EmptyState>}
+          {!data.domains.length && <EmptyState variant="not_connected" what={t("No domains yet")} why={t("Add the domain of a product site to audit it.")} action={{ label: t("Add a domain"), href: "#add-domain" }} />}
         </div>
-        <Panel title={t("Add a domain")} eyebrow={t("Ownership")}>
+        <Panel title={<span id="add-domain">{t("Add a domain")}</span>} eyebrow={t("Ownership")}>
           {manage ? (
             <form action={addDomainAction} className="flex flex-col gap-3">
               <HiddenBack path={BACK} />

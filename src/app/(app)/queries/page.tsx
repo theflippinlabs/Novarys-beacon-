@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
-import { and, asc, desc, eq, ilike, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, sql } from "drizzle-orm";
+import { Pager } from "@/components/shell/pager";
+import { decodeCursor, PAGE_SIZE, pageOf } from "@/core/util/cursor";
 import { addQueryAction, bulkQueryAction, generateQueriesAction } from "@/app/actions/discovery";
 import { refreshQueryIntelAction } from "@/app/actions/intel";
 import { contentGapsForProduct } from "@/services/content-gaps";
 import { TOPIC_TYPES } from "@/core/queries/classify";
 import { ContentGaps } from "./content-gaps";
-import { Badge, Button, EmptyState, Field, Flash, HiddenBack, PageHeader, Panel, StatusBadge, Table, Tabs, Td, Th } from "@/components/ui";
+import { Badge, Button, EmptyState, Field, Flash, HiddenBack, PageHeader, Panel, ResponsiveTable, StatusBadge, Tabs, Td, Th } from "@/components/ui";
 import { FilterBar, SelectFilter } from "@/components/shell/filters";
 import { products, queries, queryClusters } from "@/db/schema";
 import { enumLabel } from "@/i18n/core";
@@ -25,16 +27,11 @@ export default async function QueriesPage({ searchParams }: { searchParams: Prom
   /** Enum label: translated in French, raw value in English (unchanged output). */
   const lbl = (v: string) => (locale === "fr" ? enumLabel(t, v) : v);
   const f = { product: sp1(sp, "product"), intent: sp1(sp, "intent"), status: sp1(sp, "status") ?? "ACTIVE", coverage: sp1(sp, "coverage"), branded: sp1(sp, "branded"), topic: sp1(sp, "topic"), q: sp1(sp, "q") };
+  const cursor = decodeCursor(sp1(sp, "cursor"));
   const { data, can } = await pageData(async (tx, ctx) => {
     const prods = await tx.select().from(products).where(eq(products.organizationId, ctx.org.id)).orderBy(products.name);
     const product = f.product ? prods.find((p) => p.slug === f.product) : undefined;
-    const rows = await tx
-      .select({ q: queries, cluster: queryClusters.name, productName: products.name })
-      .from(queries)
-      .leftJoin(queryClusters, eq(queryClusters.id, queries.clusterId))
-      .leftJoin(products, eq(products.id, queries.productId))
-      .where(
-        and(
+    const filters = and(
           eq(queries.organizationId, ctx.org.id),
           product ? eq(queries.productId, product.id) : undefined,
           f.intent ? eq(queries.intent, f.intent as never) : undefined,
@@ -43,10 +40,27 @@ export default async function QueriesPage({ searchParams }: { searchParams: Prom
           f.branded === "BRANDED" ? eq(queries.branded, true) : f.branded === "NON_BRANDED" ? eq(queries.branded, false) : undefined,
           f.topic ? eq(queries.topicType, f.topic as never) : undefined,
           f.q ? ilike(queries.normalized, `%${f.q.toLowerCase().replace(/[%_]/g, "")}%`) : undefined,
-        ),
-      )
-      .orderBy(desc(queries.importance), asc(queries.normalized))
-      .limit(500);
+        );
+    // Every match is reachable: cursor pagination (50 per page) instead of a silent 500 cap.
+    const [{ total }] = await tx.select({ total: count() }).from(queries).where(filters);
+    const sep = cursor ? String(cursor.v).indexOf(":") : -1;
+    const after =
+      cursor && sep > 0
+        ? sql`(${queries.importance} < ${Number(String(cursor.v).slice(0, sep))} or (${queries.importance} = ${Number(String(cursor.v).slice(0, sep))} and (${queries.normalized}, ${queries.id}) > (${String(cursor.v).slice(sep + 1)}, ${cursor.id}::uuid)))`
+        : undefined;
+    const page = pageOf(
+      await tx
+        .select({ q: queries, cluster: queryClusters.name, productName: products.name })
+        .from(queries)
+        .leftJoin(queryClusters, eq(queryClusters.id, queries.clusterId))
+        .leftJoin(products, eq(products.id, queries.productId))
+        .where(and(filters, after))
+        .orderBy(desc(queries.importance), asc(queries.normalized), asc(queries.id))
+        .limit(PAGE_SIZE + 1),
+      PAGE_SIZE,
+      (r) => ({ v: `${r.q.importance}:${r.q.normalized}`, id: r.q.id }),
+    );
+    const rows = page.items;
     const stats = await tx.execute<{ status: string; n: number }>(sql`select status, count(*)::int as n from queries where organization_id = ${ctx.org.id} group by status`);
     const clusters = await tx.execute<{ id: string; name: string; n: number; covered: number; coverage: string; intent: string | null; recommended_asset: string | null; branded: boolean }>(sql`
       select c.id, c.name, c.coverage, c.intent, c.recommended_asset, c.branded, count(q.id)::int as n, count(q.id) filter (where q.coverage = 'COVERED')::int as covered
@@ -57,7 +71,7 @@ export default async function QueriesPage({ searchParams }: { searchParams: Prom
     const gapProducts = product ? [product] : prods.slice(0, 10);
     const gaps: { product: (typeof prods)[number]; gaps: Awaited<ReturnType<typeof contentGapsForProduct>> }[] = [];
     for (const gp of gapProducts) gaps.push({ product: gp, gaps: await contentGapsForProduct(tx, ctx.org.id, gp.id) });
-    return { prods, product, rows, stats: Object.fromEntries(stats.rows.map((r) => [r.status, Number(r.n)])), clusters: clusters.rows, gaps };
+    return { prods, product, rows, total, next: page.next, stats: Object.fromEntries(stats.rows.map((r) => [r.status, Number(r.n)])), clusters: clusters.rows, gaps };
   });
   const back = `/queries?${new URLSearchParams(Object.entries(f).filter(([, v]) => v) as [string, string][]).toString()}`;
   return (
@@ -92,7 +106,7 @@ export default async function QueriesPage({ searchParams }: { searchParams: Prom
         </label>
       </FilterBar>
       <div className="grid gap-6 xl:grid-cols-[1fr_22rem]">
-        <Panel title={data.rows.length === 1 ? t("{n} query", { n: data.rows.length }) : t("{n} queries", { n: data.rows.length })} eyebrow={t("Universe")} pad={false}>
+        <Panel title={data.total === 1 ? t("{n} query", { n: data.total }) : t("{n} queries", { n: data.total })} eyebrow={t("Universe")} pad={false}>
           {data.rows.length ? (
             <form action={bulkQueryAction}>
               <HiddenBack path={back} />
@@ -106,7 +120,7 @@ export default async function QueriesPage({ searchParams }: { searchParams: Prom
                   <Button name="op" value="imp1">{t("Importance {n}", { n: 1 })}</Button>
                 </div>
               )}
-              <Table>
+              <ResponsiveTable>
                 <thead>
                   <tr>
                     <Th />
@@ -122,44 +136,63 @@ export default async function QueriesPage({ searchParams }: { searchParams: Prom
                 <tbody>
                   {data.rows.map(({ q, cluster, productName }) => (
                     <tr key={q.id}>
-                      <Td>{can("query:write") && <input type="checkbox" name="ids[]" value={q.id} aria-label={t("Select {query}", { query: q.query })} />}</Td>
-                      <Td>
+                      <Td label={can("query:write") ? t("Select") : undefined}>{can("query:write") && <input type="checkbox" name="ids[]" value={q.id} aria-label={t("Select {query}", { query: q.query })} className="h-5 w-5" />}</Td>
+                      <Td primary>
                         <div className="text-platinum">{q.query}</div>
                         {q.notes && <div className="text-[11px] text-muted">{t(q.notes)}</div>}
                       </Td>
-                      <Td>
-                        <div className="flex flex-wrap gap-1">
+                      <Td label={t("Classification")}>
+                        <div className="flex flex-wrap justify-end gap-1 md:justify-start">
                           <Badge tone={q.branded ? "gold" : "muted"}>{q.branded ? t("Branded") : t("Non-branded")}</Badge>
                           <Badge title={t("confidence {pct}%", { pct: Math.round(q.intentConfidence * 100) })}>{lbl(q.intent)}</Badge>
                           {q.topicType && <Badge tone="muted">{enumLabel(t, q.topicType)}</Badge>}
                         </div>
                         {q.intentConfidence < 0.5 && <div className="mt-1 text-[11px] text-warn">{t("Low confidence: please review")}</div>}
                       </Td>
-                      <Td className="text-xs">{lbl(q.funnelStage)}</Td>
-                      <Td className="num">{q.importance}</Td>
-                      <Td>
+                      <Td label={t("Funnel")} className="text-xs">{lbl(q.funnelStage)}</Td>
+                      <Td label={t("Imp.")} className="num">{q.importance}</Td>
+                      <Td label={t("Coverage")}>
                         <StatusBadge status={q.coverage} />
                         {q.coverageReason && <div className="mt-1 max-w-56 text-[11px] text-muted">{t(q.coverageReason)}</div>}
                         {q.coveredByUrl && <div className="num max-w-56 truncate text-[11px] text-muted" title={q.coveredByUrl}>{q.coveredByUrl}</div>}
                         {q.status !== "ACTIVE" && <div className="mt-1"><StatusBadge status={q.status} /></div>}
                       </Td>
-                      <Td className="text-xs">
+                      <Td label={t("Product / cluster")} className="text-xs">
                         {productName ?? t("n/a")}
                         <div className="text-muted">{cluster ? t(cluster) : ""}</div>
                       </Td>
-                      <Td className="num text-xs">
+                      <Td label={t("Market")} className="num text-xs">
                         {q.market} · {q.language}
                       </Td>
                     </tr>
                   ))}
                 </tbody>
-              </Table>
+              </ResponsiveTable>
             </form>
           ) : (
             <div className="p-4">
-              <EmptyState title={t("No queries match")}>{t("Add queries manually or generate the universe from a product’s knowledge graph.")}</EmptyState>
+              {f.intent || f.coverage || f.branded || f.topic || f.q ? (
+                <EmptyState variant="filtered" what={t("No queries match")} why={t("The intent, coverage, brand, topic or search filters hide every query of this list.")} action={{ label: t("Clear filters"), href: `/queries?status=${f.status}${f.product ? `&product=${f.product}` : ""}` }} />
+              ) : f.status === "ACTIVE" && (data.stats.CANDIDATE ?? 0) > 0 ? (
+                <EmptyState
+                  variant="no_data_yet"
+                  what={t("No active queries yet.")}
+                  why={t("Candidate queries are waiting for review. Only the queries you activate drive coverage, content gaps and opportunities.")}
+                  action={{ label: t("Review candidates"), href: `/queries?status=CANDIDATE${f.product ? `&product=${f.product}` : ""}` }}
+                />
+              ) : (
+                <EmptyState
+                  variant="not_generated"
+                  what={t("No queries yet.")}
+                  why={t("Add queries manually or generate the universe from a product’s knowledge graph.")}
+                  action={can("query:write") && data.product ? { label: t("Generate candidates"), form: { action: generateQueriesAction, fields: { productId: data.product.id }, back } } : { label: t("Open products"), href: "/products" }}
+                />
+              )}
             </div>
           )}
+          <div className="px-4 pb-3">
+            <Pager path="/queries" params={f} shown={data.rows.length} total={data.total} next={data.next} current={sp1(sp, "cursor")} />
+          </div>
         </Panel>
         <div className="flex flex-col gap-6">
           {can("query:write") && (

@@ -2,9 +2,29 @@ import type { ChatItem } from "@/components/agent/chat";
 import { stripLongDashes } from "@/core/util/text";
 import { mediaUrl } from "@/services/media";
 import type { StoredMessage } from "./store";
+import { isNeedsConfirmation } from "./confirm";
+import { unframe } from "./framing";
+import { isUserTurnStart } from "./window";
 import { AGENT_TOOLS } from "./tools";
 
 type AnyBlock = { type: string; [k: string]: unknown };
+
+/** Tool results are stored framed as untrusted data (see framing.ts); older ones are plain JSON. */
+function parseResult(text: string): unknown {
+  const framed = unframe(text);
+  if (framed !== null) return framed;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+/** The error message inside a framed error result, for display. */
+function errorText(text: string): string {
+  const v = parseResult(text) as { error?: unknown } | null;
+  return v && typeof v.error === "string" ? v.error : text;
+}
 
 function linksIn(text: string): string[] {
   try {
@@ -18,7 +38,7 @@ function linksIn(text: string): string[] {
           else walk(x, d + 1);
         }
     };
-    walk(JSON.parse(text), 0);
+    walk(parseResult(text), 0);
     return [...found];
   } catch {
     return [];
@@ -31,7 +51,8 @@ export function toChatItems(messages: StoredMessage[]): ChatItem[] {
   const items: ChatItem[] = [];
   let n = 0;
   const key = () => `h${n++}`;
-  for (const m of messages) {
+  const confirms: ChatItem[] = [];
+  for (const [mi, m] of messages.entries()) {
     const blocks = m.content as AnyBlock[];
     if (m.role === "user") {
       const results = blocks.filter((b) => b.type === "tool_result");
@@ -39,7 +60,13 @@ export function toChatItems(messages: StoredMessage[]): ChatItem[] {
         const id = String(r.tool_use_id);
         const content = typeof r.content === "string" ? r.content : "";
         const it = items.find((x) => x.kind === "tool" && x.id === id);
-        if (it && it.kind === "tool") Object.assign(it, { status: r.is_error ? "error" : "ok", links: r.is_error ? [] : linksIn(content), error: r.is_error ? content : undefined });
+        if (it && it.kind === "tool") Object.assign(it, { status: r.is_error ? "error" : "ok", links: r.is_error ? [] : linksIn(content), error: r.is_error ? errorText(content) : undefined });
+        const data = r.is_error ? null : parseResult(content);
+        if (isNeedsConfirmation(data)) {
+          // Pending only while no later user turn answered it.
+          const answered = messages.slice(mi + 1).some((x) => isUserTurnStart(x));
+          confirms.push({ kind: "confirm", key: key(), id: data.confirmation_id, summary: data.summary, state: answered ? "resolved" : "pending" });
+        }
       }
       const text = blocks
         .filter((b) => b.type === "text")
@@ -63,8 +90,11 @@ export function toChatItems(messages: StoredMessage[]): ChatItem[] {
         }
       }
       flush();
+      // A confirmation request is shown after the agent's message that asks for it.
+      items.push(...confirms.splice(0));
     }
   }
+  items.push(...confirms);
   // A tool that never got a result was interrupted.
   for (const it of items) if (it.kind === "tool" && it.status === "running") it.status = "error";
   return items;

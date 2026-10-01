@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { eq, sql } from "drizzle-orm";
-import { Badge, EmptyState, Flash, KV, LinkButton, PageHeader, Panel, Table, Td, Th, formatValue } from "@/components/ui";
+import { Badge, EmptyState, Flash, KV, PageHeader, Panel, Table, Td, Th, formatValue, ResponsiveTable } from "@/components/ui";
 import { FunnelBars } from "@/components/charts/bars";
 import { FilterBar, SelectFilter } from "@/components/shell/filters";
 import { RangePicker } from "@/components/shell/product-tabs";
@@ -9,7 +9,7 @@ import { buildFunnel, type FunnelStep } from "@/core/conversions/funnel";
 import { ATTRIBUTION_MODELS, DEFAULT_ATTRIBUTION, MODEL_RULES, type AttributionModel } from "@/core/attribution/attribution";
 import { CANONICAL_EVENTS, LEGACY_ALIASES } from "@/core/conversions/events";
 import { channelEnum, products } from "@/db/schema";
-import { contentPerformance, conversionsByChannel, funnelCounts, hasConversionEvents } from "@/services/metrics";
+import { availability, contentPerformance, conversionsByChannel, funnelCounts, hasConversionEvents } from "@/services/metrics";
 import { conversionList, creditedTotals } from "@/services/attribution";
 import { journey, type LinkLabel } from "@/services/journey";
 import { daysParam, pageData, sp1, type SP } from "@/lib/page";
@@ -80,6 +80,7 @@ export default async function ConversionsPage({ searchParams }: { searchParams: 
     const channelFilter = f.channel ? sql`and channel = ${f.channel}` : sql``;
 
     const anyEvents = await hasConversionEvents(tx, org);
+    const hasKey = anyEvents ? true : (await availability(tx, org, null)).trackerKey;
     const counts = await funnelCounts(tx, org, days, product?.id ?? null, f.channel ?? null);
     const byChannel = await conversionsByChannel(tx, org, days, product?.id ?? null);
     const ctas = (
@@ -94,7 +95,7 @@ export default async function ConversionsPage({ searchParams }: { searchParams: 
     const credited = await creditedTotals(tx, org, { days, productId: product?.id ?? null, model });
     const list = await conversionList(tx, org, { days, productId: product?.id ?? null, model, page, pageSize: PAGE_SIZE });
     const paths = await journey(tx, org, { days, productId: product?.id ?? null, limit: 20 });
-    return { paths, prods, product, anyEvents, funnel: buildFunnel(counts as Partial<Record<FunnelStep, number>>), byChannel, ctas, content, model, credited, list };
+    return { paths, prods, product, anyEvents, hasKey, funnel: buildFunnel(counts as Partial<Record<FunnelStep, number>>), byChannel, ctas, content, model, credited, list };
   });
 
   const qs = new URLSearchParams(Object.entries({ product: f.product, channel: f.channel }).filter(([, v]) => v) as [string, string][]).toString();
@@ -131,7 +132,12 @@ export default async function ConversionsPage({ searchParams }: { searchParams: 
       </FilterBar>
 
       {!data.anyEvents ? (
-        <EmptyState title={t("No conversion events yet")} action={<LinkButton variant="gold" href={trackingHref}>{t("Open Tracking setup →")}</LinkButton>}>
+        <EmptyState
+          variant={data.hasKey === false ? "not_connected" : "no_data_yet"}
+          what={t("No conversion events yet")}
+          why={data.hasKey ? t("A tracking key exists but no event has arrived yet. Check that the snippet is installed on the product site.") : t("No tracking key yet: Beacon cannot receive first-party events.")}
+          action={{ label: t("Open Tracking setup →"), href: trackingHref }}
+        >
           {t("Beacon has not received any first-party events. Install the browser tracker (page views and CTA clicks) and send lifecycle events (signup → subscription) from your server using the snippets on a product’s Tracking tab. Nothing on this page is estimated.")}
         </EmptyState>
       ) : (
@@ -142,7 +148,7 @@ export default async function ConversionsPage({ searchParams }: { searchParams: 
               <p className="mt-4 text-[11px] text-muted">{t("Cohort: people first seen in the last {days} days, and how many of them reached each step since. With a channel filter, the cohort is people whose first event came from that channel.", { days })}</p>
             </Panel>
             <Panel eyebrow={t("Funnel")} title={t("Conversion from first page view")} pad={false}>
-              <Table>
+              <ResponsiveTable>
                 <thead>
                   <tr>
                     <Th>{t("Step")}</Th>
@@ -153,20 +159,20 @@ export default async function ConversionsPage({ searchParams }: { searchParams: 
                 <tbody>
                   {data.funnel.map((s) => (
                     <tr key={s.step}>
-                      <Td className="text-xs">{enumLabel(t, s.step)}</Td>
-                      <Td className="num text-right text-platinum">{num(s.visitors)}</Td>
-                      <Td className="num text-right text-xs">{pct(s.conversionFromStart)}</Td>
+                      <Td primary className="text-xs">{enumLabel(t, s.step)}</Td>
+                      <Td label={t("Unique")} className="num text-right text-platinum">{num(s.visitors)}</Td>
+                      <Td label={t("From start")} className="num text-right text-xs">{pct(s.conversionFromStart)}</Td>
                     </tr>
                   ))}
                 </tbody>
-              </Table>
+              </ResponsiveTable>
             </Panel>
           </div>
 
           <div className="mt-6 grid gap-6 xl:grid-cols-2">
             <Panel eyebrow={t("Acquisition · last {days} days", { days })} title={t("Conversions by channel")} pad={false}>
               {data.byChannel.length ? (
-                <Table>
+                <ResponsiveTable>
                   <thead>
                     <tr>
                       <Th>{t("Channel")}</Th>
@@ -179,17 +185,17 @@ export default async function ConversionsPage({ searchParams }: { searchParams: 
                   <tbody>
                     {data.byChannel.map((r) => (
                       <tr key={r.channel}>
-                        <Td>
+                        <Td primary>
                           <Badge tone={r.channel === "UNCLASSIFIED" ? "muted" : "neutral"}>{ch(r.channel)}</Badge>
                         </Td>
-                        <Td className="num text-right text-platinum">{num(r.visitors)}</Td>
-                        <Td className="num text-right">{num(r.signups)}</Td>
-                        <Td className="num text-right">{num(r.subs)}</Td>
-                        <Td className="num text-right text-xs">{pct(rate(r.signups, r.visitors))}</Td>
+                        <Td label={t("Visitors")} className="num text-right text-platinum">{num(r.visitors)}</Td>
+                        <Td label={t("Signups")} className="num text-right">{num(r.signups)}</Td>
+                        <Td label={t("Subscriptions")} className="num text-right">{num(r.subs)}</Td>
+                        <Td label={t("Signup rate")} className="num text-right text-xs">{pct(rate(r.signups, r.visitors))}</Td>
                       </tr>
                     ))}
                   </tbody>
-                </Table>
+                </ResponsiveTable>
               ) : (
                 <p className="p-4 text-sm text-muted">{t("No events in this period.")}</p>
               )}
@@ -198,7 +204,7 @@ export default async function ConversionsPage({ searchParams }: { searchParams: 
 
             <Panel eyebrow={t("CTA performance · last {days} days", { days })} title={t("Top 20 calls to action")} pad={false}>
               {data.ctas.length ? (
-                <Table>
+                <ResponsiveTable>
                   <thead>
                     <tr>
                       <Th>{t("CTA")}</Th>
@@ -209,13 +215,13 @@ export default async function ConversionsPage({ searchParams }: { searchParams: 
                   <tbody>
                     {data.ctas.map((c, i) => (
                       <tr key={`${c.cta_id ?? ""}|${c.page_path ?? ""}|${i}`}>
-                        <Td className="num text-xs text-platinum">{c.cta_id ?? <span className="text-muted">{t("unnamed")}</span>}</Td>
-                        <Td className="num text-xs">{c.page_path ?? t("n/a")}</Td>
-                        <Td className="num text-right text-platinum">{num(c.clicks)}</Td>
+                        <Td primary className="num text-xs text-platinum">{c.cta_id ?? <span className="text-muted">{t("unnamed")}</span>}</Td>
+                        <Td label={t("Page")} className="num text-xs">{c.page_path ?? t("n/a")}</Td>
+                        <Td label={t("Clicks")} className="num text-right text-platinum">{num(c.clicks)}</Td>
                       </tr>
                     ))}
                   </tbody>
-                </Table>
+                </ResponsiveTable>
               ) : (
                 <p className="p-4 text-sm text-muted">
                   {t("No CTA clicks recorded. Mark conversion links with")} <code className="text-chrome">data-beacon-cta</code> {t("(see the")} <Link href={trackingHref} className="text-blue-bright hover:text-cyan">{t("Tracking tab")}</Link>).
@@ -236,7 +242,7 @@ export default async function ConversionsPage({ searchParams }: { searchParams: 
             actions={
               <nav aria-label={t("Attribution model")} className="flex flex-wrap gap-1">
                 {ATTRIBUTION_MODELS.map((m) => (
-                  <Link key={m} href={withParams({ model: m, page: undefined })} aria-current={m === model ? "page" : undefined} className={`border px-2 py-1 text-[11px] ${m === model ? "border-blue-bright text-platinum" : "border-line text-muted hover:text-chrome"}`}>
+                  <Link key={m} href={withParams({ model: m, page: undefined })} aria-current={m === model ? "page" : undefined} className={`inline-flex min-h-10 items-center border px-2 py-1 text-[11px] md:min-h-0 ${m === model ? "border-blue-bright text-platinum" : "border-line text-muted hover:text-chrome"}`}>
                     {t(MODEL_LABEL[m])}
                   </Link>
                 ))}
@@ -244,7 +250,7 @@ export default async function ConversionsPage({ searchParams }: { searchParams: 
             }
           >
             {data.credited.length ? (
-              <Table>
+              <ResponsiveTable>
                 <thead>
                   <tr>
                     <Th>{t("Channel")}</Th>
@@ -255,15 +261,15 @@ export default async function ConversionsPage({ searchParams }: { searchParams: 
                 <tbody>
                   {data.credited.map((r) => (
                     <tr key={r.channel}>
-                      <Td>
+                      <Td primary>
                         <Badge tone={r.channel === "UNATTRIBUTED" ? "muted" : "neutral"}>{ch(r.channel)}</Badge>
                       </Td>
-                      <Td className="num text-right text-platinum">{formatValue(r.conversions, "count", undefined, intl)}</Td>
-                      <Td className="num text-right text-xs">{r.revenue.length ? r.revenue.map((v) => money(v.cents, v.currency)).join(" · ") : t("n/a")}</Td>
+                      <Td label={t("Credited conversions")} className="num text-right text-platinum">{formatValue(r.conversions, "count", undefined, intl)}</Td>
+                      <Td label={t("Credited revenue")} className="num text-right text-xs">{r.revenue.length ? r.revenue.map((v) => money(v.cents, v.currency)).join(" · ") : t("n/a")}</Td>
                     </tr>
                   ))}
                 </tbody>
-              </Table>
+              </ResponsiveTable>
             ) : (
               <p className="p-4 text-sm text-muted">{t("No conversion credited in this period.")}</p>
             )}
@@ -274,7 +280,7 @@ export default async function ConversionsPage({ searchParams }: { searchParams: 
 
           <Panel eyebrow={t("Attribution model: {model}", { model: t(MODEL_LABEL[model]) })} title={t("Conversions · {n} in the last {days} days", { n: data.list.total, days })} className="mt-6" pad={false}>
             {data.list.items.length ? (
-              <Table>
+              <ResponsiveTable>
                 <thead>
                   <tr>
                     <Th>{t("When")}</Th>
@@ -290,32 +296,32 @@ export default async function ConversionsPage({ searchParams }: { searchParams: 
                 <tbody>
                   {data.list.items.map((r) => (
                     <tr key={r.id}>
-                      <Td className="num text-xs">{when(r.occurredAt)}</Td>
-                      <Td className="text-xs">
+                      <Td primary className="num text-xs">{when(r.occurredAt)}</Td>
+                      <Td label={t("Event")} className="text-xs">
                         {enumLabel(t, r.type)}
                         <div className="text-[11px] text-muted">{r.product ?? t("n/a")}</div>
                       </Td>
-                      <Td className="num text-xs">
+                      <Td label={t("Source / medium / campaign")} className="num text-xs">
                         {[r.source, r.medium, r.campaign].some(Boolean) ? [r.source ?? "-", r.medium ?? "-", r.campaign ?? "-"].join(" / ") : (r.referrerHost ?? t("n/a"))}
                         {r.campaignName && <div className="text-[11px] text-muted">{t("Campaign: {name}", { name: r.campaignName })}</div>}
                       </Td>
-                      <Td className="num max-w-56 truncate text-xs" title={r.landingUrl ?? undefined}>
+                      <Td label={t("Landing page")} className="num max-w-56 truncate text-xs" title={r.landingUrl ?? undefined}>
                         {r.landingUrl ? r.landingUrl.replace(/^https?:\/\//, "") : t("n/a")}
                       </Td>
-                      <Td className="text-xs">
+                      <Td label={t("First touch")} className="text-xs">
                         {touchLabel(r.firstTouch)}
                         {r.firstTouch && <div className="text-[11px] text-muted">{when(r.firstTouch.at)}</div>}
                       </Td>
-                      <Td className="text-xs">
+                      <Td label={t("Credited touch (rule)")} className="text-xs">
                         {r.channel ? ch(r.channel) : t("n/a")}
                         <div className="text-[11px] text-muted">{r.rule ? t(r.rule) : t("n/a")}</div>
                       </Td>
-                      <Td className="text-[11px]">{r.credits.length ? r.credits.map((c) => `${ch(c.channel)} ${formatValue(c.weight, "percent", undefined, intl)}`).join(", ") : t("n/a")}</Td>
-                      <Td className="num text-right text-xs">{r.value.length ? r.value.map((v) => money(v.cents, v.currency)).join(" · ") : t("n/a")}</Td>
+                      <Td label={t("Model credit")} className="text-[11px]">{r.credits.length ? r.credits.map((c) => `${ch(c.channel)} ${formatValue(c.weight, "percent", undefined, intl)}`).join(", ") : t("n/a")}</Td>
+                      <Td label={t("Value")} className="num text-right text-xs">{r.value.length ? r.value.map((v) => money(v.cents, v.currency)).join(" · ") : t("n/a")}</Td>
                     </tr>
                   ))}
                 </tbody>
-              </Table>
+              </ResponsiveTable>
             ) : (
               <p className="p-4 text-sm text-muted">{t("No conversion (signup, trial, activation, checkout or subscription) in this period.")}</p>
             )}
@@ -343,7 +349,7 @@ export default async function ConversionsPage({ searchParams }: { searchParams: 
 
       {data.paths.length > 0 && (
         <Panel eyebrow={t("Journey · last {days} days", { days })} title={t("Search → visit → conversion, by landing page")} className="mt-6" pad={false}>
-          <Table>
+          <ResponsiveTable>
             <thead>
               <tr>
                 <Th>{t("Landing page")}</Th>
@@ -357,14 +363,14 @@ export default async function ConversionsPage({ searchParams }: { searchParams: 
             <tbody>
               {data.paths.map((r) => (
                 <tr key={r.path}>
-                  <Td className="num max-w-56 truncate text-xs" title={r.path}>
+                  <Td primary className="num max-w-56 truncate text-xs" title={r.path}>
                     {r.path}
                   </Td>
-                  <Td className="num text-right text-xs">{r.search ? num(r.search.clicks) : t("n/a")}</Td>
-                  <Td className="num text-right text-xs">{r.analytics ? num(r.analytics.sessions) : t("n/a")}</Td>
-                  <Td className="num text-right text-xs">{r.beacon ? num(r.beacon.visitors) : t("n/a")}</Td>
-                  <Td className="num text-right text-xs">{r.beacon ? num(r.beacon.signups) : t("n/a")}</Td>
-                  <Td className="text-[11px]">
+                  <Td label={t("Search clicks")} className="num text-right text-xs">{r.search ? num(r.search.clicks) : t("n/a")}</Td>
+                  <Td label={t("GA4 sessions")} className="num text-right text-xs">{r.analytics ? num(r.analytics.sessions) : t("n/a")}</Td>
+                  <Td label={t("Beacon visitors")} className="num text-right text-xs">{r.beacon ? num(r.beacon.visitors) : t("n/a")}</Td>
+                  <Td label={t("Signups")} className="num text-right text-xs">{r.beacon ? num(r.beacon.signups) : t("n/a")}</Td>
+                  <Td label={t("Links")} className="text-[11px]">
                     <span title={t("Search Console page ↔ GA4 landing page")}>{t("Search ↔ GA4: {label}", { label: linkLabel(r.links.searchToAnalytics) })}</span>
                     <span className="block" title={t("Beacon landing page → Beacon conversion of the same visitor")}>
                       {t("Visit → conversion: {label}", { label: linkLabel(r.links.beaconToConversion) })}
@@ -373,7 +379,7 @@ export default async function ConversionsPage({ searchParams }: { searchParams: 
                 </tr>
               ))}
             </tbody>
-          </Table>
+          </ResponsiveTable>
           <p className="border-t border-line px-4 py-2 text-[11px] text-muted">
             {t("MEASURED: same system and same visitor. MODELLED: joined on the page path only (the people behind the numbers may differ). UNKNOWN: one side has no data. Search Console, GA4 and Beacon count differently; their numbers are shown side by side, never added.")}
           </p>
@@ -382,7 +388,7 @@ export default async function ConversionsPage({ searchParams }: { searchParams: 
 
       <Panel eyebrow={t("Content performance · last {days} days", { days })} title={t("Published content → CTA clicks → signups")} className="mt-6" pad={false}>
         {data.content.length ? (
-          <Table>
+          <ResponsiveTable>
             <thead>
               <tr>
                 <Th>{t("Asset")}</Th>
@@ -397,7 +403,7 @@ export default async function ConversionsPage({ searchParams }: { searchParams: 
             <tbody>
               {data.content.map((c) => (
                 <tr key={c.id}>
-                  <Td>
+                  <Td primary>
                     <Link href={`/content/${c.id}`} className="text-platinum hover:text-blue-bright">
                       {c.title}
                     </Link>
@@ -405,11 +411,11 @@ export default async function ConversionsPage({ searchParams }: { searchParams: 
                       {enumLabel(t, c.type).toLocaleLowerCase(intl)} · {c.product ?? t("ecosystem")}
                     </div>
                   </Td>
-                  <Td className="num text-xs">{c.path ?? t("n/a")}</Td>
-                  <Td className="num text-right text-platinum">{num(c.views)}</Td>
-                  <Td className="num text-right">{num(c.cta)}</Td>
-                  <Td className="num text-right">{num(c.signups)}</Td>
-                  <Td className="num text-right text-xs">{pct(rate(c.cta, c.views))}</Td>
+                  <Td label={t("Path")} className="num text-xs">{c.path ?? t("n/a")}</Td>
+                  <Td label={t("Views")} className="num text-right text-platinum">{num(c.views)}</Td>
+                  <Td label={t("CTA clicks")} className="num text-right">{num(c.cta)}</Td>
+                  <Td label={t("Signups")} className="num text-right">{num(c.signups)}</Td>
+                  <Td label={t("CTA rate")} className="num text-right text-xs">{pct(rate(c.cta, c.views))}</Td>
                   <Td>
                     {best?.id === c.id && <Badge tone="gold">{t("Best")}</Badge>}
                     {isUnder(c) && (
@@ -421,10 +427,10 @@ export default async function ConversionsPage({ searchParams }: { searchParams: 
                 </tr>
               ))}
             </tbody>
-          </Table>
+          </ResponsiveTable>
         ) : (
           <div className="p-4">
-            <EmptyState title={t("No published content")}>{t("Once content assets are published on a tracked page, their views, CTA clicks and signups appear here.")}</EmptyState>
+            <EmptyState variant="no_data_yet" what={t("No published content")} why={t("Once content assets are published on a tracked page, their views, CTA clicks and signups appear here.")} action={{ label: t("Open content"), href: "/content" }} />
           </div>
         )}
         <p className="border-t border-line px-4 py-2 text-[11px] text-muted">{t("Best = most signups (then CTA clicks). Underperforming = ≥ 100 views and 0 CTA clicks in the period.")}</p>

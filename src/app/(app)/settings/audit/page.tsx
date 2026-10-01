@@ -1,7 +1,7 @@
 import { desc, eq } from "drizzle-orm";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { PageHeader, Panel, Table, Td, Th, Badge } from "@/components/ui";
+import { PageHeader, Panel, Td, Th, Badge, ResponsiveTable } from "@/components/ui";
 import { SettingsTabs } from "@/components/shell/settings-tabs";
 import { auditLogs } from "@/db/schema";
 import { pageData } from "@/lib/page";
@@ -21,7 +21,7 @@ export default async function AuditLogPage() {
       <PageHeader eyebrow={t("13 / Settings")} title={t("Audit log")} description={t("Append-only record of security- and content-relevant actions. Metadata is redacted; credentials are never logged.")} />
       <SettingsTabs active="audit" />
       <Panel title={t("Latest {n} events", { n: data.length })} pad={false}>
-        <Table>
+        <ResponsiveTable>
           <thead>
             <tr>
               <Th>{t("Time")}</Th>
@@ -34,23 +34,23 @@ export default async function AuditLogPage() {
           <tbody>
             {data.map((a) => (
               <tr key={a.id}>
-                <Td className="num whitespace-nowrap text-xs">{a.createdAt.toISOString().slice(0, 19).replace("T", " ")}</Td>
-                <Td>
+                <Td primary className="num whitespace-nowrap text-xs">{a.createdAt.toISOString().slice(0, 19).replace("T", " ")}</Td>
+                <Td label={t("Action")}>
                   <Badge>{a.action}</Badge>
                 </Td>
-                <Td className="num text-[11px]">
+                <Td label={t("Entity")} className="num text-[11px]">
                   {a.entityType}
                   <div className="text-muted">{a.entityId}</div>
                 </Td>
-                <Td className="num text-[11px]">
+                <Td label={t("Actor")} className="num text-[11px]">
                   {a.actorType}
                   <div className="text-muted">{a.actorUserId?.slice(0, 8)}</div>
                 </Td>
-                <Td className="num max-w-md break-all text-[10px] text-muted">{JSON.stringify(a.metadata)}</Td>
+                <Td label={t("Metadata")} className="num max-w-md break-all text-[10px] text-muted">{JSON.stringify(a.metadata)}</Td>
               </tr>
             ))}
           </tbody>
-        </Table>
+        </ResponsiveTable>
       </Panel>
     </>
   );

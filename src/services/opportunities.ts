@@ -12,6 +12,7 @@ import { importSearchQueries, reclusterProduct, searchDemand, type SearchDemand 
 import { recomputeCoverage } from "./discovery";
 import { contentGapsForProduct } from "./content-gaps";
 import { audit, type Actor } from "@/lib/audit";
+import { learningTallies } from "./autopilot-learning";
 
 type QueryMetric = { impressions: number; clicks: number; position: number | null };
 
@@ -141,6 +142,7 @@ export async function generateProductOpportunities(tx: Tx, organizationId: strin
       hasRule: rules.some((r) => r.to === o.id),
     })),
     referral: ref.rows[0] ? { conversions90d: Number(ref.rows[0].conv), activeReferralCodes: Number(ref.rows[0].codes), affiliates: Number(ref.rows[0].affiliates) } : null,
+    learning: await learningTallies(tx, organizationId),
   };
   const drafts = generateOpportunity(signals);
   const res = await upsertOpportunities(tx, organizationId, productId, drafts);

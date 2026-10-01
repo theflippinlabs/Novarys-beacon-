@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { inSequence } from "@/db";
 import Link from "next/link";
 import { desc, eq, sql } from "drizzle-orm";
-import { Badge, EmptyState, LinkButton, PageHeader, Panel, Stat, Table, Td, Th, formatValue } from "@/components/ui";
+import { Badge, EmptyState, PageHeader, Panel, Stat, Table, Td, Th, formatValue, ResponsiveTable } from "@/components/ui";
 import { BarList } from "@/components/charts/bars";
 import { RangePicker } from "@/components/shell/product-tabs";
 import { products, revenueEvents } from "@/db/schema";
@@ -88,19 +88,17 @@ export default async function RevenuePage({ searchParams }: { searchParams: Prom
 
       {!connected ? (
         <EmptyState
-          title={k.revenue.revenue.state === "NO_DATA_YET" ? t("Revenue source connected, no revenue received yet") : t("No revenue data connected")}
-          action={
-            <div className="flex flex-wrap gap-2">
-              <LinkButton variant="gold" href="/settings/integrations">
-                {t("Connect Stripe webhook →")}
-              </LinkButton>
-              <LinkButton href={trackingHref}>{t("Revenue API on the Tracking tab")}</LinkButton>
-            </div>
+          variant={k.revenue.revenue.state === "NO_DATA_YET" ? "no_data_yet" : "not_connected"}
+          what={k.revenue.revenue.state === "NO_DATA_YET" ? t("Revenue source connected, no revenue received yet") : t("No revenue data connected")}
+          why={
+            <>
+              {t("Beacon has not received any revenue events. Connect a Stripe webhook in Settings → Integrations, or post invoices and subscription changes to")} <code className="text-platinum">/api/v1/revenue</code>{" "}
+              {t("with a secret key (documented on each product’s Tracking tab). Nothing on this page is estimated.")}
+            </>
           }
-        >
-          {t("Beacon has not received any revenue events. Connect a Stripe webhook in Settings → Integrations, or post invoices and subscription changes to")} <code className="text-platinum">/api/v1/revenue</code>{" "}
-          {t("with a secret key (documented on each product’s Tracking tab). Nothing on this page is estimated.")}
-        </EmptyState>
+          action={{ label: t("Connect Stripe webhook →"), href: "/settings/integrations" }}
+          secondary={{ label: t("Revenue API on the Tracking tab"), href: trackingHref }}
+        />
       ) : (
         <>
           <div className="grid gap-6 xl:grid-cols-2">
@@ -131,7 +129,7 @@ export default async function RevenuePage({ searchParams }: { searchParams: Prom
           </div>
 
           <Panel eyebrow={t("Ledger")} title={t("Latest 50 revenue events")} className="mt-6" pad={false}>
-            <Table>
+            <ResponsiveTable>
               <thead>
                 <tr>
                   <Th>{t("Occurred")}</Th>
@@ -148,27 +146,27 @@ export default async function RevenuePage({ searchParams }: { searchParams: Prom
               <tbody>
                 {data.recent.map(({ e, productName }) => (
                   <tr key={e.id}>
-                    <Td className="num text-xs">{e.occurredAt.toISOString().slice(0, 16).replace("T", " ")}</Td>
-                    <Td className="text-xs">{productName ?? t("n/a")}</Td>
-                    <Td>
+                    <Td primary className="num text-xs">{e.occurredAt.toISOString().slice(0, 16).replace("T", " ")}</Td>
+                    <Td label={t("Product")} className="text-xs">{productName ?? t("n/a")}</Td>
+                    <Td label={t("Type")}>
                       <Badge tone={e.type === "CHURN" || e.type === "REFUND" ? "crit" : e.type === "NEW" ? "ok" : "neutral"}>{evType(e.type)}</Badge>
                     </Td>
-                    <Td className="num text-right text-platinum">{money(e.amountCents, e.currency)}</Td>
-                    <Td className={`num text-right text-xs ${e.mrrDeltaCents > 0 ? "text-ok" : e.mrrDeltaCents < 0 ? "text-crit" : "text-muted"}`}>
+                    <Td label={t("Amount")} className="num text-right text-platinum">{money(e.amountCents, e.currency)}</Td>
+                    <Td label={t("MRR Δ")} className={`num text-right text-xs ${e.mrrDeltaCents > 0 ? "text-ok" : e.mrrDeltaCents < 0 ? "text-crit" : "text-muted"}`}>
                       {e.mrrDeltaCents === 0 ? t("n/a") : `${e.mrrDeltaCents > 0 ? "+" : ""}${money(e.mrrDeltaCents, e.currency)}`}
                     </Td>
-                    <Td className="num text-xs">{e.currency}</Td>
-                    <Td>
+                    <Td label={t("Currency")} className="num text-xs">{e.currency}</Td>
+                    <Td label={t("Channel")}>
                       <Badge tone={BEACON.has(e.channel) ? "gold" : "neutral"}>{ch(e.channel)}</Badge>
                     </Td>
-                    <Td className="text-xs">{e.provider}</Td>
-                    <Td className="num max-w-48 truncate text-xs">
+                    <Td label={t("Provider")} className="text-xs">{e.provider}</Td>
+                    <Td label={t("External ID")} className="num max-w-48 truncate text-xs">
                       <span title={e.externalId}>{e.externalId}</span>
                     </Td>
                   </tr>
                 ))}
               </tbody>
-            </Table>
+            </ResponsiveTable>
           </Panel>
         </>
       )}

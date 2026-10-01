@@ -33,7 +33,7 @@ export default async function LinksPage({ searchParams }: { searchParams: Promis
     return (
       <>
         <PageHeader eyebrow={t("03 / Discovery")} title={t("Internal links")} />
-        <EmptyState title={t("No successful audit yet")}>{t("Run a technical audit from the Discovery page; the link graph is built from its crawl.")}</EmptyState>
+        <EmptyState variant="not_generated" what={t("No successful audit yet")} why={t("Run a technical audit from the Discovery page; the link graph is built from its crawl.")} action={{ label: t("Run a technical audit"), href: "/discovery" }} />
       </>
     );
   }
@@ -56,7 +56,7 @@ export default async function LinksPage({ searchParams }: { searchParams: Promis
         }
       />
       {!graph ? (
-        <EmptyState title={t("No data yet")}>{t("The crawl has not finished yet.")}</EmptyState>
+        <EmptyState variant="no_data_yet" what={t("No link graph yet.")} why={t("The crawl has not finished yet.")} action={{ label: t("Open the audit →"), href: `/discovery/audits/${audit.id}` }} />
       ) : (
         <>
           <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">

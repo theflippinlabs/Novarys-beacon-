@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { asSystem } from "@/db";
 import { media } from "@/db/schema";
 import { isUuid } from "@/core/media/image";
-import { SESSION_COOKIE } from "@/lib/auth/session";
+import { sessionTokenFrom } from "@/lib/auth/session";
 import { resolveSession } from "@/lib/auth/service";
 
 export const dynamic = "force-dynamic";
@@ -33,7 +33,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const row = await asSystem(async (tx) => (await tx.select({ organizationId: media.organizationId, createdBy: media.createdBy, visibility: media.visibility, mime: media.mime, bytes: media.bytes }).from(media).where(eq(media.id, id.toLowerCase())).limit(1))[0]);
   if (!row) return notFound();
   if (row.visibility === "PRIVATE") {
-    const ctx = await resolveSession(cookieValue(req, SESSION_COOKIE));
+    const ctx = await resolveSession(sessionTokenFrom((n) => cookieValue(req, n) ?? undefined));
     // Private photos (agent chat attachments) are visible to their uploader only.
     if (!ctx || ctx.org.id !== row.organizationId || !row.createdBy || ctx.user.id !== row.createdBy) return notFound();
   }

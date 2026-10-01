@@ -1,4 +1,7 @@
-import { eq } from "drizzle-orm";
+import { and, asc, count, eq, inArray } from "drizzle-orm";
+import { Pager } from "@/components/shell/pager";
+import { decodeCursor, PAGE_SIZE, pageOf } from "@/core/util/cursor";
+import { afterCursor, msKey, tsCursor } from "@/lib/paginate";
 import type { Metadata } from "next";
 import { disableIntegrationAction, saveIntegrationAction, selectGoogleSiteAction, syncIntegrationNowAction, testIntegrationAction } from "@/app/actions/settings";
 import { Badge, Button, Field, Flash, HiddenBack, PageHeader, Panel, StatusBadge } from "@/components/ui";
@@ -13,7 +16,7 @@ import { inboxSummary } from "@/services/stripe";
 import { reprocessWebhookInboxAction } from "@/app/actions/settings";
 import type { T } from "@/i18n/core";
 import { env } from "@/lib/env";
-import { pageData, type SP } from "@/lib/page";
+import { pageData, sp1, type SP } from "@/lib/page";
 import { getI18n, getT } from "@/i18n/server";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -26,12 +29,30 @@ const when = (d: Date | null | undefined) => (d ? d.toISOString().slice(0, 16).r
 export default async function IntegrationsPage({ searchParams }: { searchParams: Promise<SP> }) {
   const sp = await searchParams;
   const { t } = await getI18n();
+  const cursor = decodeCursor(sp1(sp, "cursor"));
   const { data, can } = await pageData(async (tx, ctx) => {
-    const list = await tx.select().from(integrations).where(eq(integrations.organizationId, ctx.org.id)).orderBy(integrations.provider, integrations.createdAt);
-    const creds = await tx.select({ integrationId: providerCredentials.integrationId, rotatedAt: providerCredentials.rotatedAt, createdAt: providerCredentials.createdAt }).from(providerCredentials).where(eq(providerCredentials.organizationId, ctx.org.id));
+    // Paginated (cursor, 50 per page) in connection order.
+    const [{ total }] = await tx.select({ total: count() }).from(integrations).where(eq(integrations.organizationId, ctx.org.id));
+    const page = pageOf(
+      await tx
+        .select()
+        .from(integrations)
+        .where(and(eq(integrations.organizationId, ctx.org.id), afterCursor(integrations.createdAt, integrations.id, cursor, "asc", "timestamp")))
+        .orderBy(asc(msKey(integrations.createdAt)), asc(integrations.id))
+        .limit(PAGE_SIZE + 1),
+      PAGE_SIZE,
+      (r) => tsCursor(r.createdAt, r.id),
+    );
+    const list = page.items;
+    const creds = list.length
+      ? await tx
+          .select({ integrationId: providerCredentials.integrationId, rotatedAt: providerCredentials.rotatedAt, createdAt: providerCredentials.createdAt })
+          .from(providerCredentials)
+          .where(and(eq(providerCredentials.organizationId, ctx.org.id), inArray(providerCredentials.integrationId, list.map((i) => i.id))))
+      : [];
     const prods = await tx.select().from(products).where(eq(products.organizationId, ctx.org.id)).orderBy(products.name);
     const inbox = await inboxSummary(tx, ctx.org.id);
-    return { list, creds: new Map(creds.map((c) => [c.integrationId, c])), prods, inbox };
+    return { list, total, next: page.next, creds: new Map(creds.map((c) => [c.integrationId, c])), prods, inbox };
   });
   const back = "/settings/integrations";
   const pname = (id: string | null) => (id ? data.prods.find((p) => p.id === id)?.name ?? t("n/a") : t("Organisation"));
@@ -167,6 +188,7 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
         ) : (
           <p className="text-sm text-muted">{t("Nothing connected yet. Beacon works with first-party events alone; connect providers to add measured search, analytics and revenue data.")}</p>
         )}
+        <Pager path="/settings/integrations" params={{}} shown={data.list.length} total={data.total} next={data.next} current={sp1(sp, "cursor")} />
       </Panel>
 
       {can("integration:manage") && (

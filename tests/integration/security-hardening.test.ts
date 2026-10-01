@@ -12,7 +12,7 @@ import { POST as crossSellEventPOST } from "@/app/api/v1/cross-sell/event/route"
 import { createSession } from "@/lib/auth/service";
 import { hashPassword } from "@/lib/security/crypto";
 import { resetEnvCache } from "@/lib/env";
-import { ingestImage } from "@/services/media";
+import { insertImage, prepareImage } from "@/services/media";
 import { saveIntegration, loadSecret } from "@/services/visibility";
 import { rotateProviderCredentials } from "@/db/rotate-secrets";
 import { createKey, ipHeader, jsonRequest, newOrg, params, seedCompleteProduct, uid } from "./helpers";
@@ -53,7 +53,8 @@ describe("public site switch (settings.publicSiteEnabled)", () => {
 describe("private media", () => {
   it("is served only to the member who uploaded it", async () => {
     const png = await sharp({ create: { width: 8, height: 8, channels: 3, background: "#123" } }).png().toBuffer();
-    const r = await withOrg(A.org.id, (tx) => ingestImage(tx, A.actor, { data: png, filename: "chat.png", visibility: "PRIVATE" }));
+    const prepared = await prepareImage({ data: png, filename: "chat.png", visibility: "PRIVATE" });
+    const r = await withOrg(A.org.id, (tx) => insertImage(tx, A.actor, prepared));
     const [colleague] = await asSystem(async (tx) => tx.insert(users).values({ email: `colleague-${uid()}@example.test`, name: "Colleague", passwordHash: await hashPassword("correct horse battery 42") }).returning());
     await asSystem((tx) => tx.insert(memberships).values({ organizationId: A.org.id, userId: colleague.id, role: "ADMIN" }));
     const get = (token: string) => mediaGET(new Request(`http://localhost/api/media/${r.id}`, { headers: { cookie: `beacon_session=${token}` } }), params({ id: r.id }));

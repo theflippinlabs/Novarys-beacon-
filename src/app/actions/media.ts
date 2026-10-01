@@ -2,14 +2,14 @@
 
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import { contentAssets, media, organizations } from "@/db/schema";
-import { act, zCheckbox, zId } from "@/lib/actions";
+import { media, organizations } from "@/db/schema";
+import { act, actStaged, zCheckbox, zId } from "@/lib/actions";
 import { audit } from "@/lib/audit";
 import { can } from "@/lib/auth/rbac";
 import { altFromFilename, mediaIdFromUrl } from "@/core/media/image";
 import { env } from "@/lib/env";
 import type { Tx } from "@/db";
-import { deleteMedia, ingestImage, MAX_UPLOAD_BYTES, MEDIA_ERRORS, setOrgLogo, setProductLogo } from "@/services/media";
+import { deleteMedia, insertImage, MAX_UPLOAD_BYTES, MEDIA_ERRORS, prepareImage, setOrgLogo, setProductLogo, type PreparedImage } from "@/services/media";
 
 /** Most images accepted in one submit (the client downsizes them first; see next.config bodySizeLimit). */
 const MAX_FILES = 12;
@@ -29,15 +29,20 @@ async function readFiles(fd: FormData, max = MAX_FILES): Promise<{ data: Buffer;
 
 /** Product photos (several at once). With `asLogo`, the first uploaded image becomes the product logo. */
 export async function uploadProductPhotosAction(fd: FormData) {
-  return act(fd, "product:write", z.object({ productId: zId, asLogo: zCheckbox }), async ({ tx, actor }, i) => {
+  return actStaged(fd, "product:write", z.object({ productId: zId, asLogo: zCheckbox }), async ({ actor, run }, i) => {
     const files = await readFiles(fd, i.asLogo ? 1 : MAX_FILES);
-    const ids: string[] = [];
-    for (const f of files) ids.push((await ingestImage(tx, actor, { ...f, productId: i.productId, visibility: "PUBLIC", alt: altFromFilename(f.filename) })).id);
-    if (i.asLogo) {
-      await setProductLogo(tx, actor, i.productId, ids[0]);
-      return { ok: "Logo uploaded." };
-    }
-    return { ok: ids.length === 1 ? "Photo uploaded." : `${ids.length} photos uploaded.` };
+    // Re-encode first, with no transaction open; then store everything in one transaction.
+    const prepared: PreparedImage[] = [];
+    for (const f of files) prepared.push(await prepareImage({ ...f, productId: i.productId, visibility: "PUBLIC", alt: altFromFilename(f.filename) }));
+    return run(async (tx) => {
+      const ids: string[] = [];
+      for (const img of prepared) ids.push((await insertImage(tx, actor, img)).id);
+      if (i.asLogo) {
+        await setProductLogo(tx, actor, i.productId, ids[0]);
+        return { ok: "Logo uploaded." };
+      }
+      return { ok: ids.length === 1 ? "Photo uploaded." : `${ids.length} photos uploaded.` };
+    });
   });
 }
 
@@ -62,21 +67,27 @@ export async function deleteMediaAction(fd: FormData) {
 
 /** Images for a content asset; the editor then references them in the draft as Markdown. */
 export async function uploadContentImagesAction(fd: FormData) {
-  return act(fd, "content:write", z.object({ assetId: zId }), async ({ tx, actor }, i) => {
-    const asset = await tx.query.contentAssets.findFirst({ columns: { id: true }, where: and(eq(contentAssets.id, i.assetId), eq(contentAssets.organizationId, actor.organizationId)) });
-    if (!asset) throw new Error("Content asset not found");
+  return actStaged(fd, "content:write", z.object({ assetId: zId }), async ({ actor, run }, i) => {
     const files = await readFiles(fd);
-    for (const f of files) await ingestImage(tx, actor, { ...f, contentAssetId: asset.id, visibility: "PUBLIC", alt: altFromFilename(f.filename) });
-    return { ok: files.length === 1 ? "Image uploaded." : `${files.length} images uploaded.` };
+    const prepared: PreparedImage[] = [];
+    for (const f of files) prepared.push(await prepareImage({ ...f, contentAssetId: i.assetId, visibility: "PUBLIC", alt: altFromFilename(f.filename) }));
+    return run(async (tx) => {
+      // insertImage checks the content asset belongs to this organisation.
+      for (const img of prepared) await insertImage(tx, actor, img);
+      return { ok: files.length === 1 ? "Image uploaded." : `${files.length} images uploaded.` };
+    });
   });
 }
 
 export async function uploadOrgLogoAction(fd: FormData) {
-  return act(fd, "settings:manage", z.object({}), async ({ tx, actor }) => {
+  return actStaged(fd, "settings:manage", z.object({}), async ({ actor, run }) => {
     const [f] = await readFiles(fd, 1);
-    const img = await ingestImage(tx, actor, { ...f, visibility: "PUBLIC", alt: altFromFilename(f.filename) });
-    await setOrgLogo(tx, actor, img.id);
-    return { ok: "Logo uploaded." };
+    const prepared = await prepareImage({ ...f, visibility: "PUBLIC", alt: altFromFilename(f.filename) });
+    return run(async (tx) => {
+      const img = await insertImage(tx, actor, prepared);
+      await setOrgLogo(tx, actor, img.id);
+      return { ok: "Logo uploaded." };
+    });
   });
 }
 

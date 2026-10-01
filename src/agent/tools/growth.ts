@@ -145,7 +145,7 @@ export const getAutopilot = defineTool({
           }
         : "no report yet",
       recommendationsAwaitingDecision: capped(recs.map((r) => ({ id: r.id, kind: r.kind, title: r.title, body: trim(r.body, 300), requiresApproval: r.requiresApproval, createdAt: iso(r.createdAt) }))),
-      experiments: capped(exps.map((e) => ({ id: e.id, name: e.name, status: e.status, hypothesis: trim(e.hypothesis, 200), primaryMetric: e.primaryMetric, startsOn: e.startsOn, endsOn: e.endsOn, result: trim(e.result, 200) }))),
+      experiments: capped(exps.map((e) => ({ id: e.id, name: e.name, status: e.status, hypothesis: trim(e.hypothesis, 200), primaryMetric: e.primaryMetric, metricKey: e.metricKey, minSampleSize: e.minSampleSize, counts: e.controlN === null ? null : { control: [e.controlConversions, e.controlN], variant: [e.variantConversions, e.variantN], source: e.countsSource }, winner: e.winner, pValue: e.pValue, startsOn: e.startsOn, endsOn: e.endsOn, result: trim(e.result, 200) }))),
       link: "/autopilot",
     };
   },

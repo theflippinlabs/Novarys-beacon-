@@ -1,5 +1,8 @@
 import Link from "next/link";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, count, eq } from "drizzle-orm";
+import { Pager } from "@/components/shell/pager";
+import { decodeCursor, PAGE_SIZE, pageOf } from "@/core/util/cursor";
+import { afterCursor } from "@/lib/paginate";
 import { createProductAction } from "@/app/actions/products";
 import {
   Badge,
@@ -17,10 +20,10 @@ import {
   Th,
 } from "@/components/ui";
 import { products } from "@/db/schema";
-import { loadProductGraph } from "@/core/knowledge/load";
+import { loadProductGraphs } from "@/core/knowledge/load";
 import { computeCompleteness } from "@/core/knowledge/completeness";
 import { latestScores } from "@/services/score";
-import { pageData, type SP } from "@/lib/page";
+import { pageData, sp1, type SP } from "@/lib/page";
 import { getI18n, getT } from "@/i18n/server";
 import type { Metadata } from "next";
 import { buildMediaUrl, mediaIdFromUrl } from "@/core/media/image";
@@ -43,23 +46,24 @@ export default async function ProductsPage({
   searchParams: Promise<SP>;
 }) {
   const sp = await searchParams;
+  const cursor = decodeCursor(sp1(sp, "cursor"));
   const { data, can } = await pageData(async (tx, ctx) => {
-    const list = await tx
-      .select()
-      .from(products)
-      .where(eq(products.organizationId, ctx.org.id))
-      .orderBy(asc(products.name));
+    const [{ total }] = await tx.select({ total: count() }).from(products).where(eq(products.organizationId, ctx.org.id));
+    // Paginated by name (cursor, 50 per page); graphs batch-loaded (one query per table, no N+1).
+    const page = pageOf(
+      await tx
+        .select()
+        .from(products)
+        .where(and(eq(products.organizationId, ctx.org.id), afterCursor(products.name, products.id, cursor, "asc")))
+        .orderBy(asc(products.name), asc(products.id))
+        .limit(PAGE_SIZE + 1),
+      PAGE_SIZE,
+      (p) => ({ v: p.name, id: p.id }),
+    );
     const scores = await latestScores(tx, ctx.org.id);
-    const rows = [];
-    for (const p of list) {
-      const g = await loadProductGraph(tx, ctx.org.id, p.id);
-      rows.push({
-        p,
-        completeness: g ? computeCompleteness(g).score : 0,
-        score: scores.get(p.id)?.total ?? null,
-      });
-    }
-    return rows;
+    const graphs = await loadProductGraphs(tx, ctx.org.id, page.items);
+    const rows = graphs.map((g) => ({ p: g.product, completeness: computeCompleteness(g).score, score: scores.get(g.product.id)?.total ?? null }));
+    return { rows, total, next: page.next };
   });
   const { t } = await getI18n();
   const canEdit = can("product:write");
@@ -75,19 +79,20 @@ export default async function ProductsPage({
       <Flash searchParams={sp} />
       <div className="grid gap-6 xl:grid-cols-[1fr_22rem]">
         <Panel title={t("Ecosystem")} pad={false}>
-          {data.length === 0 ? (
+          {data.rows.length === 0 ? (
             <div className="p-4">
-              <EmptyState title={t("No products yet")}>
-                {t(
-                  "Add the first Novarys product. The onboarding takes a few minutes and drives the entire discovery engine.",
-                )}
-              </EmptyState>
+              <EmptyState
+                variant="not_generated"
+                what={t("No products yet")}
+                why={t("Add the first Novarys product. The onboarding takes a few minutes and drives the entire discovery engine.")}
+                action={{ label: t("Add product"), href: "#add-product" }}
+              />
             </div>
           ) : (
             <>
               {/* Phones: one card per product, with the actions always visible. */}
               <ul className="divide-y divide-line md:hidden">
-                {data.map(({ p, completeness, score }) => (
+                {data.rows.map(({ p, completeness, score }) => (
                   <li key={p.id} className="flex flex-col gap-3 p-4">
                     <div className="flex items-center gap-3">
                       {ownLogo(p.logoUrl) && (
@@ -160,7 +165,7 @@ export default async function ProductsPage({
                     </tr>
                   </thead>
                   <tbody>
-                    {data.map(({ p, completeness, score }) => (
+                    {data.rows.map(({ p, completeness, score }) => (
                       <tr key={p.id}>
                         <Td>
                           <div className="flex items-center gap-3">
@@ -238,11 +243,14 @@ export default async function ProductsPage({
                   </tbody>
                 </Table>
               </div>
+              <div className="px-4 pb-3">
+                <Pager path="/products" params={{}} shown={data.rows.length} total={data.total} next={data.next} current={sp1(sp, "cursor")} />
+              </div>
             </>
           )}
         </Panel>
         {can("product:write") && (
-          <Panel eyebrow={t("Onboard an application")} title={t("Add product")}>
+          <Panel eyebrow={t("Onboard an application")} title={<span id="add-product">{t("Add product")}</span>}>
             <form action={createProductAction} className="flex flex-col gap-4">
               <HiddenBack path="/products" />
               <Field label={t("Product name")}>

@@ -18,9 +18,15 @@ export const JOB_TYPES = [
   "opportunities.generate",
   "score.compute",
   "autopilot.report",
+  "autopilot.identify",
+  "recommendation.measure",
   "product.analyze",
   "maintenance.cleanup",
   "sources.check",
+  "briefing.generate",
+  "reports.generate",
+  "notifications.evaluate",
+  "notifications.deliver",
 ] as const;
 export type JobType = (typeof JOB_TYPES)[number];
 

@@ -61,7 +61,7 @@ describe("analyzeAiResponse", () => {
 });
 
 describe("analyzeGrowth", () => {
-  const m = (over: Partial<MetricPair>): MetricPair => ({ key: "k", label: "Clicks", now: 100, prev: 100, source: "gsc", ...over });
+  const m = (over: Partial<MetricPair>): MetricPair => ({ key: "clicks", label: "Clicks", now: 100, prev: 100, source: "gsc", ...over });
   const base = { events: [], opportunities: [], openCriticalIssues: [], connected: ["gsc"], missing: ["ga4"] };
 
   it("labels low-volume metrics as INSUFFICIENT_DATA", () => {

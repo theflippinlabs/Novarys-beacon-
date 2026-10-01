@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { eq } from "drizzle-orm";
-import { Badge, EmptyState, formatValue, LinkButton, PageHeader, Panel, StatusBadge, Table, Tabs, Td, Th } from "@/components/ui";
+import { Badge, EmptyState, formatValue, PageHeader, Panel, StatusBadge, Table, Tabs, Td, Th } from "@/components/ui";
 import { FilterBar, SelectFilter } from "@/components/shell/filters";
 import { products } from "@/db/schema";
 import { previousPeriod, resolveRange, type LowCtr, type Movement, type QueryStat } from "@/core/search/insights";
@@ -171,8 +171,12 @@ export default async function SearchPerformancePage({ searchParams }: { searchPa
       </FilterBar>
 
       {!state.connected ? (
-        <EmptyState title={t("Not connected")} action={<LinkButton href="/settings/integrations" variant="gold">{t("Connect Google Search Console")}</LinkButton>}>
-          {t("No {provider} integration is connected for this scope. Beacon never shows estimated search numbers: connect a source to see measured data.", { provider: PROVIDER_LABEL[provider] })}
+        <EmptyState
+          variant="not_connected"
+          what={t("No {provider} data yet.", { provider: PROVIDER_LABEL[provider] })}
+          why={t("No {provider} integration is connected for this scope. Beacon never shows estimated search numbers: connect a source to see measured data.", { provider: PROVIDER_LABEL[provider] })}
+          action={{ label: provider === "BING_WEBMASTER" ? t("Connect Bing Webmaster") : t("Connect Google Search Console"), href: "/settings/integrations" }}
+        >
           {state.integrations.length > 0 && (
             <ul className="mt-3 flex flex-col gap-1">
               {state.integrations.map((i) => (
@@ -185,9 +189,13 @@ export default async function SearchPerformancePage({ searchParams }: { searchPa
           )}
         </EmptyState>
       ) : !insights || !range ? (
-        <EmptyState title={t("No data yet")} action={<LinkButton href="/settings/integrations">{t("Integration settings")}</LinkButton>}>
-          {t("{provider} is connected. Data appears after the first sync and the history import complete.", { provider: PROVIDER_LABEL[provider] })}
-          <div className="mt-2 text-xs text-muted">{lastSync ? t("Last successful sync: {date}", { date: when(lastSync)! }) : t("Waiting for the first sync.")}</div>
+        <EmptyState
+          variant="no_data_yet"
+          what={t("{provider} is connected, no data imported yet.", { provider: PROVIDER_LABEL[provider] })}
+          why={t("{provider} is connected. Data appears after the first sync and the history import complete.", { provider: PROVIDER_LABEL[provider] })}
+          action={{ label: t("Integration settings"), href: "/settings/integrations" }}
+        >
+          <div className="text-xs text-muted">{lastSync ? t("Last successful sync: {date}", { date: when(lastSync)! }) : t("Waiting for the first sync.")}</div>
           <ul className="mt-3 flex flex-col gap-1">
             {state.integrations.map((i) => (
               <li key={i.id} className="flex flex-wrap items-center gap-2 text-xs">
