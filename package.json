@@ -20,7 +20,9 @@
     "test:all": "vitest run",
     "test:e2e": "playwright test",
     "db:generate": "drizzle-kit generate",
+    "db:provision": "tsx src/db/provision.ts",
     "db:migrate": "tsx src/db/migrate.ts",
+    "release": "tsx src/db/provision.ts && tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts",
     "audit:deps": "pnpm audit --prod"
   },
