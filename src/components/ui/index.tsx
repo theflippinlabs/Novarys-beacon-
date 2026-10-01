@@ -142,6 +142,13 @@ const STATUS_TONE: Record<string, keyof typeof TONES> = {
   CANDIDATE: "neutral",
   ARCHIVED: "muted",
   UNKNOWN: "muted",
+  PENDING: "neutral",
+  PAID: "ok",
+  VOID: "muted",
+  DISABLED: "muted",
+  CANCELLED: "muted",
+  CONCLUDED: "ok",
+  ABANDONED: "muted",
 };
 
 export function StatusBadge({ status }: { status: string }) {
@@ -230,9 +237,9 @@ export function Table({ children }: { children: ReactNode }) {
 export function Th({ children, className }: { children?: ReactNode; className?: string }) {
   return <th className={cx("eyebrow whitespace-nowrap border-b border-line px-3 py-2 font-normal", className)}>{children}</th>;
 }
-export function Td({ children, className, colSpan }: { children?: ReactNode; className?: string; colSpan?: number }) {
+export function Td({ children, className, colSpan, title }: { children?: ReactNode; className?: string; colSpan?: number; title?: string }) {
   return (
-    <td colSpan={colSpan} className={cx("border-b border-line/60 px-3 py-2.5 align-top text-chrome", className)}>
+    <td colSpan={colSpan} title={title} className={cx("border-b border-line/60 px-3 py-2.5 align-top text-chrome", className)}>
       {children}
     </td>
   );

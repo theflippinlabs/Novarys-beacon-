@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { and, desc, eq } from "drizzle-orm";
 import { createContentAction } from "@/app/actions/content";
-import { Button, EmptyState, Field, Flash, HiddenBack, PageHeader, Panel, StatusBadge, Badge } from "@/components/ui";
+import { Button, EmptyState, Field, Flash, HiddenBack, PageHeader, Panel, Badge } from "@/components/ui";
 import { FilterBar, SelectFilter } from "@/components/shell/filters";
 import { contentAssets, products, queries } from "@/db/schema";
 import { PIPELINE } from "@/core/content/workflow";

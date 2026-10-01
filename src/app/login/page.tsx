@@ -5,6 +5,7 @@ import { getAuthContext } from "@/lib/auth/session";
 import { hasAnyUser } from "@/lib/auth/service";
 import { AuthFrame } from "@/components/shell/auth-frame";
 
+export const dynamic = "force-dynamic";
 export const metadata = { title: "Sign in" };
 
 export default async function LoginPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {

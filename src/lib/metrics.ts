@@ -44,9 +44,11 @@ function percentile(h: Hist, p: number) {
   return h.max;
 }
 
-export function snapshot() {
+export type RouteStat = { count: number; avgMs: number; p95Ms: number; maxMs: number; errors: number };
+
+export function snapshot(): { since: string; routes: Record<string, RouteStat>; jobs: Record<string, RouteStat & { dead: number }> } {
   const s = store();
-  const fmt = (h: Hist) => ({ count: h.count, avgMs: h.count ? Math.round(h.sum / h.count) : 0, p95Ms: percentile(h, 0.95), maxMs: Math.round(h.max), errors: h.errors });
+  const fmt = (h: Hist): RouteStat => ({ count: h.count, avgMs: h.count ? Math.round(h.sum / h.count) : 0, p95Ms: percentile(h, 0.95), maxMs: Math.round(h.max), errors: h.errors });
   return {
     since: new Date(s.startedAt).toISOString(),
     routes: Object.fromEntries([...s.routes.entries()].map(([k, h]) => [k, fmt(h)])),

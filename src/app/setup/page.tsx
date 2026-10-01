@@ -4,6 +4,7 @@ import { Button, Field, Flash } from "@/components/ui";
 import { hasAnyUser } from "@/lib/auth/service";
 import { AuthFrame } from "@/components/shell/auth-frame";
 
+export const dynamic = "force-dynamic";
 export const metadata = { title: "Set up" };
 
 export default async function SetupPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {

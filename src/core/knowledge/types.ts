@@ -47,3 +47,20 @@ export const facetsOf = (g: ProductGraph, kind: FacetKind) => g.facets.filter((f
 
 /** A fact is "usable" for public generation when it has not been rejected. Verified facts carry more confidence. */
 export const isVerified = (x: { verification: string }) => x.verification === "VERIFIED";
+
+/**
+ * Public view of the graph: only human-verified facts. Used for anything
+ * exposed without authentication (entity JSON, public recommendations).
+ */
+export function verifiedOnly(g: ProductGraph): ProductGraph {
+  const pv = Boolean(g.product.lastVerifiedAt);
+  return {
+    ...g,
+    product: pv ? g.product : { ...g.product, shortDescription: null, fullDescription: null, howItWorks: null },
+    facets: g.facets.filter(isVerified),
+    pricing: g.pricing.filter(isVerified),
+    faqs: g.faqs.filter(isVerified),
+    proofs: g.proofs.filter((p) => isVerified(p) && p.publishable),
+    competitors: g.competitors.map((c) => ({ ...c, comparisonFacts: c.comparisonFacts.filter((f) => f.verifiedAt && f.sourceUrl) })),
+  };
+}

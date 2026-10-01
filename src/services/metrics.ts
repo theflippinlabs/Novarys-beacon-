@@ -196,21 +196,22 @@ export async function dailySeries(tx: Tx, organizationId: string, days: number, 
 export async function revenueByDimension(tx: Tx, organizationId: string, dim: "channel" | "product", days: number) {
   const col = dim === "channel" ? sql`r.channel::text` : sql`p.name`;
   const r = await tx.execute<{ key: string; revenue: number; new_mrr: number; events: number; currency: string }>(sql`
-    select ${col} as key, sum(r.amount_cents)::bigint as revenue, sum(r.mrr_delta_cents)::bigint as new_mrr, count(*)::int as events, min(r.currency) as currency
+    select ${col} as key, sum(r.amount_cents)::bigint as revenue, sum(r.mrr_delta_cents)::bigint as new_mrr, count(*)::int as events, r.currency as currency
     from revenue_events r join products p on p.id = r.product_id
     where r.organization_id = ${organizationId} and r.occurred_at >= now() - make_interval(days => ${days})
-    group by 1 order by 2 desc`);
+    group by 1, r.currency order by 2 desc`);
   return r.rows.map((x) => ({ key: x.key, revenue: Number(x.revenue), newMrr: Number(x.new_mrr), events: Number(x.events), currency: x.currency }));
 }
 
 export async function mrrByDimension(tx: Tx, organizationId: string, dim: "channel" | "product") {
   const col = dim === "channel" ? sql`coalesce(s.channel::text, 'UNATTRIBUTED')` : sql`p.name`;
-  const r = await tx.execute<{ key: string; mrr: number; subs: number }>(sql`
-    select ${col} as key, sum(s.mrr_cents)::bigint as mrr, count(*)::int as subs
+  // Grouped per currency: amounts in different currencies are never summed together.
+  const r = await tx.execute<{ key: string; mrr: number; subs: number; currency: string }>(sql`
+    select ${col} as key, sum(s.mrr_cents)::bigint as mrr, count(*)::int as subs, s.currency as currency
     from subscriptions s join products p on p.id = s.product_id
     where s.organization_id = ${organizationId} and s.status in ('ACTIVE','PAST_DUE')
-    group by 1 order by 2 desc`);
-  return r.rows.map((x) => ({ key: x.key, mrr: Number(x.mrr), subs: Number(x.subs) }));
+    group by 1, s.currency order by 2 desc`);
+  return r.rows.map((x) => ({ key: x.key, mrr: Number(x.mrr), subs: Number(x.subs), currency: x.currency }));
 }
 
 export async function funnelCounts(tx: Tx, organizationId: string, days: number, productId?: string | null, channel?: string | null) {
