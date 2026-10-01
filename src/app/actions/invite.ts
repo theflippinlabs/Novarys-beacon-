@@ -8,6 +8,7 @@ import { clientIpHash, sessionTokenFrom } from "@/lib/auth/session";
 import { setSessionCookie } from "@/lib/auth/cookie";
 import { rateLimit } from "@/lib/security/rate-limit";
 import { hmac } from "@/lib/security/crypto";
+import { withFlash } from "@/lib/flash";
 import { acceptInvitation, INVITE_ERRORS } from "@/services/invitations";
 
 const Schema = z.discriminatedUnion("mode", [
@@ -19,7 +20,7 @@ const Schema = z.discriminatedUnion("mode", [
 export async function acceptInvitationAction(fd: FormData) {
   const parsed = Schema.safeParse(Object.fromEntries([...fd.entries()].filter(([k]) => !k.startsWith("$ACTION")).map(([k, v]) => [k, typeof v === "string" ? v : ""])));
   const token = typeof fd.get("token") === "string" ? String(fd.get("token")) : "";
-  const back = (msg: string, mode?: string) => `/invite/${encodeURIComponent(token)}?${mode ? `mode=${mode}&` : ""}error=${encodeURIComponent(msg)}`;
+  const back = (msg: string, mode?: string) => withFlash(`/invite/${encodeURIComponent(token)}${mode ? `?mode=${mode}` : ""}`, "error", msg, null);
   if (!parsed.success || !/^[A-Za-z0-9_-]+$/.test(token)) redirect(back(INVITE_ERRORS.invalid));
   const ipHash = await clientIpHash();
   const [byIp, byToken] = [await rateLimit(`invite:ip:${ipHash}`, 20, 900), await rateLimit(`invite:token:${hmac(token, "invite")}`, 10, 900)];
@@ -32,5 +33,5 @@ export async function acceptInvitationAction(fd: FormData) {
   const h = await headers();
   const { token: session } = await createSession(res.userId, { ipHash, userAgent: h.get("user-agent") ?? undefined, organizationId: res.organizationId });
   await setSessionCookie(session);
-  redirect("/?ok=Welcome to Beacon. Your invitation was accepted.");
+  redirect(withFlash("/", "ok", "Welcome to Beacon. Your invitation was accepted.", res.userId));
 }

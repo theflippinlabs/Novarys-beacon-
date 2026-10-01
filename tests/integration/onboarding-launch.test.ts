@@ -45,7 +45,7 @@ async function run(action: (fd: FormData) => Promise<unknown>, fields: Record<st
   } catch (e) {
     if (!(e instanceof Redirect)) throw e;
     const u = new URL(e.url, "http://x");
-    return { path: `${u.pathname}${u.search.replace(/[?&](ok|error)=[^&]*/g, "")}`, ok: u.searchParams.get("ok"), error: u.searchParams.get("error") };
+    return { path: `${u.pathname}${u.search.replace(/[?&](ok|error|fs)=[^&]*/g, "")}`, ok: u.searchParams.get("ok"), error: u.searchParams.get("error") };
   }
   throw new Error("action did not redirect");
 }
@@ -241,7 +241,8 @@ describe("launch checklist and launch mode", () => {
     );
     byKey = Object.fromEntries((await q((tx) => productLaunchChecklist(tx, A.org.id, productId))).map((i) => [i.key, i]));
     expect(byKey.core_pages.status).toBe("DONE");
-    expect(byKey.site).toMatchObject({ status: "DONE", evidence: { params: { n: 0 } } });
+    expect(byKey.site).toMatchObject({ status: "DONE", evidence: { params: { domain } } });
+    expect(byKey.critical_issues).toMatchObject({ status: "DONE", blocking: true, evidence: { params: { n: 0 } } });
     expect(byKey.sitemap.status).toBe("DONE");
     // Only the homepage error counts (the deep page is not a key page).
     expect(byKey.structured_data).toMatchObject({ status: "TODO", evidence: { params: { n: 1 } } });

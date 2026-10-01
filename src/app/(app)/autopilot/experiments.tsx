@@ -1,6 +1,6 @@
 import { desc, eq } from "drizzle-orm";
 import { addExperimentAction, designExperimentAction, enterExperimentCountsAction, refreshExperimentCountsAction, setExperimentStatusAction } from "@/app/actions/growth";
-import { Badge, Button, Field, HiddenBack, Meter, Panel, StatusBadge, formatValue } from "@/components/ui";
+import { Badge, Button, EmptyState, Field, HiddenBack, Meter, Panel, StatusBadge, formatValue } from "@/components/ui";
 import { evaluateExperiment, type ExperimentResult } from "@/core/experiments/stats";
 import { EXPERIMENT_NEXT, type ExperimentStatus } from "@/core/experiments/workflow";
 import { withOrg } from "@/db";
@@ -219,15 +219,20 @@ export async function Experiments({ orgId, canWrite, back }: { orgId: string; ca
             })}
           </ul>
         ) : (
-          <p className="text-sm text-muted">{t("No experiments yet.")}</p>
+          <EmptyState
+            variant="not_generated"
+            what={t("No experiments yet.")}
+            why={t("An experiment compares a control and a variant on one counted event, with a minimum sample size per arm. Create one from a hypothesis, or from an experiment the growth report proposes.")}
+            action={canWrite ? { label: t("Design an experiment"), href: `${back}#new-experiment` } : { label: t("Open the growth report"), href: back }}
+          />
         )}
         <p className="mt-4 border-t border-line pt-3 text-[11px] text-muted">
           {t("Two-proportion z-test, or Fisher's exact test when an expected count is below 5. No winner is declared below the minimum sample size or with p ≥ 0.05: the result stays INCONCLUSIVE.")}
         </p>
       </Panel>
       {canWrite && (
-        <Panel title={t("New experiment")}>
-          <form action={addExperimentAction} className="flex flex-col gap-3">
+        <Panel title={t("New experiment")} className="scroll-mt-20">
+          <form id="new-experiment" action={addExperimentAction} className="flex flex-col gap-3">
             <HiddenBack path={`${back}#experiments`} />
             <Field label={t("Name")}>
               <input name="name" required maxLength={160} />

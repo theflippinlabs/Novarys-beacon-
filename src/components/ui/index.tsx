@@ -2,6 +2,8 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { getI18n, getT } from "@/i18n/server";
 import type { Kpi } from "@/services/metrics";
+import { getAuthContext } from "@/lib/auth/session";
+import { readFlash } from "@/lib/flash";
 import { FlashSeen } from "./flash-seen";
 
 export function cx(...xs: (string | false | null | undefined)[]) {
@@ -314,15 +316,22 @@ export function Field({ label, hint, children, className }: { label: string; hin
   );
 }
 
-/** Flash messages from server actions (one-shot: see FlashSeen); runtime strings are translated through the dictionary templates. */
+/**
+ * Flash messages from server actions (one-shot: see FlashSeen); runtime
+ * strings are translated through the dictionary templates. Only messages
+ * signed by the app for this member (or for anonymous pages) are shown: a
+ * crafted `?ok=` / `?error=` link displays nothing (see lib/flash.ts).
+ */
 export async function Flash({ searchParams }: { searchParams: Record<string, string | string[] | undefined> }) {
+  if (typeof searchParams.ok !== "string" && typeof searchParams.error !== "string") return null;
+  const auth = await getAuthContext();
+  const flash = readFlash(searchParams, auth ? [auth.user.id, null] : [null]);
+  if (!flash) return null;
   const t = await getT();
-  const ok = typeof searchParams.ok === "string" ? searchParams.ok : null;
-  const error = typeof searchParams.error === "string" ? searchParams.error : null;
-  if (!ok && !error) return null;
+  const error = flash.kind === "error";
   return (
     <div role="status" className={cx("mb-6 border px-4 py-3 text-sm", error ? "border-crit/50 text-crit" : "border-ok/40 text-ok")}>
-      {error ? `✕ ${t(error)}` : `✓ ${t(ok!)}`}
+      {error ? `✕ ${t(flash.text)}` : `✓ ${t(flash.text)}`}
       <FlashSeen />
     </div>
   );

@@ -36,7 +36,7 @@ export async function verifyDomainAction(fd: FormData) {
     if (!probe) throw new Error("Domain not found");
     const row = await recordVerification(tx, actor, id, probe);
     // A failed check is still recorded (last checked, last error), so it is reported without throwing.
-    if (!probe.ok) return { redirect: `${BACK}?error=${encodeURIComponent(`Verification failed for ${row.domain}: ${probe.error}`.slice(0, 280))}#d-${id}` };
+    if (!probe.ok) return { error: `Verification failed for ${row.domain}: ${probe.error}`.slice(0, 280), redirect: `${BACK}#d-${id}` };
     return { ok: `${row.domain} is verified.`, redirect: `${BACK}#d-${id}` };
   });
 }

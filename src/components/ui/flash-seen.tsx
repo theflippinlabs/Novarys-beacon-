@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect } from "react";
+import { FLASH_PARAMS } from "@/lib/flash-params";
 
-/** URL with the flash parameters (`ok`, `error`) removed, or null when it has none. */
+/** URL with the flash parameters (`ok`, `error` and the signature `fs`) removed, or null when it has none. */
 export function withoutFlashParams(href: string): string | null {
   const u = new URL(href);
-  if (!u.searchParams.has("ok") && !u.searchParams.has("error")) return null;
-  u.searchParams.delete("ok");
-  u.searchParams.delete("error");
+  if (!FLASH_PARAMS.some((p) => u.searchParams.has(p))) return null;
+  for (const p of FLASH_PARAMS) u.searchParams.delete(p);
   return `${u.pathname}${u.search}${u.hash}`;
 }
 

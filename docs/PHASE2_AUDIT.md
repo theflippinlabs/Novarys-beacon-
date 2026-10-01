@@ -427,3 +427,17 @@ Priority: P0 (security, data integrity, broken), P1 (core Phase 2 capability), P
 ## Remediation plan
 
 Wave 1 fixes foundations before features: every P0 above, then the P1 items that the Phase 2 features depend on (search data model, measurement states, provenance, crawler data, opportunity inputs, security headers, roles, deployment). Wave 2 builds the Phase 2 capabilities on top (briefing, weekly report, notifications, autopilot loop, experiments, repurposing, ecosystem graph, onboarding v2, score v2, launch mode, command palette, mobile, empty states). Results are recorded in `docs/SECURITY_AUDIT.md` and `docs/PRODUCTION_VALIDATION.md`.
+
+## Status after remediation
+
+Re-audit on 2026-10-01 after Waves 1 and 2 and the follow-up fixes: every FIX REQUIRED item was checked against the code again (files and functions opened, not commit messages). Every P0 item is implemented. The follow-up wave closed: the content creation IDOR (#44, foreign product or query ids now rejected in `createAsset`, covered by the authorization matrix), per-type job concurrency caps in the claim SQL (#30), demo data isolated in `pnpm db:seed:demo` and refused in production (#1), SQL aggregation for AI visibility prompt summaries (#56), product-scoped cross-sell KPIs (#2), registry-driven provider lists (#24, part), the missing launch checklist items (#6), approval handling when an approved draft is edited (#33), signed flash messages (#47), a single list of distribution kinds (#41) and the remaining empty states (#3).
+
+What remains, by priority:
+
+| # | Item | Priority | Remaining | Needs |
+|---|---|---|---|---|
+| 46 | Database roles | P1 | The app role still owns the tables and runs migrations; the planned owner/migrator role split is not done. RLS is forced and the app role is refused at boot if it can bypass RLS. | A migration of ownership on the production database, planned as a dedicated change |
+| 55 | Deployment as code | P1 | Pre-deploy command, health check and restart policy live in the Railway dashboard (a root `railway.json` would apply to both services). Documented in the README. | Per-service config files and the config path set in the Railway dashboard |
+| 24 | Bing backlinks | P1 | The Beacon Score's referring-domains line stays "not measured": no source writes it yet. | A Bing Webmaster API key and its link endpoints |
+| 19 | Competitor intelligence | P2 | No competitor crawl or pricing-page change watch. | Buildable (robots-compliant, low budget) |
+| 51 | Media storage | P2 | Image bytes are stored in PostgreSQL. | S3-compatible bucket credentials |

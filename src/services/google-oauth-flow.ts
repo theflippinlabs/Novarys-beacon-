@@ -5,14 +5,17 @@ import type { AuthContext } from "@/lib/auth/service";
 import { can } from "@/lib/auth/rbac";
 import { authorizationUrl, exchangeCode, googleOAuthClient, listSearchConsoleSites, signOAuthState, verifyOAuthState, type GoogleOAuthClient } from "@/integrations/google-oauth";
 import { sanitizeProviderMessage } from "@/integrations/types";
+import { withFlash } from "@/lib/flash";
 import { connectGoogleOAuth } from "./integration-health";
 
 const SETTINGS = "/settings/integrations";
-const flash = (kind: "ok" | "error", msg: string) => `${SETTINGS}?${kind}=${encodeURIComponent(msg.slice(0, 300))}`;
+/** Signed flash on the integrations page, for the signed-in member (`ctx` is checked before any flash is built). */
+const flashFor = (ctx: AuthContext) => (kind: "ok" | "error", msg: string) => withFlash(SETTINGS, kind, msg, ctx.user.id);
 
 /** Where "Connect with Google" sends the browser (a Google consent URL, or back to settings with a reason). */
 export async function googleOAuthStart(ctx: AuthContext | null, productId: string | null, client: GoogleOAuthClient | null = googleOAuthClient()): Promise<string> {
   if (!ctx) return "/login";
+  const flash = flashFor(ctx);
   if (!can(ctx.role, "integration:manage")) return flash("error", "You do not have permission to do that.");
   if (!client) return flash("error", "Not configured: add the Google OAuth client");
   if (!productId || !/^[0-9a-f-]{36}$/i.test(productId)) return flash("error", "Select a product for this integration.");
@@ -32,6 +35,7 @@ export async function googleOAuthCallback(
   opts: { client?: GoogleOAuthClient | null; fetchImpl?: typeof fetch; ipHash?: string } = {},
 ): Promise<string> {
   if (!ctx) return "/login";
+  const flash = flashFor(ctx);
   const client = opts.client === undefined ? googleOAuthClient() : opts.client;
   if (!client) return flash("error", "Not configured: add the Google OAuth client");
   const state = verifyOAuthState(params.state, { organizationId: ctx.org.id, userId: ctx.user.id });

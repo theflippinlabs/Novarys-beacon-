@@ -336,12 +336,22 @@ export default async function ContentDetail({
                 asset.status !== "APPROVED" &&
                 asset.status !== "PUBLISHED" &&
                 approved.id !== live?.id && (
-                  <p className="text-xs text-muted">
-                    {t(
-                      "Version {n} was approved; edits since then need a new approval.",
-                      { n: approved.version },
-                    )}
-                  </p>
+                  <div className="flex flex-col gap-1 border border-warn/40 px-3 py-2 text-xs text-warn">
+                    <p>
+                      {t(
+                        "Version {n} was approved, but the latest draft (version {m}) has different text: it needs fresh checks and a new approval. The approval of version {n} does not carry over and it is not published.",
+                        { n: approved.version, m: v?.version ?? approved.version },
+                      )}
+                    </p>
+                    <details className="text-chrome">
+                      <summary className="cursor-pointer text-muted hover:text-chrome">
+                        {t("Show the approved text (version {n})", { n: approved.version })}
+                      </summary>
+                      <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-words border border-line bg-obsidian/40 p-3 font-mono text-[11px]">
+                        {approved.body}
+                      </pre>
+                    </details>
+                  </div>
                 )}
               {data.source && (
                 <p className="text-xs text-chrome">

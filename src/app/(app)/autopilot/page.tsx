@@ -331,12 +331,25 @@ export default async function AutopilotPage({ searchParams }: { searchParams: Pr
               </tbody>
             </Table>
           ) : (
-            <p className="p-4 text-sm text-muted">{t("No relationships yet. Describe how your products relate (complementary, same audience, workflow extension, upsell, cross-sell) so cross-sell rules rest on an explicit, reviewable reason.")}</p>
+            <div className="p-4">
+              <EmptyState
+                variant="not_generated"
+                what={t("No relationships yet.")}
+                why={t("Describe how your products relate (complementary, same audience, workflow extension, upsell, cross-sell) so cross-sell rules rest on an explicit, reviewable reason.")}
+                action={
+                  can("growth:write") && data.prods.length > 1
+                    ? { label: t("Describe a relationship"), href: `${back}#new-relationship` }
+                    : data.prods.length < 2
+                      ? { label: t("Add a product"), href: "/products" }
+                      : { label: t("Review cross-sell rules"), href: `${back}#cross-sell` }
+                }
+              />
+            </div>
           )}
         </Panel>
         {can("growth:write") && data.prods.length > 1 && (
           <Panel title={t("New relationship")}>
-            <form action={addRelationshipAction} className="flex flex-col gap-3">
+            <form id="new-relationship" action={addRelationshipAction} className="flex flex-col gap-3">
               <HiddenBack path={`${back}#ecosystem`} />
               <div className="grid grid-cols-2 gap-2">
                 <Field label={t("From")}>

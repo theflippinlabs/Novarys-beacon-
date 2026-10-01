@@ -124,7 +124,11 @@ describe("product knowledge graph + onboarding analysis", () => {
     // Providers that are not connected are reported as such, never as a measured zero.
     expect(status.search_console).toBe("NOT_CONNECTED");
     expect(status.analytics).toBe("NOT_CONNECTED");
-    expect(items.filter((i) => i.blocking).map((i) => i.key).sort()).toEqual(["conversion_tracking", "core_pages", "knowledge", "site"]);
+    expect(status.bing).toBe("NOT_CONNECTED");
+    expect(status.revenue_source).toBe("NOT_CONNECTED");
+    // Critical issues are their own blocking item (no successful audit yet).
+    expect(status.critical_issues).toBe("TODO");
+    expect(items.filter((i) => i.blocking).map((i) => i.key).sort()).toEqual(["conversion_tracking", "core_pages", "critical_issues", "knowledge", "site"]);
   });
 
   it("analyzeProduct generates CANDIDATE queries, plans pages, suggests distribution venues and completes onboarding", async () => {

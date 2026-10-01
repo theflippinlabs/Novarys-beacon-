@@ -1,6 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import type { Tx } from "@/db";
-import { products } from "@/db/schema";
+import { organizations, products } from "@/db/schema";
+import { availableProviders } from "@/ai/registry";
 import { computeCompleteness } from "@/core/knowledge/completeness";
 import { loadProductGraph } from "@/core/knowledge/load";
 import { claimVerification } from "@/core/knowledge/types";
@@ -10,6 +11,7 @@ import { dailyDeltas, launchChecklist, launchPhase, MONITORING_DAYS, openBlocker
 import { eventTypesFor } from "@/core/conversions/events";
 import { audit, type Actor } from "@/lib/audit";
 import { availability, type KpiState } from "./metrics";
+import { isPublicSiteEnabled } from "./public";
 import { latestAudit, openIssueCounts, verifiedDomainNames } from "./seo";
 
 /**
@@ -52,6 +54,14 @@ export async function launchFacts(tx: Tx, organizationId: string, productId: str
     select
       (select status::text from integrations where organization_id = ${organizationId} and provider = 'GOOGLE_ANALYTICS' and (product_id = ${productId} or product_id is null) order by product_id nulls last limit 1) as ga4,
       (select status::text from integrations where organization_id = ${organizationId} and provider = 'GOOGLE_SEARCH_CONSOLE' and (product_id = ${productId} or product_id is null) order by product_id nulls last limit 1) as gsc,
+      (select status::text from integrations where organization_id = ${organizationId} and provider = 'BING_WEBMASTER' and (product_id = ${productId} or product_id is null) order by product_id nulls last limit 1) as bing,
+      (select status::text from integrations where organization_id = ${organizationId} and provider = 'STRIPE' and (product_id = ${productId} or product_id is null) order by product_id nulls last limit 1) as stripe,
+      ((select count(*) from revenue_events where organization_id = ${organizationId} and product_id = ${productId})
+        + (select count(*) from subscriptions where organization_id = ${organizationId} and product_id = ${productId}))::int as revenue_events,
+      (select count(*) from ai_visibility_prompts where organization_id = ${organizationId} and product_id = ${productId} and active)::int as ai_prompts,
+      (select count(*) from ai_visibility_prompts pr where pr.organization_id = ${organizationId} and pr.product_id = ${productId} and pr.active
+         and exists (select 1 from ai_visibility_tests t where t.organization_id = ${organizationId} and t.prompt_id = pr.id))::int as ai_tested,
+      (select count(*) from referral_codes where organization_id = ${organizationId} and product_id = ${productId} and active)::int as referral_codes,
       exists(select 1 from pages where organization_id = ${organizationId} and product_id = ${productId} and type = 'PRODUCT' and status = 'PUBLISHED') as product_published,
       exists(select 1 from pages where organization_id = ${organizationId} and product_id = ${productId} and type = 'PRODUCT' and status <> 'ARCHIVED') as product_planned,
       (select count(*) from api_keys where organization_id = ${organizationId} and revoked_at is null and (product_id = ${productId} or product_id is null))::int as keys,
@@ -65,6 +75,14 @@ export async function launchFacts(tx: Tx, organizationId: string, productId: str
       ${launchDay ? sql`(select count(distinct day) from search_daily where organization_id = ${organizationId} and product_id = ${productId} and query is null and page is null and country is null and device is null and day >= ${launchDay}::date)::int` : sql`0`} as search_days,
       ${launchDay ? sql`(select count(distinct day) from analytics_daily where organization_id = ${organizationId} and product_id = ${productId} and day >= ${launchDay}::date)::int` : sql`0`} as analytics_days`)
   ).rows[0];
+  const org = await tx.query.organizations.findFirst({ where: eq(organizations.id, organizationId), columns: { slug: true, settings: true } });
+  if (!org) throw new Error("Organisation not found");
+  // Sequential on the one transaction (each provider is resolved in turn).
+  // An unreadable stored credential counts as not configured rather than breaking the checklist.
+  const aiProviderConfigured = await availableProviders(tx, organizationId).then(
+    (list) => list.length > 0,
+    () => false,
+  );
   const integ = (v: unknown): LaunchFacts["analytics"] => (v === "CONNECTED" ? "CONNECTED" : v === "ERROR" || v === "EXPIRED" ? "FAILING" : "NOT_CONNECTED");
   const b = (v: unknown) => v === true || v === "t";
   return {
@@ -74,6 +92,11 @@ export async function launchFacts(tx: Tx, organizationId: string, productId: str
     audit: auditFacts,
     analytics: integ(s.ga4),
     searchConsole: integ(s.gsc),
+    bing: integ(s.bing),
+    publicSite: { enabled: isPublicSiteEnabled(org.settings), orgSlug: org.slug, listed: Boolean(p.onboardingCompletedAt) && p.status !== "DEPRECATED" },
+    aiVisibility: { providerConfigured: aiProviderConfigured, activePrompts: n(s.ai_prompts), testedPrompts: n(s.ai_tested) },
+    referrals: { activeCodes: n(s.referral_codes) },
+    revenue: { stripe: integ(s.stripe), events: n(s.revenue_events) },
     productPage: { published: b(s.product_published), planned: b(s.product_planned) },
     docs: { url: p.documentationUrl, verified: Boolean(p.documentationUrl) && claimVerification(g, "documentation_url") === "VERIFIED" },
     tracking: { activeKeys: n(s.keys), events: n(s.events) },

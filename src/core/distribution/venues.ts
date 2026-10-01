@@ -35,7 +35,9 @@ export const DISTRIBUTION_CATEGORIES: DistributionCategory[] = [
   "COMMUNITY",
 ];
 
-export type DistributionKind = "DIRECTORY" | "LAUNCH_PLATFORM" | "COMMUNITY" | "SOCIAL_CHANNEL" | "NEWSLETTER" | "PARTNER" | "AFFILIATE" | "INFLUENCER" | "AGENCY" | "MEDIA" | "BACKLINK";
+/** Target kinds (the `distribution_kind` database enum): the one list used by actions, pages and agent tools. */
+export const DISTRIBUTION_KINDS = ["DIRECTORY", "LAUNCH_PLATFORM", "COMMUNITY", "SOCIAL_CHANNEL", "NEWSLETTER", "PARTNER", "AFFILIATE", "INFLUENCER", "AGENCY", "MEDIA", "BACKLINK"] as const;
+export type DistributionKind = (typeof DISTRIBUTION_KINDS)[number];
 
 /** Audience tags derived from the product's knowledge graph (see relevance.ts). */
 export type AudienceTag = "b2b" | "b2c" | "dev" | "ai" | "open_source" | "service" | "creator";

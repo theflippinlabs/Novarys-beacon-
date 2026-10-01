@@ -1,11 +1,12 @@
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
+import { DISTRIBUTION_KINDS } from "@/core/distribution/catalog";
 import { distributionTargets, products } from "@/db/schema";
 import { addDistributionTarget, setDistributionStatus } from "@/services/distribution";
 import { defineTool } from "../types";
 import { agentActor, capped, idRef, iso, limitInput, LIST_CAP, optionalProductRef, requirePermission, resolveOptionalProduct, trim } from "./util";
 
-const KINDS = z.enum(["DIRECTORY", "LAUNCH_PLATFORM", "COMMUNITY", "SOCIAL_CHANNEL", "NEWSLETTER", "PARTNER", "AFFILIATE", "INFLUENCER", "AGENCY", "MEDIA", "BACKLINK"]);
+const KINDS = z.enum(DISTRIBUTION_KINDS);
 const NEVER_SUBMITS = "Beacon never submits to third-party platforms: SUBMITTED/PUBLISHED require a human approver and are recorded by people in the app.";
 
 export const listDistributionTargets = defineTool({

@@ -1,5 +1,7 @@
 import { slugify } from "@/core/util/text";
-import { VENUES, type DistributionCategory, type DistributionKind } from "./venues";
+import { DISTRIBUTION_KINDS, VENUES, type DistributionCategory, type DistributionKind } from "./venues";
+
+export { DISTRIBUTION_KINDS };
 
 /**
  * Distribution: venue catalogue (venues.ts), the target state machine,
@@ -13,7 +15,6 @@ export const DISTRIBUTION_CATALOG = VENUES;
 
 export const DISTRIBUTION_STATUSES = ["DISCOVERED", "QUALIFIED", "PREPARED", "SUBMITTED", "PUBLISHED", "PERFORMING", "FOLLOW_UP", "REJECTED"] as const;
 export type DistributionStatus = (typeof DISTRIBUTION_STATUSES)[number];
-export const DISTRIBUTION_FLOW = ["DISCOVERED", "QUALIFIED", "PREPARED", "SUBMITTED", "PUBLISHED", "PERFORMING"] as const;
 
 /** Allowed transitions, enforced server-side (services/distribution.ts). */
 export const DISTRIBUTION_NEXT: Record<DistributionStatus, readonly DistributionStatus[]> = {

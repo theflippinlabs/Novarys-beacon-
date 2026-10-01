@@ -10,17 +10,21 @@ import { setSessionCookie } from "@/lib/auth/cookie";
 import { rateLimit } from "@/lib/security/rate-limit";
 import { hmac, safeEqual } from "@/lib/security/crypto";
 import { slugify } from "@/core/util/text";
+import { withFlash } from "@/lib/flash";
+
+/** Anonymous (signed-out) error flash for the login and setup pages. */
+const fail = (path: string, msg: string) => withFlash(path, "error", msg, null);
 
 const LoginSchema = z.object({ email: z.string().email().max(320), password: z.string().min(1).max(256) });
 
 export async function loginAction(fd: FormData) {
   const parsed = LoginSchema.safeParse({ email: fd.get("email"), password: fd.get("password") });
-  if (!parsed.success) redirect("/login?error=Enter a valid email and password.");
+  if (!parsed.success) redirect(fail("/login", "Enter a valid email and password."));
   const ipHash = await clientIpHash();
   const [byIp, byEmail] = await Promise.all([rateLimit(`login:ip:${ipHash}`, 20, 900), rateLimit(`login:email:${hmac(parsed.data.email.toLowerCase(), "email")}`, 10, 900)]);
-  if (!byIp.allowed || !byEmail.allowed) redirect("/login?error=Too many attempts. Try again in 15 minutes.");
+  if (!byIp.allowed || !byEmail.allowed) redirect(fail("/login", "Too many attempts. Try again in 15 minutes."));
   const res = await authenticate(parsed.data.email, parsed.data.password, { ipHash });
-  if (!res.ok) redirect(`/login?error=${res.reason === "throttled" ? "Too many failed attempts. Wait a moment and try again." : "Invalid email or password."}`);
+  if (!res.ok) redirect(fail("/login", res.reason === "throttled" ? "Too many failed attempts. Wait a moment and try again." : "Invalid email or password."));
   const h = await headers();
   const { token } = await createSession(res.userId, { ipHash, userAgent: h.get("user-agent") ?? undefined });
   await setSessionCookie(token);
@@ -51,19 +55,19 @@ export async function setupAction(fd: FormData) {
   const expected = process.env.BEACON_SETUP_TOKEN;
   if (expected) {
     const given = String(fd.get("setupToken") ?? "");
-    if (!safeEqual(given, expected)) redirect("/setup?error=Invalid setup token.");
-  } else if (process.env.NODE_ENV === "production") redirect("/setup?error=Set BEACON_SETUP_TOKEN to enable first-run setup.");
+    if (!safeEqual(given, expected)) redirect(fail("/setup", "Invalid setup token."));
+  } else if (process.env.NODE_ENV === "production") redirect(fail("/setup", "Set BEACON_SETUP_TOKEN to enable first-run setup."));
   const { setupToken: _t, ...fields } = Object.fromEntries(fd.entries());
   const parsed = SetupSchema.safeParse(fields);
-  if (!parsed.success) redirect(`/setup?error=${encodeURIComponent(parsed.error.issues[0].path.join(".") + ": " + parsed.error.issues[0].message)}`);
+  if (!parsed.success) redirect(fail("/setup", parsed.error.issues[0].path.join(".") + ": " + parsed.error.issues[0].message));
   const ipHash = await clientIpHash();
-  if (!(await rateLimit(`setup:${ipHash}`, 5, 3600)).allowed) redirect("/setup?error=Too many attempts.");
+  if (!(await rateLimit(`setup:${ipHash}`, 5, 3600)).allowed) redirect(fail("/setup", "Too many attempts."));
   let userId: string;
   try {
     const { user } = await createOrganizationWithOwner({ orgName: parsed.data.orgName, orgSlug: slugify(parsed.data.orgName) || "org", email: parsed.data.email, name: parsed.data.name, password: parsed.data.password });
     userId = user.id;
   } catch (e) {
-    redirect(`/setup?error=${encodeURIComponent((e as Error).message)}`);
+    redirect(fail("/setup", (e as Error).message));
   }
   const { token } = await createSession(userId, { ipHash });
   await setSessionCookie(token);

@@ -22,6 +22,7 @@ import { addDistributionTarget, approveSubmission, prepareSubmission, setDistrib
 import { decideRecommendation } from "@/services/autopilot";
 import { createExperiment, designExperiment, enterExperimentCounts, refreshExperimentCounts, setExperimentStatus } from "@/services/experiments";
 import { DISTRIBUTION_CATEGORIES, type DistributionCategory } from "@/core/distribution/venues";
+import { DISTRIBUTION_KINDS } from "@/core/distribution/catalog";
 
 /** Conversion events an experiment can count. */
 const EXPERIMENT_METRICS = ["CTA_CLICK", "PRODUCT_VIEWED", "SIGNUP_STARTED", "SIGNUP_COMPLETED", "TRIAL_STARTED", "ACTIVATION_COMPLETED", "CHECKOUT_STARTED", "SUBSCRIPTION_STARTED"] as const;
@@ -90,7 +91,7 @@ export async function runAiTestsAction(fd: FormData) {
 }
 
 // ── Distribution ────────────────────────────────────────────────────────
-const KINDS = z.enum(["DIRECTORY", "LAUNCH_PLATFORM", "COMMUNITY", "SOCIAL_CHANNEL", "NEWSLETTER", "PARTNER", "AFFILIATE", "INFLUENCER", "AGENCY", "MEDIA", "BACKLINK"]);
+const KINDS = z.enum(DISTRIBUTION_KINDS);
 const DSTATUS = z.enum(["DISCOVERED", "QUALIFIED", "PREPARED", "SUBMITTED", "PUBLISHED", "REJECTED", "FOLLOW_UP", "PERFORMING"]);
 
 export async function addDistributionTargetAction(fd: FormData) {

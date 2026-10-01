@@ -33,13 +33,23 @@ export type ChecklistItem = {
   href: string;
 };
 
+export type IntegrationState = "CONNECTED" | "FAILING" | "NOT_CONNECTED";
+
 export type LaunchFacts = {
   slug: string;
   knowledge: { completeness: number; facts: number; verified: number };
   domain: { name: string | null; verified: boolean; https: boolean | null };
   audit: { id: string; critical: number; schemaErrorsOnKeyPages: number; sitemaps: number; sitemapErrors: number; finishedAt: string | null } | null;
-  analytics: "CONNECTED" | "FAILING" | "NOT_CONNECTED";
-  searchConsole: "CONNECTED" | "FAILING" | "NOT_CONNECTED";
+  analytics: IntegrationState;
+  searchConsole: IntegrationState;
+  bing: IntegrationState;
+  /** Hosted llms.txt and entity endpoint: the organisation's public site switch and whether the product is served there (onboarded, not deprecated). */
+  publicSite: { enabled: boolean; orgSlug: string; listed: boolean };
+  /** AI visibility baseline: the product's active prompts and how many of them have at least one sampled test. */
+  aiVisibility: { providerConfigured: boolean; activePrompts: number; testedPrompts: number };
+  referrals: { activeCodes: number };
+  /** Revenue source: the Stripe integration state and the revenue events or subscriptions received for the product. */
+  revenue: { stripe: IntegrationState; events: number };
   productPage: { published: boolean; planned: boolean };
   docs: { url: string | null; verified: boolean };
   tracking: { activeKeys: number; events: number };
@@ -63,8 +73,12 @@ export function launchChecklist(f: LaunchFacts): ChecklistItem[] {
   const base = `/products/${f.slug}`;
   const verifiedRatio = f.knowledge.facts ? f.knowledge.verified / f.knowledge.facts : 0;
   const knowledgeOk = f.knowledge.completeness >= KNOWLEDGE_MIN_COMPLETENESS && verifiedRatio >= KNOWLEDGE_MIN_VERIFIED;
-  const siteOk = Boolean(f.domain.name && f.domain.verified && f.domain.https && f.audit && f.audit.critical === 0);
-  const integration = (s: LaunchFacts["analytics"]): ItemStatus => (s === "CONNECTED" ? "DONE" : s === "FAILING" ? "TODO" : "NOT_CONNECTED");
+  const siteOk = Boolean(f.domain.name && f.domain.verified && f.domain.https && f.audit);
+  const integration = (s: IntegrationState): ItemStatus => (s === "CONNECTED" ? "DONE" : s === "FAILING" ? "TODO" : "NOT_CONNECTED");
+  const hostedOk = f.publicSite.enabled && f.publicSite.listed && f.knowledge.verified > 0;
+  const ai = f.aiVisibility;
+  const aiDone = ai.activePrompts > 0 && ai.testedPrompts >= ai.activePrompts;
+  const revenueDone = f.revenue.stripe === "CONNECTED" || f.revenue.events > 0;
   const items: ChecklistItem[] = [
     {
       key: "knowledge",
@@ -89,8 +103,33 @@ export function launchChecklist(f: LaunchFacts): ChecklistItem[] {
             ? { text: "{domain} does not answer over HTTPS.", params: { domain: f.domain.name } }
             : !f.audit
               ? { text: "{domain} is verified; no successful audit yet.", params: { domain: f.domain.name } }
-              : { text: "{domain} verified, HTTPS, {n} critical issues in the latest audit.", params: { domain: f.domain.name, n: f.audit.critical } },
+              : { text: "{domain} is verified and answers over HTTPS in the latest audit.", params: { domain: f.domain.name } },
       href: !f.domain.name ? `${base}/onboarding?step=website` : !f.domain.verified ? "/discovery/domains" : f.audit ? `/discovery/audits/${f.audit.id}` : `/discovery?product=${f.slug}`,
+    },
+    {
+      // Kept blocking: critical issues used to block through the site item.
+      key: "critical_issues",
+      phase: "PRE_LAUNCH",
+      label: "No critical technical issues",
+      status: f.audit && f.audit.critical === 0 ? "DONE" : "TODO",
+      blocking: true,
+      evidence: !f.audit ? { text: "No successful audit yet." } : { text: "{n} open critical issue(s) in the latest audit.", params: { n: f.audit.critical } },
+      href: f.audit ? `/discovery/audits/${f.audit.id}` : `/discovery?product=${f.slug}`,
+    },
+    {
+      key: "hosted_endpoints",
+      phase: "PRE_LAUNCH",
+      label: "llms.txt and entity endpoint available",
+      status: hostedOk ? "DONE" : "TODO",
+      blocking: false,
+      evidence: !f.publicSite.enabled
+        ? { text: "The public site is turned off for the organisation: llms.txt and the entity endpoint answer 404." }
+        : !f.publicSite.listed
+          ? { text: "The product is not served yet: llms.txt and the entity endpoint list onboarded, non-deprecated products only." }
+          : f.knowledge.verified === 0
+            ? { text: "No verified fact yet: the entity profile and llms.txt publish verified facts only." }
+            : { text: "Served at /p/{org}/llms.txt and /api/v1/entity/{org}/{product} with {n} verified fact(s).", params: { org: f.publicSite.orgSlug, product: f.slug, n: f.knowledge.verified } },
+      href: !f.publicSite.enabled ? "/settings" : !f.publicSite.listed ? `${base}/onboarding` : f.knowledge.verified === 0 ? `${base}/knowledge` : `/api/v1/entity/${f.publicSite.orgSlug}/${f.slug}`,
     },
     {
       key: "analytics",
@@ -108,6 +147,15 @@ export function launchChecklist(f: LaunchFacts): ChecklistItem[] {
       status: integration(f.searchConsole),
       blocking: false,
       evidence: { text: f.searchConsole === "CONNECTED" ? "Google Search Console is connected." : f.searchConsole === "FAILING" ? "Google Search Console is configured but its last sync failed." : "Not connected" },
+      href: `${base}/onboarding?step=search`,
+    },
+    {
+      key: "bing",
+      phase: "PRE_LAUNCH",
+      label: "Bing Webmaster Tools connected",
+      status: integration(f.bing),
+      blocking: false,
+      evidence: { text: f.bing === "CONNECTED" ? "Bing Webmaster Tools is connected." : f.bing === "FAILING" ? "Bing Webmaster Tools is configured but its last sync failed." : "Not connected" },
       href: `${base}/onboarding?step=search`,
     },
     {
@@ -183,6 +231,46 @@ export function launchChecklist(f: LaunchFacts): ChecklistItem[] {
         ? { text: "{n} active queries; baseline captured on {date}.", params: { n: f.queries.active, date: f.baseline.capturedAt.slice(0, 10) } }
         : { text: "{n} active queries (at least {min}); no baseline captured yet.", params: { n: f.queries.active, min: MIN_BASELINE_QUERIES } },
       href: f.queries.active >= MIN_BASELINE_QUERIES ? `${base}/launch#baseline` : `/queries?product=${f.slug}&status=CANDIDATE`,
+    },
+    {
+      key: "ai_visibility_baseline",
+      phase: "PRE_LAUNCH",
+      label: "AI visibility baseline sampled",
+      status: aiDone ? "DONE" : !ai.providerConfigured ? "NOT_CONNECTED" : "TODO",
+      blocking: false,
+      evidence: aiDone
+        ? { text: "{tested} of {n} active AI visibility prompt(s) tested at least once.", params: { tested: ai.testedPrompts, n: ai.activePrompts } }
+        : !ai.providerConfigured
+          ? { text: "Not connected" }
+          : ai.activePrompts === 0
+            ? { text: "No active AI visibility prompt for this product yet." }
+            : { text: "{tested} of {n} active AI visibility prompt(s) tested at least once.", params: { tested: ai.testedPrompts, n: ai.activePrompts } },
+      href: aiDone || ai.providerConfigured ? `/ai-visibility?product=${f.slug}` : "/settings/integrations",
+    },
+    {
+      key: "referral_code",
+      phase: "PRE_LAUNCH",
+      label: "Referral code active",
+      status: f.referrals.activeCodes > 0 ? "DONE" : "TODO",
+      blocking: false,
+      evidence: { text: "{n} active referral code(s) for this product.", params: { n: f.referrals.activeCodes } },
+      href: "/referrals",
+    },
+    {
+      key: "revenue_source",
+      phase: "PRE_LAUNCH",
+      label: "Revenue source connected",
+      status: revenueDone ? "DONE" : f.revenue.stripe === "FAILING" ? "TODO" : "NOT_CONNECTED",
+      blocking: false,
+      evidence:
+        f.revenue.events > 0
+          ? { text: "{n} revenue event(s) or subscription(s) received for this product.", params: { n: f.revenue.events } }
+          : f.revenue.stripe === "CONNECTED"
+            ? { text: "Stripe is connected; no revenue event for this product yet." }
+            : f.revenue.stripe === "FAILING"
+              ? { text: "Stripe is configured but its last sync failed." }
+              : { text: "Not connected" },
+      href: f.revenue.events > 0 ? "/revenue" : "/settings/integrations",
     },
     {
       key: "announcement_published",

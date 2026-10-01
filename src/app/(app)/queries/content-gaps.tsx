@@ -1,5 +1,5 @@
 import { gapDraftAction, gapOpportunityAction } from "@/app/actions/intel";
-import { Badge, Button, HiddenBack, Panel, StatusBadge } from "@/components/ui";
+import { Badge, Button, EmptyState, HiddenBack, Panel, StatusBadge } from "@/components/ui";
 import type { ContentGap } from "@/core/content/gaps";
 import { enumLabel } from "@/i18n/core";
 import { getT } from "@/i18n/server";
@@ -12,13 +12,21 @@ const REASON_LABEL: Record<string, string> = {
 };
 
 /** Content gaps as mobile-friendly cards, one per query cluster, with their evidence and two actions. */
-export async function ContentGaps({ gaps, productId, productName, back, canGrowth, canContent }: { gaps: ContentGap[]; productId: string; productName: string; back: string; canGrowth: boolean; canContent: boolean }) {
+export async function ContentGaps({ gaps, productId, productSlug, productName, back, canGrowth, canContent }: { gaps: ContentGap[]; productId: string; productSlug: string; productName: string; back: string; canGrowth: boolean; canContent: boolean }) {
   const t = await getT();
   return (
     <Panel title={t("Content gaps · {product}", { product: productName })} eyebrow={t("One recommended asset per cluster")} className="mt-6" pad={false}>
       <div id="gaps" />
       {gaps.length === 0 ? (
-        <p className="p-4 text-sm text-muted">{t("No content gap: every relevant cluster is covered, or there is no measured evidence yet.")}</p>
+        <div className="p-4">
+          <EmptyState
+            variant="no_data_yet"
+            what={t("No content gap found")}
+            why={t("Every relevant cluster is covered, or there is no measured evidence yet (search impressions, sampled AI answers or business-relevant clusters without a page).")}
+            action={{ label: t("Review uncovered queries"), href: `/queries?product=${encodeURIComponent(productSlug)}&coverage=NONE` }}
+            secondary={{ label: t("Connect search data"), href: `/products/${encodeURIComponent(productSlug)}/onboarding?step=search` }}
+          />
+        </div>
       ) : (
         <ul className="grid gap-3 p-4 md:grid-cols-2">
           {gaps.map((g) => (

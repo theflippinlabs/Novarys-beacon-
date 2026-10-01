@@ -153,6 +153,11 @@ const READY: LaunchFacts = {
   audit: { id: "a1", critical: 0, schemaErrorsOnKeyPages: 0, sitemaps: 1, sitemapErrors: 0, finishedAt: "2026-09-30T00:00:00Z" },
   analytics: "CONNECTED",
   searchConsole: "CONNECTED",
+  bing: "CONNECTED",
+  publicSite: { enabled: true, orgSlug: "acme-org", listed: true },
+  aiVisibility: { providerConfigured: true, activePrompts: 3, testedPrompts: 3 },
+  referrals: { activeCodes: 1 },
+  revenue: { stripe: "CONNECTED", events: 4 },
   productPage: { published: true, planned: true },
   docs: { url: "https://acme.example/docs", verified: true },
   tracking: { activeKeys: 1, events: 3 },
@@ -199,7 +204,48 @@ describe("launch checklist derivation", () => {
     expect(b.sitemap.evidence.text).toBe("No successful audit yet.");
     expect(byKey({ ...READY, audit: { ...READY.audit!, schemaErrorsOnKeyPages: 2 } }).structured_data.status).toBe("TODO");
     expect(byKey({ ...READY, audit: { ...READY.audit!, sitemapErrors: 1 } }).sitemap.status).toBe("TODO");
-    expect(byKey({ ...READY, audit: { ...READY.audit!, critical: 1 } }).site.status).toBe("TODO");
+    // Critical issues are their own (blocking) item, no longer folded into the site item.
+    const crit = byKey({ ...READY, audit: { ...READY.audit!, critical: 2 } });
+    expect(crit.site.status).toBe("DONE");
+    expect(crit.critical_issues).toMatchObject({ status: "TODO", blocking: true, evidence: { params: { n: 2 } }, href: "/discovery/audits/a1" });
+    expect(openBlockers(launchChecklist({ ...READY, audit: { ...READY.audit!, critical: 2 } })).map((i) => i.key)).toEqual(["critical_issues"]);
+    expect(byKey({ ...READY, audit: null }).critical_issues).toMatchObject({ status: "TODO", evidence: { text: "No successful audit yet." } });
+    expect(byKey(READY).critical_issues).toMatchObject({ status: "DONE", evidence: { params: { n: 0 } } });
+  });
+
+  it("checks the hosted llms.txt and entity endpoint against the public site switch, onboarding and verified facts", () => {
+    expect(byKey(READY).hosted_endpoints).toMatchObject({ status: "DONE", blocking: false, href: "/api/v1/entity/acme-org/acme", evidence: { params: { org: "acme-org", product: "acme", n: 15 } } });
+    expect(byKey({ ...READY, publicSite: { ...READY.publicSite, enabled: false } }).hosted_endpoints).toMatchObject({ status: "TODO", href: "/settings" });
+    expect(byKey({ ...READY, publicSite: { ...READY.publicSite, listed: false } }).hosted_endpoints).toMatchObject({ status: "TODO", href: "/products/acme/onboarding" });
+    expect(byKey({ ...READY, knowledge: { completeness: 0.8, facts: 20, verified: 0 } }).hosted_endpoints).toMatchObject({ status: "TODO", href: "/products/acme/knowledge" });
+  });
+
+  it("reports Bing, the AI visibility baseline, referral codes and revenue from measured state", () => {
+    expect(byKey(READY).bing.status).toBe("DONE");
+    expect(byKey({ ...READY, bing: "FAILING" }).bing.status).toBe("TODO");
+    expect(byKey({ ...READY, bing: "NOT_CONNECTED" }).bing).toMatchObject({ status: "NOT_CONNECTED", evidence: { text: "Not connected" } });
+
+    expect(byKey(READY).ai_visibility_baseline).toMatchObject({ status: "DONE", evidence: { params: { tested: 3, n: 3 } } });
+    // One active prompt never tested: no baseline yet.
+    expect(byKey({ ...READY, aiVisibility: { providerConfigured: true, activePrompts: 3, testedPrompts: 2 } }).ai_visibility_baseline.status).toBe("TODO");
+    expect(byKey({ ...READY, aiVisibility: { providerConfigured: true, activePrompts: 0, testedPrompts: 0 } }).ai_visibility_baseline).toMatchObject({ status: "TODO", evidence: { text: "No active AI visibility prompt for this product yet." } });
+    // No provider and an incomplete baseline: not connected, never a zero.
+    expect(byKey({ ...READY, aiVisibility: { providerConfigured: false, activePrompts: 2, testedPrompts: 0 } }).ai_visibility_baseline).toMatchObject({ status: "NOT_CONNECTED", href: "/settings/integrations" });
+    // A baseline already sampled stays done if the provider is removed later.
+    expect(byKey({ ...READY, aiVisibility: { providerConfigured: false, activePrompts: 2, testedPrompts: 2 } }).ai_visibility_baseline.status).toBe("DONE");
+
+    expect(byKey(READY).referral_code.status).toBe("DONE");
+    expect(byKey({ ...READY, referrals: { activeCodes: 0 } }).referral_code).toMatchObject({ status: "TODO", evidence: { params: { n: 0 } } });
+
+    expect(byKey(READY).revenue_source).toMatchObject({ status: "DONE", evidence: { params: { n: 4 } } });
+    expect(byKey({ ...READY, revenue: { stripe: "CONNECTED", events: 0 } }).revenue_source.status).toBe("DONE");
+    expect(byKey({ ...READY, revenue: { stripe: "NOT_CONNECTED", events: 2 } }).revenue_source.status).toBe("DONE");
+    expect(byKey({ ...READY, revenue: { stripe: "FAILING", events: 0 } }).revenue_source.status).toBe("TODO");
+    expect(byKey({ ...READY, revenue: { stripe: "NOT_CONNECTED", events: 0 } }).revenue_source).toMatchObject({ status: "NOT_CONNECTED", evidence: { text: "Not connected" } });
+
+    // None of the new items blocks the launch.
+    const bare: LaunchFacts = { ...READY, bing: "NOT_CONNECTED", publicSite: { enabled: false, orgSlug: "x", listed: false }, aiVisibility: { providerConfigured: false, activePrompts: 0, testedPrompts: 0 }, referrals: { activeCodes: 0 }, revenue: { stripe: "NOT_CONNECTED", events: 0 } };
+    expect(openBlockers(launchChecklist(bare))).toEqual([]);
   });
 
   it("requires active queries and a stored baseline", () => {
@@ -242,6 +288,9 @@ describe("French coverage of runtime labels", () => {
       { ...READY, domain: { name: "a.example", verified: false, https: null }, analytics: "NOT_CONNECTED", searchConsole: "NOT_CONNECTED", launchedAt: "2026-10-01T00:00:00Z", tracking: { activeKeys: 0, events: 0 } },
       { ...READY, domain: { name: "a.example", verified: true, https: false }, docs: { url: "https://a.example/docs", verified: false }, productPage: { published: false, planned: true }, launchedAt: "2026-10-01T00:00:00Z" },
       { ...READY, audit: { ...READY.audit!, sitemaps: 0 } },
+      { ...READY, bing: "FAILING", publicSite: { enabled: false, orgSlug: "x", listed: false }, aiVisibility: { providerConfigured: true, activePrompts: 0, testedPrompts: 0 }, referrals: { activeCodes: 0 }, revenue: { stripe: "FAILING", events: 0 } },
+      { ...READY, bing: "NOT_CONNECTED", publicSite: { enabled: true, orgSlug: "x", listed: false }, aiVisibility: { providerConfigured: true, activePrompts: 2, testedPrompts: 1 }, revenue: { stripe: "CONNECTED", events: 0 } },
+      { ...READY, knowledge: { completeness: 0.8, facts: 20, verified: 0 }, aiVisibility: { providerConfigured: false, activePrompts: 1, testedPrompts: 0 }, revenue: { stripe: "NOT_CONNECTED", events: 0 } },
     ];
     const keys = new Set<string>([...ONBOARDING_FLOW.map((s) => s.label), ...INFO_PARTS.map((p) => p.label), "Not connected", "No data yet", "No results for these filters", "Not generated yet", "PRE LAUNCH", "LAUNCH", "POST LAUNCH", "OFF"]);
     for (const f of facts) for (const i of launchChecklist(f)) keys.add(i.label).add(i.evidence.text);

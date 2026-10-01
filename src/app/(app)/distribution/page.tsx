@@ -6,7 +6,7 @@ import { addDistributionTargetAction, approveSubmissionAction, prepareSubmission
 import { Badge, Button, EmptyState, Field, Flash, hasActiveFilters, HiddenBack, PageHeader, Panel, ResponsiveTable, StatusBadge, Td, Th, formatValue } from "@/components/ui";
 import { FilterBar, SelectFilter } from "@/components/shell/filters";
 import { distributionTargets, products } from "@/db/schema";
-import { DISTRIBUTION_NEXT, DISTRIBUTION_STATUSES, REQUIRES_APPROVAL, type DistributionStatus } from "@/core/distribution/catalog";
+import { DISTRIBUTION_KINDS, DISTRIBUTION_NEXT, DISTRIBUTION_STATUSES, REQUIRES_APPROVAL, type DistributionStatus } from "@/core/distribution/catalog";
 import { DISTRIBUTION_CATEGORIES } from "@/core/distribution/venues";
 import { REASON_SEPARATOR } from "@/core/distribution/relevance";
 import { approvalStates, measureTargets, trackingLinkFor } from "@/services/distribution";
@@ -19,8 +19,6 @@ export async function generateMetadata(): Promise<Metadata> {
   const t = await getT();
   return { title: t("Distribution") };
 }
-
-const KINDS = ["DIRECTORY", "LAUNCH_PLATFORM", "COMMUNITY", "SOCIAL_CHANNEL", "NEWSLETTER", "PARTNER", "AFFILIATE", "INFLUENCER", "AGENCY", "MEDIA", "BACKLINK"];
 
 export default async function DistributionPage({ searchParams }: { searchParams: Promise<SP> }) {
   const sp = await searchParams;
@@ -269,7 +267,7 @@ export default async function DistributionPage({ searchParams }: { searchParams:
               </Field>
               <Field label={t("Kind")}>
                 <select name="kind">
-                  {KINDS.map((k) => (
+                  {DISTRIBUTION_KINDS.map((k) => (
                     <option key={k} value={k}>
                       {enumLabel(t, k)}
                     </option>

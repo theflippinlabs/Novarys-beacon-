@@ -284,9 +284,22 @@ export default async function QueriesPage({ searchParams }: { searchParams: Prom
                 ))}
               </ul>
             ) : (
-              <p className="text-sm text-muted">{t("No clusters yet.")}</p>
+              <EmptyState
+                variant="not_generated"
+                what={t("No clusters yet.")}
+                why={data.product ? t("Clusters group the active queries of {product} by topic, one recommended asset each. They are computed from the query universe and refreshed with its coverage.", { product: data.product.name }) : t("Clusters group a product's active queries by topic, one recommended asset each. Select a product in the filters to see or compute them.")}
+                action={
+                  can("query:write") && data.product
+                    ? { label: t("Recompute clusters and coverage"), form: { action: refreshQueryIntelAction, fields: { productId: data.product.id }, back } }
+                    : data.product
+                      ? { label: t("Review active queries"), href: `/queries?product=${encodeURIComponent(data.product.slug)}&status=ACTIVE` }
+                      : data.prods.length
+                        ? { label: t("Show clusters for {product}", { product: data.prods[0].name }), href: `/queries?product=${encodeURIComponent(data.prods[0].slug)}` }
+                        : { label: t("Add a product"), href: "/products" }
+                }
+              />
             )}
-            {can("query:write") && data.product && (
+            {can("query:write") && data.product && data.clusters.length > 0 && (
               <form action={refreshQueryIntelAction} className="mt-4">
                 <HiddenBack path={back} />
                 <input type="hidden" name="productId" value={data.product.id} />
@@ -297,7 +310,7 @@ export default async function QueriesPage({ searchParams }: { searchParams: Prom
         </div>
       </div>
       {data.gaps.map((g) => (
-        <ContentGaps key={g.product.id} gaps={g.gaps} productId={g.product.id} productName={g.product.name} back={back} canGrowth={can("growth:write")} canContent={can("content:write")} />
+        <ContentGaps key={g.product.id} gaps={g.gaps} productId={g.product.id} productSlug={g.product.slug} productName={g.product.name} back={back} canGrowth={can("growth:write")} canContent={can("content:write")} />
       ))}
     </>
   );

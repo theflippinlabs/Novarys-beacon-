@@ -302,12 +302,27 @@ export async function generateQueued(
  * Saves an edited version. Editing APPROVED or PUBLISHED content never
  * changes those versions: it opens a new draft (a branch) that needs a new
  * approval, while the published version keeps being served.
+ *
+ * Editing an APPROVED, not yet published asset: an approval never carries
+ * over to different text. The asset goes back to GENERATED (checks re-run on
+ * the new text, which then needs its own approval), so nothing can publish,
+ * export or submit the old approval meanwhile (all of them require the
+ * APPROVED status). The approved version is not lost: `approvedVersionId`
+ * (with its approver and date) keeps pointing to it as the last approval, and
+ * the content page says that the latest draft differs from it. An "edit"
+ * that changes nothing is refused so the approval is not dropped for nothing.
  */
 export async function saveEditedVersion(tx: Tx, actor: Actor, assetId: string, input: { body: string; metaTitle?: string | null; metaDescription?: string | null }) {
   const asset = await getAsset(tx, actor.organizationId, assetId);
   if (asset.status !== "IDEA" && asset.status !== "GENERATED" && asset.status !== "FACT_CHECK" && asset.status !== "SEO_CHECK") assertTransition(asset.status, "GENERATED");
   if (input.body.length > 200_000) throw new Error("Body too large");
   const prev = await latestVersion(tx, assetId);
+  if (asset.status === "APPROVED") {
+    const approved = (await versionById(tx, actor.organizationId, asset.approvedVersionId)) ?? prev;
+    const same = (a: string | null | undefined, b: string | null | undefined) => (a ?? null) === (b ?? null);
+    if (approved && approved.body === input.body && same(input.metaTitle ?? approved.metaTitle, approved.metaTitle) && same(input.metaDescription ?? approved.metaDescription, approved.metaDescription))
+      throw new Error("No changes: this text is already approved, so its approval stands.");
+  }
   const version = asset.currentVersion + 1;
   const [v] = await tx
     .insert(contentVersions)
@@ -325,7 +340,8 @@ export async function saveEditedVersion(tx: Tx, actor: Actor, assetId: string, i
     .returning();
   await tx.update(contentAssets).set({ currentVersion: version, status: "GENERATED" }).where(eq(contentAssets.id, assetId));
   const checks = await runChecks(tx, { ...asset, status: "GENERATED", currentVersion: version }, v.id);
-  const branchedFrom = asset.status === "APPROVED" || asset.status === "PUBLISHED" ? { branchedFrom: asset.status, liveVersionId: asset.publishedVersionId } : {};
+  // The approval of the previous text is superseded (not deleted): approvedVersionId keeps naming it.
+  const branchedFrom = asset.status === "APPROVED" || asset.status === "PUBLISHED" ? { branchedFrom: asset.status, liveVersionId: asset.publishedVersionId, approvedVersionId: asset.approvedVersionId, approvalSuperseded: asset.status === "APPROVED" } : {};
   await audit(tx, actor, "content.edit", "content_asset", assetId, { version, status: checks.status, ...branchedFrom });
   return { version: v, ...checks };
 }

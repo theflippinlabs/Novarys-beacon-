@@ -843,7 +843,7 @@ export default async function OnboardingPage({ params, searchParams }: { params:
           {pos.step === "gaps" && (
             <>
               {data.gaps && data.gaps.length > 0 ? (
-                <ContentGaps gaps={data.gaps} productId={p.id} productName={p.name} back={here} canGrowth={can("growth:write")} canContent={can("content:write")} />
+                <ContentGaps gaps={data.gaps} productId={p.id} productSlug={p.slug} productName={p.name} back={here} canGrowth={can("growth:write")} canContent={can("content:write")} />
               ) : (
                 <EmptyState
                   variant="no_data_yet"

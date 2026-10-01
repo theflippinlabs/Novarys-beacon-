@@ -3,13 +3,15 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { withOrg, type Tx } from "@/db";
 import type { Actor } from "@/lib/audit";
-import { requirePermission, clientIpHash } from "@/lib/auth/session";
+import { getAuthContext, requirePermission, clientIpHash } from "@/lib/auth/session";
 import type { AuthContext } from "@/lib/auth/service";
 import { ForbiddenError, type Permission } from "@/lib/auth/rbac";
 import { log } from "@/lib/logger";
+import { withFlash, withoutFlash } from "@/lib/flash";
 
 export type ActionCtx = { ctx: AuthContext; actor: Actor; tx: Tx };
-export type ActionResult = { ok?: string; redirect?: string } | void;
+/** `ok` / `error`: flash message shown after the redirect (signed, see lib/flash.ts). `redirect` must not carry flash parameters itself. */
+export type ActionResult = { ok?: string; error?: string; redirect?: string } | void;
 
 /** Only allow same-site relative redirect targets (no open redirects via `_back`). */
 export function safeBack(v: unknown, fallback = "/"): string {
@@ -27,15 +29,6 @@ export function formToObject(fd: FormData): Record<string, unknown> {
     } else out[k] = value;
   }
   return out;
-}
-
-function withParam(path: string, key: string, value: string) {
-  const [base, hash] = path.split("#");
-  const u = new URL(base, "http://x");
-  u.searchParams.delete("ok");
-  u.searchParams.delete("error");
-  u.searchParams.set(key, value.slice(0, 300));
-  return `${u.pathname}${u.search}${hash ? `#${hash}` : ""}`;
 }
 
 /**
@@ -65,23 +58,25 @@ async function pipeline<S extends z.ZodType>(fd: FormData, permission: Permissio
     throw e;
   });
   const raw = formToObject(fd);
-  const back = safeBack(raw._back);
-  if (!ctx) redirect(withParam(back, "error", "You do not have permission to do that."));
+  // Flash parameters are never carried over from a submitted path: only messages signed below are shown.
+  const back = withoutFlash(safeBack(raw._back));
+  if (!ctx) redirect(withFlash(back, "error", "You do not have permission to do that.", (await getAuthContext())?.user.id ?? null));
+  const subject = ctx.user.id;
   let target: string;
   const parsed = schema.safeParse(raw);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
-    target = withParam(back, "error", `Invalid value for “${issue.path.join(".") || "input"}”.`);
+    target = withFlash(back, "error", `Invalid value for “${issue.path.join(".") || "input"}”.`, subject);
   } else {
     try {
       const actor: Actor = { organizationId: ctx.org.id, userId: ctx.user.id, actorType: "USER", ipHash: await clientIpHash() };
       const res = await exec(ctx, actor, parsed.data);
-      const dest = safeBack(res?.redirect, back);
-      target = res?.ok ? withParam(dest, "ok", res.ok) : dest;
+      const dest = withoutFlash(safeBack(res?.redirect, back));
+      target = res?.error ? withFlash(dest, "error", res.error, subject) : res?.ok ? withFlash(dest, "ok", res.ok, subject) : dest;
     } catch (e) {
       log.warn("action.failed", { permission, err: (e as Error).message });
       const msg = e instanceof Error && !/duplicate key|violates|syntax|relation/i.test(e.message) ? e.message : "The operation could not be completed.";
-      target = withParam(back, "error", msg.includes("duplicate key") ? "That item already exists." : msg);
+      target = withFlash(back, "error", msg.includes("duplicate key") ? "That item already exists." : msg, subject);
     }
   }
   redirect(target);
