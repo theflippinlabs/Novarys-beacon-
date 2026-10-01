@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { addMemberAction, changeRoleAction, removeMemberAction, updateOrgSettingsAction } from "@/app/actions/settings";
+import { addMemberAction, changePasswordAction, changeRoleAction, removeMemberAction, updateOrgSettingsAction } from "@/app/actions/settings";
 import { Badge, Button, Field, Flash, HiddenBack, PageHeader, Panel, Table, Td, Th } from "@/components/ui";
 import { SettingsTabs } from "@/components/shell/settings-tabs";
 import { asSystem } from "@/db";
@@ -126,6 +126,18 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             <Button>Add member</Button>
           </form>
         )}
+      </Panel>
+      <Panel title="Your password" eyebrow={ctx.user.email} className="mt-6">
+        <form action={changePasswordAction} className="grid gap-3 md:grid-cols-[1fr_1fr_auto] md:items-end">
+          <HiddenBack path={back} />
+          <Field label="Current password">
+            <input name="current" type="password" required autoComplete="current-password" />
+          </Field>
+          <Field label="New password (≥ 12 characters)">
+            <input name="next" type="password" required minLength={12} autoComplete="new-password" />
+          </Field>
+          <Button>Change password</Button>
+        </form>
       </Panel>
     </>
   );

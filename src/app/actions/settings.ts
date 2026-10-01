@@ -1,13 +1,13 @@
 "use server";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { z } from "zod";
 import { asSystem } from "@/db";
 import { integrations, memberships, organizations, products, sessions, users } from "@/db/schema";
 import { act, zId, zOptText } from "@/lib/actions";
 import { audit } from "@/lib/audit";
 import { canAssignRole, ROLES } from "@/lib/auth/rbac";
-import { hashPassword } from "@/lib/security/crypto";
+import { hashPassword, verifyPassword } from "@/lib/security/crypto";
 import { normalizeEmail, validatePasswordStrength } from "@/lib/auth/service";
 import { enqueue, retryJob } from "@/jobs/queue";
 import { isVisibilityProvider, VISIBILITY_ADAPTERS } from "@/integrations/registry";
@@ -182,3 +182,20 @@ export async function retryJobAction(fd: FormData) {
   });
 }
 
+
+/** Change own password: verifies the current one, enforces strength, revokes all other sessions. */
+export async function changePasswordAction(fd: FormData) {
+  return act(fd, "read", z.object({ current: z.string().min(1).max(256), next: z.string().min(12).max(256) }), async ({ tx, actor, ctx }, i) => {
+    const weak = validatePasswordStrength(i.next);
+    if (weak) throw new Error(weak);
+    const user = await asSystem((stx) => stx.query.users.findFirst({ where: eq(users.id, ctx.user.id) }));
+    if (!user || !(await verifyPassword(i.current, user.passwordHash))) throw new Error("Current password is incorrect.");
+    const passwordHash = await hashPassword(i.next);
+    await asSystem(async (stx) => {
+      await stx.update(users).set({ passwordHash, failedLoginCount: 0, lockedUntil: null }).where(eq(users.id, user.id));
+      await stx.delete(sessions).where(and(eq(sessions.userId, user.id), ne(sessions.tokenHash, ctx.sessionTokenHash)));
+    });
+    await audit(tx, actor, "user.password_change", "user", user.id);
+    return { ok: "Password changed. Other sessions were signed out." };
+  });
+}
