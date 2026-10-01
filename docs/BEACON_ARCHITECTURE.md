@@ -26,7 +26,7 @@ The repository was **empty** when Beacon was started (no commits, no files). Con
 | Integrations | none | Adapter interfaces; Stripe webhooks; Anthropic/OpenAI/Perplexity providers |
 | Security controls | none | See §7 |
 
-**Seed data.** No product facts existed in the repository, so only product **names** are seeded (Novus Live, Operator, NovaLex, Aerys / Iris). Every other field is *unknown* until a human completes onboarding. Example queries and prompts quoted in the Beacon brief are seeded as `CANDIDATE` queries / inactive prompts, labelled “from brief, validate”.
+**Seed data.** `pnpm db:seed` only bootstraps the first organisation and its owner from the environment (the `/setup` page does the same); `release` never seeds. Example content lives in an explicit DEMO fixture (`pnpm db:seed:demo`, `src/db/fixtures/demo.ts`), refused with `NODE_ENV=production` unless `BEACON_ALLOW_DEMO_SEED=true`: the Novarys product **names** only (Novus Live, Operator, NovaLex, Aerys / Iris; every other field *unknown* until a human completes onboarding), and the example queries and prompts quoted in the Beacon brief as `CANDIDATE` queries in the cluster “Demo: brief examples” / inactive prompts in the category “Demo: from brief (review, then activate)”.
 
 ---
 
@@ -206,6 +206,7 @@ Postgres-backed queue (`src/jobs/queue.ts`):
 - **Retry & backoff:** exponential with jitter (30 s → 1 h cap), `max_attempts` (default 5), `NonRetryableError` → `DEAD` immediately.
 - **Idempotency:** unique `idempotency_key`; recurring work uses period-scoped keys (`sync:{integration}:{day}`, `autopilot:{org}:{week}`).
 - **Recovery:** stale `RUNNING` jobs (worker died) return to the queue after 15 minutes.
+- **Per-type caps:** `JOB_CONCURRENCY` caps crawl-like and LLM-heavy types (`seo.audit`, `ai_visibility.run`, `content.generate`, `product.analyze`, `search.backfill`, `sources.check`) at 1 RUNNING (non-stale) job across every worker process; the claim takes a per-type advisory lock and re-counts under it, other types are uncapped.
 - **State & errors:** status, attempts, last error, result, timings; visible and retryable in *Settings → System health*.
 - **Scheduler:** every 5 minutes the worker enqueues daily integration syncs, opportunity generation, score computation, cleanup, weekly growth reports and AI-visibility runs (only when prompts and a provider exist).
 - **Deployment:** `pnpm worker` (separate process, recommended) or `BEACON_EMBEDDED_WORKER=true` (single container).
@@ -273,7 +274,7 @@ Adding a provider = implementing the interface and registering it in `src/integr
 
 ## 10. Multi-tenancy & commercialisation
 
-Beacon is internal first but tenant-isolated from day one: every relevant entity is organisation-scoped, RLS-enforced, and branding/behaviour (display name, attribution rules, cross-sell caps) is configuration in `organizations.branding/settings`. Core engines contain no Novarys-specific logic; the only Novarys-specific data is the seed script. Standalone SaaS additions later: self-serve signup, billing, per-tenant quotas, SSO.
+Beacon is internal first but tenant-isolated from day one: every relevant entity is organisation-scoped, RLS-enforced, and branding/behaviour (display name, attribution rules, cross-sell caps) is configuration in `organizations.branding/settings`. Core engines contain no Novarys-specific logic; the only Novarys-specific data is the demo fixture (`src/db/fixtures/demo.ts`). Standalone SaaS additions later: self-serve signup, billing, per-tenant quotas, SSO.
 
 ---
 

@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { closeDb, db, systemDb, withOrg } from "@/db";
 import { beaconScores, jobs, opportunities, queries } from "@/db/schema";
-import { claimNext, completeJob, enqueue, failJob, heartbeatJob, NonRetryableError, purgeFinishedJobs, recoverStaleJobs, scopedIdempotencyKey, type Job, type JobType } from "@/jobs/queue";
+import { claimNext, completeJob, enqueue, failJob, heartbeatJob, JOB_CONCURRENCY, NonRetryableError, purgeFinishedJobs, recoverStaleJobs, scopedIdempotencyKey, type Job, type JobType } from "@/jobs/queue";
 import { drain, processOne } from "@/jobs/worker";
 import { newOrg, seedCompleteProduct, uid } from "./helpers";
 
@@ -232,5 +232,51 @@ describe("job queue", () => {
     expect(await systemDb().query.jobs.findFirst({ where: eq(jobs.id, old.id) })).toBeUndefined();
     expect(await getJob(recent.id)).toBeDefined();
     expect(await getJob(dead.id)).toBeDefined();
+  });
+  describe("per-type concurrency caps (JOB_CONCURRENCY)", () => {
+    const CAPPED: JobType = "seo.audit";
+
+    it("caps crawl-like and LLM-heavy types at 1 and leaves the rest uncapped", () => {
+      expect(JOB_CONCURRENCY["seo.audit"]).toBe(1);
+      expect(JOB_CONCURRENCY["ai_visibility.run"]).toBe(1);
+      expect(JOB_CONCURRENCY["content.generate"]).toBe(1);
+      expect(JOB_CONCURRENCY["score.compute"]).toBeUndefined();
+    });
+
+    it("does not claim a second job of a capped type while one runs, and claims it after", async () => {
+      const first = await enqueue(CAPPED, { productId: "p1" }, { organizationId: orgId, runAt: new Date(Date.now() - 2000) });
+      const second = await enqueue(CAPPED, { productId: "p2" }, { organizationId: orgId, runAt: new Date(Date.now() - 1000) });
+      const a = await claimNext("cap-a");
+      expect(a!.id).toBe(first.id);
+      // Another worker (any process): the capped type is full.
+      expect(await claimNext("cap-b", [CAPPED])).toBeNull();
+      expect(await claimNext("cap-b")).toBeNull();
+      expect((await getJob(second.id)).status).toBe("QUEUED");
+      // Uncapped work still flows past the blocked type.
+      const free = await enqueue(NOOP, {}, { organizationId: orgId });
+      expect((await claimNext("cap-b"))!.id).toBe(free.id);
+      // Once the running job finishes, the next one is claimed.
+      expect(await completeJob(first.id, null, "cap-a")).toBe(true);
+      const b = await claimNext("cap-b");
+      expect(b!.id).toBe(second.id);
+      expect(b!.status).toBe("RUNNING");
+    });
+
+    it("a stale RUNNING job does not hold the slot", async () => {
+      const dead = await enqueue(CAPPED, {}, { organizationId: orgId });
+      const next = await enqueue(CAPPED, {}, { organizationId: orgId });
+      await systemDb().update(jobs).set({ status: "RUNNING", lockedBy: "gone", lockedAt: new Date(Date.now() - 30 * 60_000), heartbeatAt: new Date(Date.now() - 30 * 60_000) }).where(eq(jobs.id, dead.id));
+      expect((await claimNext("cap-c"))!.id).toBe(next.id);
+    });
+
+    it("concurrent claimers start at most `cap` jobs of a capped type", async () => {
+      const created = await Promise.all(Array.from({ length: 5 }, () => enqueue(CAPPED, {}, { organizationId: orgId })));
+      const claims = await Promise.all(Array.from({ length: 8 }, (_, i) => claimNext(`cap-w${i}`)));
+      const ids = claims.filter((c): c is Job => Boolean(c)).map((c) => c.id);
+      expect(ids).toHaveLength(1);
+      expect(created.map((c) => c.id)).toContain(ids[0]);
+      const running = await systemDb().select().from(jobs).where(and(eq(jobs.type, CAPPED), eq(jobs.status, "RUNNING")));
+      expect(running).toHaveLength(1);
+    });
   });
 });

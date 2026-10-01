@@ -33,11 +33,13 @@ pnpm dev                               # http://localhost:3000 → /setup create
 pnpm worker                            # background jobs (or BEACON_EMBEDDED_WORKER=true)
 ```
 
-Optional seed (bootstrap owner from env + Novarys product names only):
+Optional seed (bootstrap organisation + owner from env, nothing else; `/setup` does the same in the browser):
 
 ```bash
 BEACON_BOOTSTRAP_ADMIN_EMAIL=you@novarys.app BEACON_BOOTSTRAP_ADMIN_PASSWORD='…12+ chars…' pnpm db:seed
 ```
+
+Optional DEMO data (explicit, never run by `release`): `pnpm db:seed:demo` loads the example queries and AI-visibility prompts quoted in the Beacon brief, plus the Novarys product names, into an existing organisation (`BEACON_DEMO_ORG_SLUG`, default the bootstrap slug). Queries are created as CANDIDATE in the cluster "Demo: brief examples" with a demo note, prompts inactive in the category "Demo: from brief (review, then activate)". It refuses to run with `NODE_ENV=production` unless `BEACON_ALLOW_DEMO_SEED=true`.
 
 Generate keys: `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`.
 

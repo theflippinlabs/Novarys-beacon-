@@ -10,6 +10,7 @@ import { expandQueryUniverse } from "@/core/queries/expand";
 import type { SearchPairRef } from "@/core/queries/coverage";
 import { normalizeQuery, slugify } from "@/core/util/text";
 import { latestQueryMetrics } from "./search-insights";
+import { isSearchProvider } from "@/integrations/registry";
 
 export async function ensureCluster(tx: Tx, organizationId: string, productId: string | null, name: string) {
   const slug = slugify(name) || "general";
@@ -301,7 +302,7 @@ export async function queriesByIds(tx: Tx, organizationId: string, ids: string[]
 export async function importQueriesAfterSync(run: <T>(fn: (tx: Tx) => Promise<T>) => Promise<T>, organizationId: string, integrationId: string) {
   return run(async (tx) => {
     const integ = await tx.query.integrations.findFirst({ where: and(eq(integrations.id, integrationId), eq(integrations.organizationId, organizationId)) });
-    if (!integ || !["GOOGLE_SEARCH_CONSOLE", "BING_WEBMASTER"].includes(integ.provider)) return [];
+    if (!integ || !isSearchProvider(integ.provider)) return [];
     const ids = integ.productId
       ? [integ.productId]
       : (await tx.selectDistinct({ id: searchDaily.productId }).from(searchDaily).where(and(eq(searchDaily.organizationId, organizationId), eq(searchDaily.integrationId, integrationId)))).map((r) => r.id).filter((x): x is string => Boolean(x));

@@ -8,7 +8,7 @@ import { syncPagePlan } from "@/services/discovery";
 import { generateQueryUniverse, importQueriesAfterSync } from "@/services/queries";
 import { createScheduledAudit, executeAudit, productsWithVerifiedDomain } from "@/services/seo";
 import { backfillSearch, syncIntegration } from "@/services/visibility";
-import { isSyncableProvider } from "@/integrations/registry";
+import { isSearchProvider, isSyncableProvider } from "@/integrations/registry";
 import { syncScheduleDecision } from "@/core/integrations/health";
 import { runPromptTests } from "@/services/ai-visibility";
 import { allProductIds, generateProductOpportunities } from "@/services/opportunities";
@@ -101,7 +101,7 @@ export const HANDLERS: Record<JobType, Handler> = {
     await evaluateAfter(orgOf(job), job).catch(() => null);
     // Autopilot IDENTIFY after a search sync: fresh demand refreshes opportunities and proposals (deduped).
     const synced = await withOrg(orgOf(job), (tx) => tx.query.integrations.findFirst({ where: eq(integrations.id, str(job, "integrationId")), columns: { provider: true, productId: true } }));
-    if (synced && (synced.provider === "GOOGLE_SEARCH_CONSOLE" || synced.provider === "BING_WEBMASTER"))
+    if (synced && isSearchProvider(synced.provider))
       await enqueue("autopilot.identify", synced.productId ? { productId: synced.productId } : {}, { organizationId: orgOf(job), idempotencyKey: `identify:${str(job, "integrationId")}:${isoDay(new Date())}` }).catch(() => null);
     return res;
   },

@@ -24,6 +24,7 @@
     "db:migrate": "tsx src/db/migrate.ts",
     "release": "tsx src/db/provision.ts && tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts",
+    "db:seed:demo": "tsx src/db/seed-demo.ts",
     "audit:deps": "pnpm audit --prod",
     "secrets:rotate": "tsx src/db/rotate-secrets.ts"
   },

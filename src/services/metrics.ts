@@ -1,6 +1,7 @@
 import { sql, type SQL } from "drizzle-orm";
 import type { Tx } from "@/db";
 import { eventTypesFor, LEGACY_ALIASES, type CanonicalEvent } from "@/core/conversions/events";
+import { SEARCH_PROVIDERS } from "@/integrations/registry";
 
 /** Channels whose acquisition Beacon operates (explicit definition of "attributable to Beacon"). */
 export const BEACON_CHANNELS = ["ORGANIC_SEARCH", "AI_REFERRAL", "REFERRAL", "AFFILIATE", "CROSS_SELL"] as const;
@@ -28,6 +29,7 @@ function windows(r: Range) {
 }
 
 const BEACON_CHANNEL_LIST = sql.join(BEACON_CHANNELS.map((c) => sql`${c}`), sql`, `);
+const SEARCH_PROVIDER_LIST = sql.join(SEARCH_PROVIDERS.map((p) => sql`${p}`), sql`, `);
 
 /**
  * Command-center KPIs, current window vs previous window of equal length.
@@ -134,14 +136,19 @@ export async function kpis(tx: Tx, organizationId: string, r: Range) {
     group by currency`)
   ).rows as Record<string, unknown>[];
 
+  // Product scope: events of rules whose source or destination is the product; multi-product identities that hold it.
+  const ruleScope = r.productId
+    ? sql`and rule_id in (select id from cross_sell_rules where organization_id = ${organizationId} and (source_product_id = ${r.productId} or destination_product_id = ${r.productId}))`
+    : sql``;
+  const multiScope = r.productId ? sql`and bool_or(product_id = ${r.productId})` : sql``;
   const eco = (
     await tx.execute(sql`
     select
-      (select count(*) from cross_sell_events where organization_id = ${organizationId} and type = 'IMPRESSION' and occurred_at >= ${w.start}) as imp,
-      (select count(*) from cross_sell_events where organization_id = ${organizationId} and type = 'CONVERSION' and occurred_at >= ${w.start}) as conv,
-      (select count(*) from cross_sell_events where organization_id = ${organizationId} and type = 'IMPRESSION' and occurred_at < ${w.start} and occurred_at >= ${w.prevStart}) as imp_prev,
-      (select count(*) from cross_sell_events where organization_id = ${organizationId} and type = 'CONVERSION' and occurred_at < ${w.start} and occurred_at >= ${w.prevStart}) as conv_prev,
-      (select count(*) from (select identity_id from identity_products where organization_id = ${organizationId} and status in ('ACTIVE','TRIALING') group by identity_id having count(*) >= 2) m) as multi`)
+      (select count(*) from cross_sell_events where organization_id = ${organizationId} and type = 'IMPRESSION' and occurred_at >= ${w.start} ${ruleScope}) as imp,
+      (select count(*) from cross_sell_events where organization_id = ${organizationId} and type = 'CONVERSION' and occurred_at >= ${w.start} ${ruleScope}) as conv,
+      (select count(*) from cross_sell_events where organization_id = ${organizationId} and type = 'IMPRESSION' and occurred_at < ${w.start} and occurred_at >= ${w.prevStart} ${ruleScope}) as imp_prev,
+      (select count(*) from cross_sell_events where organization_id = ${organizationId} and type = 'CONVERSION' and occurred_at < ${w.start} and occurred_at >= ${w.prevStart} ${ruleScope}) as conv_prev,
+      (select count(*) from (select identity_id from identity_products where organization_id = ${organizationId} and status in ('ACTIVE','TRIALING') group by identity_id having count(*) >= 2 ${multiScope}) m) as multi`)
   ).rows[0] as Record<string, unknown>;
 
   const content = (
@@ -240,7 +247,7 @@ export async function availability(tx: Tx, organizationId: string, productId: st
   const row = (
     await tx.execute(sql`
     select
-      exists(select 1 from integrations where organization_id = ${organizationId} and provider in ('GOOGLE_SEARCH_CONSOLE','BING_WEBMASTER') and ${live} ${pOrAll("product_id")}) as search_connected,
+      exists(select 1 from integrations where organization_id = ${organizationId} and provider::text in (${SEARCH_PROVIDER_LIST}) and ${live} ${pOrAll("product_id")}) as search_connected,
       exists(select 1 from search_daily where organization_id = ${organizationId} ${p("product_id")}) as search_data,
       exists(select 1 from integrations where organization_id = ${organizationId} and provider = 'GOOGLE_ANALYTICS' and ${live} ${pOrAll("product_id")}) as ga4_connected,
       exists(select 1 from analytics_daily where organization_id = ${organizationId} ${p("product_id")}) as ga4_data,
@@ -255,7 +262,7 @@ export async function availability(tx: Tx, organizationId: string, productId: st
       exists(select 1 from ai_visibility_tests t join ai_visibility_prompts pr on pr.id = t.prompt_id where t.organization_id = ${organizationId} ${pOrAll("pr.product_id")}) as ai_tests,
       exists(select 1 from seo_audits where organization_id = ${organizationId} and status = 'SUCCEEDED' ${p("product_id")}) as audits,
       exists(select 1 from cross_sell_rules where organization_id = ${organizationId} ${productId ? sql`and (source_product_id = ${productId} or destination_product_id = ${productId})` : sql``}) as cross_sell_rules,
-      exists(select 1 from cross_sell_events where organization_id = ${organizationId}) as cross_sell_events,
+      exists(select 1 from cross_sell_events e where e.organization_id = ${organizationId} ${productId ? sql`and e.rule_id in (select id from cross_sell_rules where organization_id = ${organizationId} and (source_product_id = ${productId} or destination_product_id = ${productId}))` : sql``}) as cross_sell_events,
       exists(select 1 from identities where organization_id = ${organizationId}) as identities,
       (select slug from products where organization_id = ${organizationId} ${productId ? sql`and id = ${productId}` : sql``} order by name limit 1) as tracker_slug`)
   ).rows[0] as Record<string, unknown>;

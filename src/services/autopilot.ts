@@ -22,6 +22,7 @@ import {
   type RecommendationTarget,
 } from "@/core/autopilot/loop";
 import { addDays, isoDay } from "@/core/util/text";
+import { analystMetricsFor, CORE_SOURCES } from "@/integrations/registry";
 import { audit, type Actor } from "@/lib/audit";
 import { enqueue } from "@/jobs/queue";
 import { availability, kpis } from "./metrics";
@@ -62,11 +63,10 @@ export async function generateGrowthReport(tx: Tx, organizationId: string, days 
   const published = await tx.select().from(contentAssets).where(and(eq(contentAssets.organizationId, organizationId), isNotNull(contentAssets.publishedVersionId), gte(contentAssets.publishedAt, since)));
   const dist = await tx.select().from(distributionTargets).where(and(eq(distributionTargets.organizationId, organizationId), eq(distributionTargets.status, "PUBLISHED"), gte(distributionTargets.updatedAt, since)));
   const errors = await tx.select().from(integrations).where(and(eq(integrations.organizationId, organizationId), inArray(integrations.status, ["ERROR", "EXPIRED"])));
-  const PROVIDER_METRICS: Record<string, string[]> = { GOOGLE_SEARCH_CONSOLE: ["clicks", "impressions"], BING_WEBMASTER: ["clicks", "impressions"], GOOGLE_ANALYTICS: ["ai_referrals", "visitors"], STRIPE: ["new_subs", "beacon_mrr"] };
   const events: PeriodEvent[] = [
     ...published.map((p) => ({ kind: "CONTENT_PUBLISHED" as const, label: `Published: ${p.title}`, at: (p.publishedAt ?? p.updatedAt).toISOString(), productId: p.productId })),
     ...dist.map((d) => ({ kind: "DISTRIBUTION_PUBLISHED" as const, label: `Listed on ${d.name}`, at: d.updatedAt.toISOString(), productId: d.productId })),
-    ...errors.map((e) => ({ kind: "INTEGRATION_ERROR" as const, label: `${e.provider} sync error`, at: e.updatedAt.toISOString(), productId: e.productId, metricKeys: PROVIDER_METRICS[e.provider] ?? [] })),
+    ...errors.map((e) => ({ kind: "INTEGRATION_ERROR" as const, label: `${e.provider} sync error`, at: e.updatedAt.toISOString(), productId: e.productId, metricKeys: analystMetricsFor(e.provider) })),
   ];
   const opps = await tx.select().from(opportunities).where(and(eq(opportunities.organizationId, organizationId), eq(opportunities.status, "OPEN")));
   const crit = await tx.execute<{ rule: string; n: number; product_id: string | null }>(sql`
@@ -74,7 +74,7 @@ export async function generateGrowthReport(tx: Tx, organizationId: string, days 
     join (select distinct on (product_id) id, product_id from seo_audits where organization_id = ${organizationId} and status = 'SUCCEEDED' order by product_id, created_at desc) a on a.id = i.audit_id
     where i.severity = 'CRITICAL' and i.status = 'OPEN' group by i.rule, a.product_id`);
   const connected = [...new Set((await tx.select({ p: integrations.provider }).from(integrations).where(and(eq(integrations.organizationId, organizationId), eq(integrations.status, "CONNECTED")))).map((r) => r.p))];
-  const missing = ["GOOGLE_SEARCH_CONSOLE", "GOOGLE_ANALYTICS", "STRIPE"].filter((p) => !connected.includes(p as never));
+  const missing: string[] = CORE_SOURCES.filter((p) => !connected.includes(p));
 
   const analysis = analyzeGrowth({
     metrics,

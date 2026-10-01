@@ -35,6 +35,10 @@ export type CatalogEntry = {
   capabilities: readonly SearchCapability[];
   /** Offers "Connect with Google" (OAuth) besides the form. */
   oauth?: "google";
+  /** Growth-analyst metric keys this provider feeds: an integration error is linked to these metrics in the growth report. */
+  analystMetrics?: readonly string[];
+  /** Core data source: the growth report lists it under missing coverage until it is connected. */
+  coreSource?: boolean;
 };
 
 const fromAdapter = (provider: VisibilityProvider, kind: string, description: string, extra: Partial<CatalogEntry> = {}): CatalogEntry => {
@@ -54,9 +58,13 @@ const aiFields = (model: string): Pick<CatalogEntry, "configFields" | "secretFie
  * adapters' declarations.
  */
 export const INTEGRATION_CATALOG: CatalogEntry[] = [
-  fromAdapter("GOOGLE_SEARCH_CONSOLE", "Search visibility", "Daily clicks, impressions, CTR and positions by query, page, country and device via the Search Analytics API, with a 16-month backfill.", { oauth: "google" }),
-  fromAdapter("GOOGLE_ANALYTICS", "Analytics", "Sessions by channel, including AI-assistant referrals, via the GA4 Data API."),
-  fromAdapter("BING_WEBMASTER", "Search visibility", "Bing clicks and impressions by day, query and page via the Bing Webmaster API."),
+  fromAdapter("GOOGLE_SEARCH_CONSOLE", "Search visibility", "Daily clicks, impressions, CTR and positions by query, page, country and device via the Search Analytics API, with a 16-month backfill.", {
+    oauth: "google",
+    analystMetrics: ["clicks", "impressions"],
+    coreSource: true,
+  }),
+  fromAdapter("GOOGLE_ANALYTICS", "Analytics", "Sessions by channel, including AI-assistant referrals, via the GA4 Data API.", { analystMetrics: ["ai_referrals", "visitors"], coreSource: true }),
+  fromAdapter("BING_WEBMASTER", "Search visibility", "Bing clicks and impressions by day, query and page via the Bing Webmaster API.", { analystMetrics: ["clicks", "impressions"] }),
   {
     provider: "STRIPE",
     label: "Stripe",
@@ -73,6 +81,8 @@ export const INTEGRATION_CATALOG: CatalogEntry[] = [
     ],
     syncable: false,
     capabilities: [],
+    analystMetrics: ["new_subs", "beacon_mrr"],
+    coreSource: true,
   },
   { provider: "ANTHROPIC", label: "Anthropic", scope: "org", kind: "AI provider", description: "Claude for content rewriting and sampled AI-visibility tests.", ...aiFields("claude-opus-5-5"), syncable: false, capabilities: [] },
   { provider: "OPENAI", label: "OpenAI", scope: "org", kind: "AI provider", description: "Sampled AI-visibility tests via the OpenAI API.", ...aiFields("gpt-5"), syncable: false, capabilities: [] },
@@ -84,3 +94,7 @@ export const INTEGRATION_PROVIDERS = INTEGRATION_CATALOG.map((c) => c.provider) 
 export const catalogEntry = (provider: string): CatalogEntry | undefined => INTEGRATION_CATALOG.find((c) => c.provider === provider);
 export const isSyncableProvider = (p: string) => Boolean(catalogEntry(p)?.syncable);
 export const isProductScoped = (p: string) => catalogEntry(p)?.scope === "product";
+/** Growth-analyst metric keys an integration error of this provider can affect (empty when unknown). */
+export const analystMetricsFor = (p: string): string[] => [...(catalogEntry(p)?.analystMetrics ?? [])];
+/** Core data sources, in catalogue order: the growth report lists those not connected as missing. */
+export const CORE_SOURCES: IntegrationProvider[] = INTEGRATION_CATALOG.filter((c) => c.coreSource).map((c) => c.provider);

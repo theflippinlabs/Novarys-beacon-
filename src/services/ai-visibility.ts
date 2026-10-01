@@ -137,39 +137,76 @@ export async function aiVisibilityTrend(tx: Tx, organizationId: string, weeks = 
   return r.rows.map((x) => ({ week: x.week, tests: Number(x.tests), mentioned: Number(x.mentioned), cited: Number(x.cited) }));
 }
 
+function groupByPrompt(pairs: [string, string][]) {
+  const m = new Map<string, string[]>();
+  for (const [promptId, value] of pairs) {
+    const list = m.get(promptId);
+    if (list) list.push(value);
+    else m.set(promptId, [value]);
+  }
+  return m;
+}
+
 export async function promptSummaries(tx: Tx, organizationId: string, productId?: string) {
   const prompts = await tx
     .select()
     .from(aiVisibilityPrompts)
     .where(and(eq(aiVisibilityPrompts.organizationId, organizationId), productId ? eq(aiVisibilityPrompts.productId, productId) : undefined))
     .orderBy(desc(aiVisibilityPrompts.createdAt));
-  const tests = prompts.length
-    ? await tx
-        .select()
-        .from(aiVisibilityTests)
-        .where(and(eq(aiVisibilityTests.organizationId, organizationId), inArray(aiVisibilityTests.promptId, prompts.map((p) => p.id)), gte(aiVisibilityTests.ranAt, new Date(Date.now() - 90 * 86_400_000))))
-        .orderBy(desc(aiVisibilityTests.ranAt))
-    : [];
-  const compCites = tests.length
-    ? await tx
-        .select({ testId: aiCitations.testId, url: aiCitations.url })
-        .from(aiCitations)
-        .where(and(eq(aiCitations.organizationId, organizationId), eq(aiCitations.kind, "COMPETITOR"), inArray(aiCitations.testId, tests.map((t) => t.id))))
-    : [];
+  if (!prompts.length) return [];
+  const since = new Date(Date.now() - 90 * 86_400_000);
+  const promptIds = prompts.map((p) => p.id);
+  const t = aiVisibilityTests;
+  const window = and(eq(t.organizationId, organizationId), inArray(t.promptId, promptIds), gte(t.ranAt, since));
+  // Aggregates per prompt in SQL (no `response` column read): counts and test ids, newest first.
+  const mentioned = productId ? sql`${t.productsMentioned} @> jsonb_build_array(jsonb_build_object('productId', ${productId}::text))` : sql`${t.orgMentioned}`;
+  const agg = await tx
+    .select({
+      promptId: t.promptId,
+      testsRun: sql<number>`count(*)::int`,
+      testIds: sql<string[]>`array_agg(${t.id}::text order by ${t.ranAt} desc, ${t.id} desc)`,
+      mentions: sql<number>`(count(*) filter (where ${mentioned}))::int`,
+      cited: sql<number>`(count(*) filter (where ${t.ownDomainCited}))::int`,
+      grounded: sql<number>`(count(*) filter (where ${t.grounded}))::int`,
+    })
+    .from(t)
+    .where(window)
+    .groupBy(t.promptId);
+  // The latest run per prompt (one full row each).
+  const lasts = await tx.selectDistinctOn([t.promptId]).from(t).where(window).orderBy(t.promptId, desc(t.ranAt), desc(t.id));
+  const windowSql = sql`t.organization_id = ${organizationId} and t.prompt_id in (${sql.join(promptIds.map((id) => sql`${id}::uuid`), sql`, `)}) and t.ran_at >= ${since.toISOString()}::timestamptz`;
+  // Competitor names in order of first appearance (newest run first, then mention order).
+  const comps = await tx.execute<{ prompt_id: string; name: string }>(sql`
+    select prompt_id, name from (
+      select distinct on (t.prompt_id, e.value->>'name') t.prompt_id, e.value->>'name' as name, t.ran_at, t.id, e.ord
+      from ai_visibility_tests t cross join lateral jsonb_array_elements(t.competitors_mentioned) with ordinality as e(value, ord)
+      where ${windowSql}
+      order by t.prompt_id, e.value->>'name', t.ran_at desc, t.id desc, e.ord asc
+    ) x order by prompt_id, ran_at desc, id desc, ord asc`);
+  // Distinct competitor-cited URLs per prompt, in order of first appearance.
+  const cites = await tx.execute<{ prompt_id: string; url: string }>(sql`
+    select prompt_id, url from (
+      select distinct on (t.prompt_id, c.url) t.prompt_id, c.url, t.ran_at, t.id, c.position
+      from ai_citations c join ai_visibility_tests t on t.id = c.test_id
+      where c.organization_id = ${organizationId} and c.kind = 'COMPETITOR' and ${windowSql}
+      order by t.prompt_id, c.url, t.ran_at desc, t.id desc, c.position asc
+    ) x order by prompt_id, ran_at desc, id desc, position asc`);
+  const aggBy = new Map(agg.map((a) => [a.promptId, a]));
+  const lastBy = new Map(lasts.map((l) => [l.promptId, l]));
+  const compsBy = groupByPrompt(comps.rows.map((r) => [r.prompt_id, r.name]));
+  const citesBy = groupByPrompt(cites.rows.map((r) => [r.prompt_id, r.url]));
   return prompts.map((p) => {
-    const ts = tests.filter((t) => t.promptId === p.id);
-    const ids = new Set(ts.map((t) => t.id));
-    const compNames = [...new Set(ts.flatMap((t) => t.competitorsMentioned.map((c) => c.name)))];
+    const a = aggBy.get(p.id);
     return {
       prompt: p,
-      testsRun: ts.length,
-      testIds: ts.map((t) => t.id),
-      mentions: productId ? ts.filter((t) => t.productsMentioned.some((m) => m.productId === productId)).length : ts.filter((t) => t.orgMentioned).length,
-      cited: ts.filter((t) => t.ownDomainCited).length,
-      grounded: ts.filter((t) => t.grounded).length,
-      competitors: compNames,
-      competitorCitedUrls: [...new Set(compCites.filter((c) => ids.has(c.testId)).map((c) => c.url))],
-      last: ts[0] ?? null,
+      testsRun: a?.testsRun ?? 0,
+      testIds: a?.testIds ?? [],
+      mentions: a?.mentions ?? 0,
+      cited: a?.cited ?? 0,
+      grounded: a?.grounded ?? 0,
+      competitors: compsBy.get(p.id) ?? [],
+      competitorCitedUrls: citesBy.get(p.id) ?? [],
+      last: lastBy.get(p.id) ?? null,
     };
   });
 }
