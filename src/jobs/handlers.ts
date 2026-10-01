@@ -18,7 +18,7 @@ import { safeFetch } from "@/lib/security/ssrf";
 import { dueMeasurements, generateGrowthReport, identifyRecommendations, measureRecommendation } from "@/services/autopilot";
 import { analyzeProduct } from "@/services/onboarding";
 import { purgeTrackingIpHashes } from "@/services/tracking";
-import { sweepOrphanMediaObjects } from "@/services/media-storage";
+import { migrateMediaToStorage, sweepOrphanMediaObjects } from "@/services/media-storage";
 import { purgeRateLimitBuckets } from "@/lib/security/rate-limit";
 import { purgeExpiredSessions, purgeLoginThrottle } from "@/lib/auth/service";
 import { isoDay } from "@/core/util/text";
@@ -215,7 +215,9 @@ export const HANDLERS: Record<JobType, Handler> = {
     const ipHashesCleared = await purgeTrackingIpHashes();
     // Media object storage: remove objects no media row references (failed best-effort deletes, aborted uploads).
     const mediaSweep = await sweepOrphanMediaObjects().catch((e: Error) => ({ configured: true, error: e.message }));
-    return { ok: true, jobsPurged, ipHashesCleared, mediaSweep };
+    // Images uploaded before object storage was configured move there a batch per day (idempotent, resumable).
+    const mediaMigration = await migrateMediaToStorage({ limit: 500 }).catch((e: Error) => ({ configured: true, error: e.message }));
+    return { ok: true, jobsPurged, ipHashesCleared, mediaSweep, mediaMigration };
   },
 };
 
