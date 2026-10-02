@@ -8,6 +8,7 @@ import { isAuthFailure, sanitizeProviderMessage, type ConnectionTest } from "@/i
 import { audit, type Actor } from "@/lib/audit";
 import { enqueue } from "@/jobs/queue";
 import { loadSecret, saveIntegration } from "./visibility";
+import { verifyFromSearchConsole } from "./domains";
 
 type Run = <T>(fn: (tx: Tx) => Promise<T>) => Promise<T>;
 type Integration = typeof integrations.$inferSelect;
@@ -49,6 +50,8 @@ export async function recordConnectionResult(tx: Tx, integ: Integration, r: { ok
     .set(r.ok ? set : { ...set, consecutiveFailures: sql`${integrations.consecutiveFailures} + 1` })
     .where(and(eq(integrations.id, integ.id), eq(integrations.organizationId, integ.organizationId)))
     .returning();
+  // A verified Search Console property also proves its domain (no separate DNS step).
+  if (r.ok && integ.provider === "GOOGLE_SEARCH_CONSOLE") await verifyFromSearchConsole(tx, integ.organizationId, (row ?? integ).config?.siteUrl, (row ?? integ).scopes);
   return { status, previousSuccessAt: integ.lastSuccessAt, integration: row ?? integ };
 }
 

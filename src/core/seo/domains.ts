@@ -81,3 +81,18 @@ export function isLocalDevHost(host: string): boolean {
   if (isIP(h) === 6) return h === "::1" || h.startsWith("fc") || h.startsWith("fd");
   return false;
 }
+
+/** Search Console access levels that only a verified owner can grant. */
+export const SEARCH_CONSOLE_OWNER_LEVELS = ["siteOwner", "siteFullUser"] as const;
+
+/**
+ * The domain a Search Console property proves: `sc-domain:example.com` covers
+ * example.com and its subdomains; a URL-prefix property its host. Null for
+ * anything else.
+ */
+export function domainFromSearchConsoleProperty(siteUrl: string): string | null {
+  const v = siteUrl.trim();
+  if (/^sc-domain:/i.test(v)) return normalizeDomain(v.slice("sc-domain:".length));
+  if (/^https?:\/\//i.test(v)) return normalizeDomain(v);
+  return null;
+}

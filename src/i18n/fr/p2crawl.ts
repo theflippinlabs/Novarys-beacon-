@@ -313,8 +313,8 @@ export const fr: Record<string, string> = {
   Outlinks: "Liens sortants",
   // Domains
   "Verified domains": "Domaines vérifiés",
-  "Beacon only crawls sites you prove you control. Verify a domain once (DNS TXT record or a file on the site); its subdomains are covered too. Audits are limited to {n} per hour per workspace and one running audit per product.":
-    "Beacon n’explore que les sites dont vous prouvez le contrôle. Vérifiez un domaine une fois (enregistrement DNS TXT ou fichier sur le site) ; ses sous-domaines sont couverts aussi. Les audits sont limités à {n} par heure et par espace de travail, avec un seul audit en cours par produit.",
+  "Beacon only crawls sites you prove you control. Verify a domain once (DNS TXT record or a file on the site); its subdomains are covered too. A domain connected through Google Search Console with owner or full access is verified automatically. Audits are limited to {n} per hour per workspace and one running audit per product.":
+    "Beacon n’explore que les sites dont vous prouvez le contrôle. Vérifiez un domaine une fois (enregistrement DNS TXT ou fichier sur le site) ; ses sous-domaines sont couverts aussi. Un domaine connecté via Google Search Console avec un accès propriétaire ou complet est vérifié automatiquement. Les audits sont limités à {n} par heure et par espace de travail, avec un seul audit en cours par produit.",
   "Not verified yet": "Pas encore vérifié",
   Pending: "En attente",
   "Verified on {date} by {method}. Last checked {checked}.": "Vérifié le {date} par {method}. Dernière vérification : {checked}.",
@@ -394,4 +394,5 @@ export const fr: Record<string, string> = {
   "{domain} is verified.": "{domain} est vérifié.",
   "Verification failed for {domain}: {error}": "Échec de la vérification de {domain} : {error}",
   "{n} issue(s) updated.": "{n} problème(s) mis à jour.",
+  "its Google Search Console property": "sa propriété Google Search Console",
 };

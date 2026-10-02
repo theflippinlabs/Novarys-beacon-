@@ -169,6 +169,13 @@
       "when": 1790886655272,
       "tag": "0023_schema_snapshot_sync",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1790917763338,
+      "tag": "0024_domain_verified_by_search_console",
+      "breakpoints": true
     }
   ]
 }

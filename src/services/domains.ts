@@ -4,11 +4,11 @@ import { and, asc, eq } from "drizzle-orm";
 import type { Tx } from "@/db";
 import { verifiedDomains } from "@/db/schema";
 import { withDeadline } from "@/core/seo/crawl";
-import { fileBodyMatches, isVerifiableDomain, normalizeDomain, txtRecordsMatch, VERIFICATION_FILE_PATH } from "@/core/seo/domains";
+import { domainFromSearchConsoleProperty, fileBodyMatches, isVerifiableDomain, normalizeDomain, SEARCH_CONSOLE_OWNER_LEVELS, txtRecordsMatch, VERIFICATION_FILE_PATH } from "@/core/seo/domains";
 import { safeFetch } from "@/lib/security/ssrf";
 import { audit, type Actor } from "@/lib/audit";
 
-export type DomainProbe = { ok: boolean; method: "DNS_TXT" | "WELL_KNOWN_FILE" | null; error: string | null; checkedAt: Date };
+export type DomainProbe = { ok: boolean; method: "DNS_TXT" | "WELL_KNOWN_FILE" | "SEARCH_CONSOLE" | null; error: string | null; checkedAt: Date };
 
 export async function listDomains(tx: Tx, organizationId: string) {
   return tx.select().from(verifiedDomains).where(eq(verifiedDomains.organizationId, organizationId)).orderBy(asc(verifiedDomains.domain));
@@ -75,4 +75,37 @@ export async function recordVerification(tx: Tx, actor: Actor, id: string, probe
     .returning();
   await audit(tx, actor, probe.ok ? "domain.verify" : "domain.verify_failed", "verified_domain", id, { domain: row.domain, method: probe.method, error: probe.error });
   return updated;
+}
+
+/**
+ * A Search Console connection that Google confirmed with owner or full access
+ * proves the property's domain the same way a DNS record does (only a verified
+ * owner can grant that access), so the domain is marked verified without a
+ * second DNS step. Runs inside the caller's tenant transaction; returns the
+ * domain when it was verified now.
+ */
+export async function verifyFromSearchConsole(tx: Tx, organizationId: string, siteUrl: string | undefined, scopes: string[] | null | undefined): Promise<string | null> {
+  if (!siteUrl) return null;
+  const level = (scopes ?? []).find((s) => s.startsWith("property:"))?.slice("property:".length);
+  if (!level || !(SEARCH_CONSOLE_OWNER_LEVELS as readonly string[]).includes(level)) return null;
+  const domain = domainFromSearchConsoleProperty(siteUrl);
+  if (!domain || !isVerifiableDomain(domain)) return null;
+  const existing = await tx.query.verifiedDomains.findFirst({ where: and(eq(verifiedDomains.organizationId, organizationId), eq(verifiedDomains.domain, domain)) });
+  if (existing?.verifiedAt) return null;
+  const now = new Date();
+  const actor: Actor = { organizationId, userId: null, actorType: "SYSTEM" };
+  let id = existing?.id;
+  if (existing) {
+    await tx.update(verifiedDomains).set({ verifiedAt: now, method: "SEARCH_CONSOLE", lastCheckedAt: now, lastError: null }).where(and(eq(verifiedDomains.id, existing.id), eq(verifiedDomains.organizationId, organizationId)));
+  } else {
+    const [row] = await tx
+      .insert(verifiedDomains)
+      .values({ organizationId, domain, token: randomBytes(16).toString("hex"), method: "SEARCH_CONSOLE", verifiedAt: now, lastCheckedAt: now })
+      .onConflictDoNothing()
+      .returning();
+    id = row?.id;
+  }
+  if (!id) return null;
+  await audit(tx, actor, "domain.verify", "verified_domain", id, { domain, method: "SEARCH_CONSOLE", property: siteUrl, permission: level });
+  return domain;
 }

@@ -26,7 +26,7 @@ export default async function DomainsPage({ searchParams }: { searchParams: Prom
       <PageHeader
         eyebrow={t("03 / Discovery")}
         title={t("Verified domains")}
-        description={t("Beacon only crawls sites you prove you control. Verify a domain once (DNS TXT record or a file on the site); its subdomains are covered too. Audits are limited to {n} per hour per workspace and one running audit per product.", { n: AUDIT_RATE_LIMIT_PER_HOUR })}
+        description={t("Beacon only crawls sites you prove you control. Verify a domain once (DNS TXT record or a file on the site); its subdomains are covered too. A domain connected through Google Search Console with owner or full access is verified automatically. Audits are limited to {n} per hour per workspace and one running audit per product.", { n: AUDIT_RATE_LIMIT_PER_HOUR })}
         actions={
           <Link className="eyebrow hover:text-chrome" href="/discovery">
             {t("← Discovery")}
@@ -45,7 +45,7 @@ export default async function DomainsPage({ searchParams }: { searchParams: Prom
             >
               {d.verifiedAt ? (
                 <p className="text-xs text-chrome">
-                  {t("Verified on {date} by {method}. Last checked {checked}.", { date: day(d.verifiedAt), method: d.method === "DNS_TXT" ? t("DNS TXT record") : t("verification file"), checked: day(d.lastCheckedAt) })}
+                  {t("Verified on {date} by {method}. Last checked {checked}.", { date: day(d.verifiedAt), method: d.method === "DNS_TXT" ? t("DNS TXT record") : d.method === "SEARCH_CONSOLE" ? t("its Google Search Console property") : t("verification file"), checked: day(d.lastCheckedAt) })}
                 </p>
               ) : (
                 <ol className="flex list-decimal flex-col gap-3 pl-5 text-xs text-chrome">

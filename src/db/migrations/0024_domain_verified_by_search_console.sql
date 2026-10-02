@@ -1,0 +1,1 @@
+ALTER TYPE "public"."domain_verification_method" ADD VALUE 'SEARCH_CONSOLE';

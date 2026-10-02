@@ -974,7 +974,7 @@ export const sitemapSnapshots = pgTable(
   (t) => [index("sitemap_snapshots_audit_idx").on(t.auditId)],
 );
 
-export const domainVerificationMethodEnum = pgEnum("domain_verification_method", ["DNS_TXT", "WELL_KNOWN_FILE"]);
+export const domainVerificationMethodEnum = pgEnum("domain_verification_method", ["DNS_TXT", "WELL_KNOWN_FILE", "SEARCH_CONSOLE"]);
 
 /** Domains an organisation proved it controls; audits may only crawl these (and their subdomains). */
 export const verifiedDomains = pgTable(
