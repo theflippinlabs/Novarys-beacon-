@@ -150,4 +150,9 @@ export const fr: Record<string, string> = {
   "{pct}%": "{pct} %",
   "No data points yet.": "Aucun point de données pour l’instant.",
   Date: "Date",
+  "Choose the JSON file": "Choisir le fichier JSON",
+  "This file is too large to be a key file.": "Ce fichier est trop volumineux pour être un fichier de clé.",
+  "Loaded: {name}. Now choose Save.": "Chargé : {name}. Touchez maintenant Enregistrer.",
+  "Or paste the content of the file here": "Ou collez ici le contenu du fichier",
+  "Service account JSON looks cut off: the file content was not pasted completely. Load the file with Choose the JSON file instead.": "Le JSON du compte de service semble tronqué : le contenu du fichier n’a pas été collé en entier. Chargez plutôt le fichier avec Choisir le fichier JSON.",
 };

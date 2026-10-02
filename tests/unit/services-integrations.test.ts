@@ -223,7 +223,7 @@ describe("Google Search Console adapter", () => {
     const { impl } = fakeGoogle({ tokenStatus: 403 });
     await expect(createSearchConsoleAdapter(impl).fetchMetrics({ siteUrl: "x" }, { serviceAccountJson }, { start: "a", end: "b" })).rejects.toThrow(/google-oauth HTTP 403/);
     const ok = fakeGoogle();
-    await expect(createSearchConsoleAdapter(ok.impl).fetchMetrics({ siteUrl: "x" }, { serviceAccountJson: "{not json" }, { start: "a", end: "b" })).rejects.toThrow(/invalid/);
+    await expect(createSearchConsoleAdapter(ok.impl).fetchMetrics({ siteUrl: "x" }, { serviceAccountJson: "{not json" }, { start: "a", end: "b" })).rejects.toThrow(/invalid|cut off/);
     const evil = JSON.stringify({ ...JSON.parse(serviceAccountJson), token_uri: "https://evil.example/token" });
     await expect(createSearchConsoleAdapter(ok.impl).fetchMetrics({ siteUrl: "x" }, { serviceAccountJson: evil }, { start: "a", end: "b" })).rejects.toThrow(/Unexpected token_uri/);
     expect(ok.requests).toHaveLength(0);

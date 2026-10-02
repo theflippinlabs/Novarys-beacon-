@@ -6,6 +6,7 @@ import type { Metadata } from "next";
 import { disableIntegrationAction, saveIntegrationAction, selectGoogleSiteAction, syncIntegrationNowAction, testIntegrationAction } from "@/app/actions/settings";
 import { Badge, Button, Field, Flash, HiddenBack, PageHeader, Panel, StatusBadge } from "@/components/ui";
 import { SettingsTabs } from "@/components/shell/settings-tabs";
+import { SecretFileField } from "@/components/settings/secret-file-field";
 import { integrations, products, providerCredentials } from "@/db/schema";
 import { isStaleSync } from "@/core/integrations/health";
 import { googleOAuthClient } from "@/integrations/google-oauth";
@@ -246,7 +247,7 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
                 ))}
                 {c.secretFields.map((f) => (
                   <Field key={f.key} label={t(f.label)} hint={f.hint ? t(f.hint) : undefined}>
-                    {f.multiline ? <textarea name={f.key} className="min-h-24 font-mono text-[11px]" autoComplete="off" /> : <input name={f.key} type="password" autoComplete="off" />}
+                    {f.multiline ? <SecretFileField name={f.key} /> : <input name={f.key} type="password" autoComplete="off" />}
                   </Field>
                 ))}
                 <p className="text-[11px] text-muted">{t("Saving runs a connection test; the integration is marked connected only when it passes.")}</p>

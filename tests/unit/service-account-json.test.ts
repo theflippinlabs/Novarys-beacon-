@@ -16,6 +16,16 @@ describe("pasted service account JSON", () => {
     expect(normalizeServiceAccountJson(pasted)).toBe(key);
   });
 
+  it("repairs real line breaks that a paste put inside the private key", () => {
+    const broken = key.replace(/\\n/g, "\n");
+    expect(() => JSON.parse(broken)).toThrow();
+    expect(parseServiceAccount(broken).private_key).toBe("-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----\n");
+  });
+
+  it("says when the paste was cut off", () => {
+    expect(() => parseServiceAccount(key.slice(0, 80))).toThrow("looks cut off");
+  });
+
   it("still rejects text that is not a key", () => {
     expect(() => parseServiceAccount("not json")).toThrow("Service account JSON is invalid");
     expect(() => parseServiceAccount('{"type":"service_account"}')).toThrow("client_email and private_key");

@@ -23,13 +23,44 @@ export function normalizeServiceAccountJson(raw: string): string {
   return s.trim();
 }
 
+/** Escape raw line breaks and tabs inside string literals (a paste can turn the key's "\\n" escapes into real line breaks). */
+function escapeControlCharsInStrings(json: string): string {
+  let out = "";
+  let inString = false;
+  let escaped = false;
+  for (const ch of json) {
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      else if (ch === "\n") {
+        out += "\\n";
+        continue;
+      } else if (ch === "\r") continue;
+      else if (ch === "\t") {
+        out += "\\t";
+        continue;
+      }
+    } else if (ch === '"') inString = true;
+    out += ch;
+  }
+  return out;
+}
+
 /** Parse a pasted service account key; throws the user-facing messages. */
 export function parseServiceAccount(raw: string): ServiceAccount {
+  const text = normalizeServiceAccountJson(raw);
   let sa: ServiceAccount;
   try {
-    sa = JSON.parse(normalizeServiceAccountJson(raw));
+    sa = JSON.parse(text);
   } catch {
-    throw new Error("Service account JSON is invalid");
+    try {
+      sa = JSON.parse(escapeControlCharsInStrings(text));
+    } catch {
+      // A key file always ends with "}" after "client_x509_cert_url" / "universe_domain": a paste that stops early is the usual cause.
+      if (text.startsWith("{") && !text.endsWith("}")) throw new Error("Service account JSON looks cut off: the file content was not pasted completely. Load the file with Choose the JSON file instead.");
+      throw new Error("Service account JSON is invalid");
+    }
   }
   if (!sa || typeof sa !== "object" || !sa.client_email || !sa.private_key) throw new Error("Service account JSON must contain client_email and private_key");
   return sa;
