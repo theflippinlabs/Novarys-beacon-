@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { loginAction } from "@/app/actions/auth";
 import { Button, Field, Flash } from "@/components/ui";
@@ -29,8 +30,11 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
         <Field label={t("Password")}>
           <input name="password" type="password" autoComplete="current-password" required />
         </Field>
-        <div className="pt-2">
+        <div className="flex flex-wrap items-center gap-4 pt-2">
           <Button variant="gold">{t("Sign in →")}</Button>
+          <Link href="/recover" className="eyebrow hover:text-chrome">
+            {t("Forgot your password?")}
+          </Link>
         </div>
       </form>
     </AuthFrame>

@@ -3,7 +3,7 @@
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { authenticate, createOrganizationWithOwner, createSession, destroySession, hasAnyUser } from "@/lib/auth/service";
+import { authenticate, createOrganizationWithOwner, createSession, destroySession, hasAnyUser, recoverPassword } from "@/lib/auth/service";
 import { SESSION_COOKIE, clientIpHash, sessionTokenFrom } from "@/lib/auth/session";
 import { SESSION_COOKIE_LEGACY } from "@/core/auth/session-policy";
 import { setSessionCookie } from "@/lib/auth/cookie";
@@ -72,4 +72,22 @@ export async function setupAction(fd: FormData) {
   const { token } = await createSession(userId, { ipHash });
   await setSessionCookie(token);
   redirect("/");
+}
+
+const RecoverSchema = z.object({ email: z.string().email().max(320), token: z.string().min(1).max(512), password: z.string().min(1).max(256), confirm: z.string().min(1).max(256) });
+
+/** Password recovery with the operator's BEACON_RECOVERY_TOKEN (see recoverPassword). */
+export async function recoverAction(fd: FormData) {
+  const parsed = RecoverSchema.safeParse({ email: fd.get("email"), token: fd.get("token"), password: fd.get("password"), confirm: fd.get("confirm") });
+  if (!parsed.success) redirect(fail("/recover", "Fill in every field."));
+  if (parsed.data.password !== parsed.data.confirm) redirect(fail("/recover", "The two passwords do not match."));
+  const ipHash = await clientIpHash();
+  if (!(await rateLimit(`recover:ip:${ipHash}`, 5, 3600)).allowed) redirect(fail("/recover", "Too many attempts. Try again in an hour."));
+  const res = await recoverPassword({ email: parsed.data.email, token: parsed.data.token.trim(), password: parsed.data.password, expectedToken: process.env.BEACON_RECOVERY_TOKEN, ipHash });
+  if (!res.ok) {
+    if (res.reason === "disabled") redirect(fail("/recover", "Password recovery is not enabled on this server. Ask the operator to set a recovery code."));
+    if (res.reason === "weak") redirect(fail("/recover", res.message ?? "Choose a stronger password."));
+    redirect(fail("/recover", "The email or the recovery code is not valid."));
+  }
+  redirect(withFlash("/login", "ok", "Password updated. Sign in with your new password.", null));
 }

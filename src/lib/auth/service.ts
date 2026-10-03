@@ -1,7 +1,8 @@
 import { and, eq, gt, sql } from "drizzle-orm";
 import { asSystem, type Tx } from "@/db";
 import { memberships, organizations, sessions, users } from "@/db/schema";
-import { hashPassword, hmac, randomToken, sha256, verifyPassword } from "@/lib/security/crypto";
+import { hashPassword, hmac, randomToken, safeEqual, sha256, verifyPassword } from "@/lib/security/crypto";
+import { audit } from "@/lib/audit";
 import { SESSION_ABSOLUTE_MS, sessionVerdict } from "@/core/auth/session-policy";
 import type { Role } from "./rbac";
 
@@ -169,4 +170,34 @@ export async function destroySession(token: string) {
 
 export async function purgeExpiredSessions() {
   await asSystem((tx) => tx.execute(sql`delete from sessions where expires_at < now() or last_seen_at < now() - interval '24 hours'`));
+}
+
+/** Minimum length of BEACON_RECOVERY_TOKEN; a shorter or missing token disables recovery. */
+export const RECOVERY_TOKEN_MIN_LENGTH = 32;
+
+/**
+ * Operator-assisted password recovery (no email provider needed): with the
+ * server's BEACON_RECOVERY_TOKEN, an account's password is replaced, every
+ * session of that user is revoked, the login back-off for this device is
+ * cleared and each of the user's organisations gets an audit entry. Unknown
+ * email and wrong token answer the same way. The operator removes the token
+ * once the account is recovered.
+ */
+export async function recoverPassword(input: { email: string; token: string; password: string; expectedToken: string | undefined; ipHash?: string }): Promise<{ ok: true } | { ok: false; reason: "disabled" | "invalid" | "weak"; message?: string }> {
+  const expected = input.expectedToken ?? "";
+  if (expected.length < RECOVERY_TOKEN_MIN_LENGTH) return { ok: false, reason: "disabled" };
+  const weak = validatePasswordStrength(input.password);
+  if (weak) return { ok: false, reason: "weak", message: weak };
+  const tokenOk = safeEqual(hmac(input.token, "recovery"), hmac(expected, "recovery"));
+  const passwordHash = await hashPassword(input.password);
+  return asSystem(async (tx) => {
+    const user = await tx.query.users.findFirst({ where: eq(users.email, normalizeEmail(input.email)) });
+    if (!tokenOk || !user) return { ok: false, reason: "invalid" } as const;
+    await tx.update(users).set({ passwordHash, failedLoginCount: 0, lockedUntil: null }).where(eq(users.id, user.id));
+    await tx.delete(sessions).where(eq(sessions.userId, user.id));
+    if (input.ipHash) await tx.execute(sql`delete from login_throttle where key = ${throttleKey(user.email, input.ipHash)}`);
+    const orgs = await tx.select({ organizationId: memberships.organizationId }).from(memberships).where(eq(memberships.userId, user.id));
+    for (const m of orgs) await audit(tx, { organizationId: m.organizationId, userId: user.id, actorType: "SYSTEM", ipHash: input.ipHash }, "auth.password_recovered", "user", user.id, { method: "recovery_token" });
+    return { ok: true } as const;
+  });
 }
