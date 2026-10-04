@@ -87,7 +87,8 @@ export async function recoverAction(fd: FormData) {
   if (!res.ok) {
     if (res.reason === "disabled") redirect(fail("/recover", "Password recovery is not enabled on this server. Ask the operator to set a recovery code."));
     if (res.reason === "weak") redirect(fail("/recover", res.message ?? "Choose a stronger password."));
-    redirect(fail("/recover", "The email or the recovery code is not valid."));
+    if (res.reason === "unknown_email") redirect(fail("/recover", "The recovery code is right, but no Beacon account uses this email address. Use the address you created the workspace with."));
+    redirect(fail("/recover", "The recovery code is not valid."));
   }
   redirect(withFlash("/login", "ok", "Password updated. Sign in with your new password.", null));
 }

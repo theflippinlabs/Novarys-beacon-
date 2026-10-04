@@ -220,7 +220,8 @@ export const fr: Record<string, string> = {
   "Too many attempts. Try again in an hour.": "Trop de tentatives. Réessayez dans une heure.",
   "Password recovery is not enabled on this server. Ask the operator to set a recovery code.": "La récupération de mot de passe n’est pas activée sur ce serveur. Demandez à l’opérateur de définir un code de récupération.",
   "Choose a stronger password.": "Choisissez un mot de passe plus robuste.",
-  "The email or the recovery code is not valid.": "L’adresse e-mail ou le code de récupération n’est pas valide.",
   "Password updated. Sign in with your new password.": "Mot de passe mis à jour. Connectez-vous avec votre nouveau mot de passe.",
   "Please wait…": "Patientez…",
+  "The recovery code is right, but no Beacon account uses this email address. Use the address you created the workspace with.": "Le code de récupération est bon, mais aucun compte Beacon n’utilise cette adresse e-mail. Utilisez l’adresse avec laquelle vous avez créé l’espace de travail.",
+  "The recovery code is not valid.": "Le code de récupération n’est pas valide.",
 };

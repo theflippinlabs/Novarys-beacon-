@@ -179,11 +179,11 @@ export const RECOVERY_TOKEN_MIN_LENGTH = 32;
  * Operator-assisted password recovery (no email provider needed): with the
  * server's BEACON_RECOVERY_TOKEN, an account's password is replaced, every
  * session of that user is revoked, the login back-off for this device is
- * cleared and each of the user's organisations gets an audit entry. Unknown
- * email and wrong token answer the same way. The operator removes the token
+ * cleared and each of the user's organisations gets an audit entry. A wrong
+ * code reveals nothing; with the right code an unknown address is reported. The operator removes the token
  * once the account is recovered.
  */
-export async function recoverPassword(input: { email: string; token: string; password: string; expectedToken: string | undefined; ipHash?: string }): Promise<{ ok: true } | { ok: false; reason: "disabled" | "invalid" | "weak"; message?: string }> {
+export async function recoverPassword(input: { email: string; token: string; password: string; expectedToken: string | undefined; ipHash?: string }): Promise<{ ok: true } | { ok: false; reason: "disabled" | "invalid" | "unknown_email" | "weak"; message?: string }> {
   const expected = input.expectedToken ?? "";
   if (expected.length < RECOVERY_TOKEN_MIN_LENGTH) return { ok: false, reason: "disabled" };
   const weak = validatePasswordStrength(input.password);
@@ -192,7 +192,9 @@ export async function recoverPassword(input: { email: string; token: string; pas
   const passwordHash = await hashPassword(input.password);
   return asSystem(async (tx) => {
     const user = await tx.query.users.findFirst({ where: eq(users.email, normalizeEmail(input.email)) });
-    if (!tokenOk || !user) return { ok: false, reason: "invalid" } as const;
+    if (!tokenOk) return { ok: false, reason: "invalid" } as const;
+    // The code proves the operator's authority, so saying the address is unknown reveals nothing to an outsider.
+    if (!user) return { ok: false, reason: "unknown_email" } as const;
     await tx.update(users).set({ passwordHash, failedLoginCount: 0, lockedUntil: null }).where(eq(users.id, user.id));
     await tx.delete(sessions).where(eq(sessions.userId, user.id));
     if (input.ipHash) await tx.execute(sql`delete from login_throttle where key = ${throttleKey(user.email, input.ipHash)}`);

@@ -31,10 +31,11 @@ describe("password recovery with the operator's recovery code", () => {
     expect(logs).toHaveLength(1);
   });
 
-  it("answers the same for a wrong code and an unknown email, and changes nothing", async () => {
+  it("reveals nothing without the code, reports an unknown email with it, and changes nothing", async () => {
     const { email } = await member();
     expect(await recoverPassword({ email, token: "x".repeat(40), password: "brand new pass 42", expectedToken: TOKEN })).toEqual({ ok: false, reason: "invalid" });
-    expect(await recoverPassword({ email: `nobody-${uid()}@example.test`, token: TOKEN, password: "brand new pass 42", expectedToken: TOKEN })).toEqual({ ok: false, reason: "invalid" });
+    expect(await recoverPassword({ email: `nobody-${uid()}@example.test`, token: TOKEN, password: "brand new pass 42", expectedToken: TOKEN })).toEqual({ ok: false, reason: "unknown_email" });
+    expect(await recoverPassword({ email: `nobody-${uid()}@example.test`, token: "x".repeat(40), password: "brand new pass 42", expectedToken: TOKEN })).toEqual({ ok: false, reason: "invalid" });
     expect((await authenticate(email, "old password 123")).ok).toBe(true);
   });
 
