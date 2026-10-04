@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
+import { SubmitButton } from "@/components/ui/submit-button";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { loginAction } from "@/app/actions/auth";
-import { Button, Field, Flash } from "@/components/ui";
+import { Field, Flash } from "@/components/ui";
 import { getAuthContext } from "@/lib/auth/session";
 import { hasAnyUser } from "@/lib/auth/service";
 import { AuthFrame } from "@/components/shell/auth-frame";
@@ -31,7 +32,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
           <input name="password" type="password" autoComplete="current-password" required />
         </Field>
         <div className="flex flex-wrap items-center gap-4 pt-2">
-          <Button variant="gold">{t("Sign in →")}</Button>
+          <SubmitButton>{t("Sign in →")}</SubmitButton>
           <Link href="/recover" className="eyebrow hover:text-chrome">
             {t("Forgot your password?")}
           </Link>

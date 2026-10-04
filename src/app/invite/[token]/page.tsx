@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
+import { SubmitButton } from "@/components/ui/submit-button";
 import Link from "next/link";
 import { acceptInvitationAction } from "@/app/actions/invite";
-import { Button, Field, Flash } from "@/components/ui";
+import { Field, Flash } from "@/components/ui";
 import { AuthFrame } from "@/components/shell/auth-frame";
 import { enumLabel } from "@/i18n/core";
 import { getI18n, getT } from "@/i18n/server";
@@ -75,7 +76,7 @@ export default async function InvitePage({ params, searchParams }: { params: Pro
           </>
         )}
         <div className="pt-2">
-          <Button variant="gold">{signin ? t("Sign in and accept →") : t("Create my account and accept →")}</Button>
+          <SubmitButton>{signin ? t("Sign in and accept →") : t("Create my account and accept →")}</SubmitButton>
         </div>
       </form>
     </AuthFrame>

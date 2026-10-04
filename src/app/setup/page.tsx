@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { redirect } from "next/navigation";
 import { setupAction } from "@/app/actions/auth";
-import { Button, Field, Flash } from "@/components/ui";
+import { Field, Flash } from "@/components/ui";
 import { hasAnyUser } from "@/lib/auth/service";
 import { AuthFrame } from "@/components/shell/auth-frame";
 import { getI18n, getT } from "@/i18n/server";
@@ -39,7 +40,7 @@ export default async function SetupPage({ searchParams }: { searchParams: Promis
           <input name="password" type="password" required minLength={12} autoComplete="new-password" />
         </Field>
         <div className="pt-2">
-          <Button variant="gold">{t("Create workspace →")}</Button>
+          <SubmitButton>{t("Create workspace →")}</SubmitButton>
         </div>
       </form>
     </AuthFrame>

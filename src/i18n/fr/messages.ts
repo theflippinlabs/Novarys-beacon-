@@ -222,4 +222,5 @@ export const fr: Record<string, string> = {
   "Choose a stronger password.": "Choisissez un mot de passe plus robuste.",
   "The email or the recovery code is not valid.": "L’adresse e-mail ou le code de récupération n’est pas valide.",
   "Password updated. Sign in with your new password.": "Mot de passe mis à jour. Connectez-vous avec votre nouveau mot de passe.",
+  "Please wait…": "Patientez…",
 };

@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
+import { SubmitButton } from "@/components/ui/submit-button";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { recoverAction } from "@/app/actions/auth";
-import { Button, Field, Flash } from "@/components/ui";
+import { Field, Flash } from "@/components/ui";
 import { getAuthContext } from "@/lib/auth/session";
 import { AuthFrame } from "@/components/shell/auth-frame";
 import { getI18n, getT } from "@/i18n/server";
@@ -36,7 +37,7 @@ export default async function RecoverPage({ searchParams }: { searchParams: Prom
           <input name="confirm" type="password" autoComplete="new-password" required minLength={12} />
         </Field>
         <div className="flex flex-wrap items-center gap-4 pt-2">
-          <Button variant="gold">{t("Set the new password →")}</Button>
+          <SubmitButton>{t("Set the new password →")}</SubmitButton>
           <Link href="/login" className="eyebrow hover:text-chrome">
             {t("← Back to sign in")}
           </Link>
