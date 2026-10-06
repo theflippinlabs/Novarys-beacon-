@@ -66,7 +66,34 @@ export class OpenAICompatibleProvider implements LlmProvider {
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(120_000),
     });
-    if (!res.ok) throw new Error(`${this.label} API error ${res.status}`);
+    if (!res.ok) throw await providerError(this.label, res);
     return parseChatCompletion(this.id, (await res.json()) as ChatCompletionJson, { webSearchRequested: openaiSearch });
   }
+}
+
+/**
+ * Error with the provider's own explanation (e.g. "Incorrect API key
+ * provided", "insufficient permissions", "exceeded your current quota"), so a
+ * person can fix the cause. Key fragments are masked; the HTTP status is kept
+ * for the integration health (401/403 mean the credentials need replacing).
+ */
+export async function providerError(label: string, res: Response): Promise<Error & { status: number }> {
+  let detail = "";
+  try {
+    const text = await res.text();
+    try {
+      const j = JSON.parse(text) as { error?: { message?: string; code?: string } | string };
+      detail = typeof j.error === "string" ? j.error : (j.error?.message ?? "");
+    } catch {
+      detail = text;
+    }
+  } catch {
+    // Body unreadable: the status alone is reported.
+  }
+  detail = detail
+    .replace(/\b(sk|pplx)-[A-Za-z0-9_*-]{6,}/g, "$1-[redacted]")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 240);
+  return Object.assign(new Error(detail ? `${label} API error ${res.status}: ${detail}` : `${label} API error ${res.status}`), { status: res.status });
 }

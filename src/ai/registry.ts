@@ -9,7 +9,13 @@ import type { LlmProvider, ProviderCredentials, ProviderId } from "./types";
 
 const PROVIDER_INTEGRATION = { anthropic: "ANTHROPIC", openai: "OPENAI", perplexity: "PERPLEXITY" } as const;
 
-export function buildProvider(id: ProviderId, creds: ProviderCredentials): LlmProvider {
+/** API keys pasted on a phone can carry spaces, line breaks or invisible characters; no provider key contains them. */
+export function cleanApiKey(key: string): string {
+  return key.replace(/[\s\u00A0\u200B-\u200D\u2060\uFEFF]/g, "");
+}
+
+export function buildProvider(id: ProviderId, rawCreds: ProviderCredentials): LlmProvider {
+  const creds = { ...rawCreds, apiKey: cleanApiKey(rawCreds.apiKey) };
   switch (id) {
     case "anthropic":
       return new AnthropicProvider({ ...creds, webSearch: env().BEACON_ANTHROPIC_WEB_SEARCH !== "false" });
