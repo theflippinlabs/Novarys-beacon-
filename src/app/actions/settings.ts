@@ -1,6 +1,7 @@
 "use server";
 
 import { and, eq, ne } from "drizzle-orm";
+import { cleanApiKey } from "@/ai/registry";
 import { z } from "zod";
 import { asSystem } from "@/db";
 import { integrations, memberships, organizations, products, sessions, users } from "@/db/schema";
@@ -142,6 +143,13 @@ const FIELD_SCHEMA = Object.fromEntries(
   INTEGRATION_CATALOG.flatMap((c) => [...c.configFields, ...c.secretFields]).map((f) => [f.key, zOptText(f.key === "serviceAccountJson" ? 20000 : 500)]),
 ) as Record<string, ReturnType<typeof zOptText>>;
 
+/** How each AI provider's API keys start (their documented formats), with the message shown otherwise. */
+const API_KEY_PREFIX = {
+  ANTHROPIC: ["sk-ant-", "This is not an Anthropic API key (it starts with sk-ant-). Copy the key itself, not the page address."],
+  OPENAI: ["sk-", "This is not an OpenAI API key (it starts with sk-). Copy the key itself, not the page address."],
+  PERPLEXITY: ["pplx-", "This is not a Perplexity API key (it starts with pplx-). Copy the key itself, not the page address."],
+} as const;
+
 export async function saveIntegrationAction(fd: FormData) {
   return actStaged(
     fd,
@@ -160,6 +168,9 @@ export async function saveIntegrationAction(fd: FormData) {
         else if (f.required) throw new Error(`${f.label.replace(/ \(.*\)$/, "")} is required.`);
       }
       for (const f of entry.secretFields) if (i[f.key]) secret[f.key] = i[f.key]!;
+      // Catch a pasted page address or other text before it replaces a working key.
+      const keyPrefix = API_KEY_PREFIX[i.provider as keyof typeof API_KEY_PREFIX];
+      if (keyPrefix && secret.apiKey && !cleanApiKey(secret.apiKey).startsWith(keyPrefix[0])) throw new Error(keyPrefix[1]);
       if (config.urlPrefix && !/^https?:\/\/[^\s]+$/i.test(config.urlPrefix)) throw new Error("The page URL prefix must start with https://");
       // 1. Store (transaction), 2. test the connection (no transaction open), 3. record the result (transaction).
       const integ = await run(async (tx) => {

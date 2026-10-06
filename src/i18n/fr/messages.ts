@@ -224,4 +224,7 @@ export const fr: Record<string, string> = {
   "Please wait…": "Patientez…",
   "The recovery code is right, but no Beacon account uses this email address. Use the address you created the workspace with.": "Le code de récupération est bon, mais aucun compte Beacon n’utilise cette adresse e-mail. Utilisez l’adresse avec laquelle vous avez créé l’espace de travail.",
   "The recovery code is not valid.": "Le code de récupération n’est pas valide.",
+  "This is not an Anthropic API key (it starts with sk-ant-). Copy the key itself, not the page address.": "Ce n’est pas une clé API Anthropic (elle commence par sk-ant-). Copiez la clé elle-même, pas l’adresse de la page.",
+  "This is not an OpenAI API key (it starts with sk-). Copy the key itself, not the page address.": "Ce n’est pas une clé API OpenAI (elle commence par sk-). Copiez la clé elle-même, pas l’adresse de la page.",
+  "This is not a Perplexity API key (it starts with pplx-). Copy the key itself, not the page address.": "Ce n’est pas une clé API Perplexity (elle commence par pplx-). Copiez la clé elle-même, pas l’adresse de la page.",
 };
