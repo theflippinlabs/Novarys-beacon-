@@ -12,6 +12,9 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // Version skew protection: a page opened before a deploy reloads instead of failing silently
+  // (set at build and runtime from the same commit, see Dockerfile; unset locally).
+  deploymentId: process.env.NEXT_DEPLOYMENT_ID || undefined,
   serverExternalPackages: ["pg"],
   experimental: {
     // Photo uploads (several phone photos per submit; the client downsizes them first).

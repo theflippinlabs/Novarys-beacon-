@@ -15,7 +15,10 @@ RUN pnpm install --frozen-lockfile --prod
 
 FROM deps AS build
 COPY . .
-ENV NEXT_TELEMETRY_DISABLED=1
+# Same deployment id at build and at runtime: Next.js then reloads a page
+# opened before a deploy instead of calling Server Actions that no longer exist.
+ARG RAILWAY_GIT_COMMIT_SHA
+ENV NEXT_TELEMETRY_DISABLED=1 NEXT_DEPLOYMENT_ID=$RAILWAY_GIT_COMMIT_SHA
 RUN pnpm build
 
 FROM base AS runtime
@@ -26,6 +29,8 @@ COPY --from=build --chown=beacon:beacon /app/package.json /app/next.config.ts /a
 COPY --from=build --chown=beacon:beacon /app/.next /app/.next
 COPY --from=build --chown=beacon:beacon /app/public /app/public
 COPY --from=build --chown=beacon:beacon /app/src /app/src
+ARG RAILWAY_GIT_COMMIT_SHA
+ENV NEXT_DEPLOYMENT_ID=$RAILWAY_GIT_COMMIT_SHA
 USER beacon
 EXPOSE 3000
 # Anonymous /api/health answers {status} with 200 while the database is reachable.
